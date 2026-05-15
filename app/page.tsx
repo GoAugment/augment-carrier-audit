@@ -20,6 +20,18 @@ const sampleSmallFleetCutoffs = [
     severe: "≥ 3.66",
   },
   {
+    signal: "Unsafe Driving rate",
+    elevated: "≥ 33%",
+    high: "≥ 34%",
+    severe: "≥ 50%",
+  },
+  {
+    signal: "HOS Compliance rate",
+    elevated: "≥ 29%",
+    high: "≥ 33%",
+    severe: "≥ 48%",
+  },
+  {
     signal: "Driver OOS rate",
     elevated: "≥ 21%",
     high: "≥ 29%",
@@ -312,7 +324,7 @@ export default function Home() {
           <div className="mt-6">
             <p className="text-sm font-semibold text-ink-900">How scoring works</p>
             <p className="mt-2 text-sm text-ink-700">
-              Each carrier is scored on <strong>seven axes</strong>, then compared against{" "}
+              Each carrier is scored on <strong>nine axes</strong>, then compared against{" "}
               <strong>peer-group percentiles</strong> from the May 2026 FMCSA snapshot
               (~2 million US carriers). Carriers compete against similarly-sized fleets — a
               10-truck carrier isn&apos;t graded against Schneider. The result table&apos;s
@@ -323,6 +335,15 @@ export default function Home() {
               <li>
                 <strong>Crashes per million miles</strong> — raw crash count over 24 months ÷
                 annual VMT × 2. Industry-standard safety metric.
+              </li>
+              <li>
+                <strong>Unsafe Driving rate</strong> — driver inspections that found any 49
+                CFR Part 392 violation (speeding, reckless, distracted, lane changes) ÷ total
+                driver inspections.
+              </li>
+              <li>
+                <strong>HOS Compliance rate</strong> — driver inspections with any
+                Hours-of-Service violation ÷ total driver inspections.
               </li>
               <li>
                 <strong>Driver OOS rate</strong> — driver inspections that ended out-of-service
@@ -336,11 +357,12 @@ export default function Home() {
                 <strong>Hazmat OOS rate</strong> — same, hazmat-placarded inspections only.
               </li>
               <li>
-                <strong>Revocations</strong> — recent (≤24mo), chronic (≥3 historical
-                involuntary), or older context.
+                <strong>Revocations</strong> — recent involuntary (≤24 mo), chronic (≥3
+                historical involuntary), or older context. Voluntary revocations are surfaced
+                but never trigger a flag.
               </li>
               <li>
-                <strong>Operating authority</strong> — binary: active vs. not.
+                <strong>Operating authority</strong> — binary: Active vs. not.
               </li>
               <li>
                 <strong>BIPD insurance</strong> — required amount vs. on-file amount.
