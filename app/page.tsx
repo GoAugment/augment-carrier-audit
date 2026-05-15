@@ -294,7 +294,7 @@ export default function Home() {
             Want this report every morning?
           </h2>
           <p className="mt-3 max-w-2xl text-augment-100">
-            Augie — Augment&apos;s AI teammate for freight brokers — runs this audit on every
+            Augie — Augment&apos;s AI teammate for supply chain — runs this audit on every
             tendered load and sends a daily risk briefing. It also handles the rest of the
             brokerage workflow: carrier selection, track-and-trace, POD collection, customer
             email triage.
