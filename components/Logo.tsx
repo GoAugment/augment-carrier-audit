@@ -1,23 +1,16 @@
 /**
  * Augment logo — green flower icon + "augment" text wordmark.
  *
- * Wordmark is plain HTML text (not SVG) so it sits properly with the icon
- * and inherits text styling. Matches the goaugment.com header treatment.
+ * Sized to match goaugment.com: 16px wordmark font, ~22px icon. The icon
+ * is slightly larger than the cap-height so it reads as the dominant element.
  */
-export function Logo({
-  className = "",
-  size = 24,
-}: {
-  className?: string;
-  /** Pixel height of the icon and the wordmark cap-height. */
-  size?: number;
-}) {
+export function Logo({ className = "" }: { className?: string }) {
   return (
-    <div className={`inline-flex items-center gap-2 ${className}`}>
-      <AugmentIcon size={size} />
+    <div className={`inline-flex items-center gap-1.5 ${className}`}>
+      <AugmentIcon size={22} />
       <span
         className="font-semibold tracking-tight text-ink-900"
-        style={{ fontSize: `${size}px`, lineHeight: 1 }}
+        style={{ fontSize: "16px", lineHeight: 1 }}
       >
         augment
       </span>
@@ -26,7 +19,7 @@ export function Logo({
 }
 
 /** Standalone flower icon — useful for favicons, tabs, social cards, etc. */
-export function AugmentIcon({ size = 24 }: { size?: number }) {
+export function AugmentIcon({ size = 22 }: { size?: number }) {
   return (
     <svg
       width={size}
