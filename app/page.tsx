@@ -12,6 +12,7 @@ const thresholdsDisplay = [
 ];
 
 const riskStyles: Record<RiskLevel, string> = {
+  Critical: "bg-red-200 text-red-950 border-red-400 font-semibold",
   Severe: "bg-red-100 text-red-900 border-red-200",
   High: "bg-orange-100 text-orange-900 border-orange-200",
   Elevated: "bg-amber-50 text-amber-900 border-amber-200",
@@ -203,7 +204,8 @@ export default function Home() {
               {result.totalCarriers} unique carrier{result.totalCarriers === 1 ? "" : "s"} ·{" "}
               <strong>{result.flaggedCarriers} flagged for review</strong>
             </p>
-            <div className="mt-4 grid grid-cols-3 gap-3 sm:max-w-md">
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:max-w-2xl sm:grid-cols-4">
+              <Stat label="Critical" value={result.bySeverity.Critical} style="bg-red-200 text-red-950" />
               <Stat label="Severe" value={result.bySeverity.Severe} style="bg-red-100 text-red-900" />
               <Stat label="High" value={result.bySeverity.High} style="bg-orange-100 text-orange-900" />
               <Stat label="Elevated" value={result.bySeverity.Elevated} style="bg-amber-50 text-amber-900" />

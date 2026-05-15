@@ -2,18 +2,20 @@
  * Carrier risk analyzer. Port of the Python script from the T1/Zeal audit work.
  *
  * Methodology:
- * - For each safety axis (crash rate, driver OOS, vehicle OOS, hazmat OOS),
- *   compute the Wilson 95% CI lower bound for the carrier's observed rate.
- * - Flag only if the CI lower bound exceeds the threshold — small-sample
- *   noise (e.g., 1-of-1 inspections) does not trigger.
- * - Score = sum of (CI lower bound / threshold) across flagged axes, plus a
- *   bonus when 2+ axes are flagged.
- * - Risk label: Severe (>=2x), High (>=1.5x), Elevated (<1.5x).
+ * - First, four CRITICAL binary compliance checks (insurance, OOS order,
+ *   safety rating, operating status). Any failure here = refuse, regardless
+ *   of statistical signals.
+ * - Then statistical safety axes (crash rate, driver/vehicle/hazmat OOS):
+ *   - Wilson 95% CI lower bound for the carrier's observed rate
+ *   - Flagged only if CI lower bound exceeds the threshold (small-sample
+ *     noise excluded)
+ * - Score = sum of (CI lower bound / threshold) across flagged axes + multi-
+ *   axis bonus. Score >= 2.0 = Severe, >= 1.5 = High, otherwise Elevated.
  */
 import type { FmcsaCarrier } from "./fmcsa";
 import { thresholds } from "./thresholds";
 
-export type RiskLevel = "Severe" | "High" | "Elevated";
+export type RiskLevel = "Critical" | "Severe" | "High" | "Elevated";
 
 export interface LoadInput {
   dot: number;
@@ -32,6 +34,7 @@ export interface CarrierFlag {
   hazmatLoadIds: string[];
   reasons: string[];
   hasFatalCrash: boolean;
+  hasCriticalFailure: boolean;
 }
 
 export interface AuditResult {
@@ -41,7 +44,7 @@ export interface AuditResult {
   bySeverity: Record<RiskLevel, number>;
   flags: CarrierFlag[];
   thresholdsUsed: typeof thresholds;
-  unresolvedDots: number[]; // DOTs we couldn't find in FMCSA
+  unresolvedDots: number[];
 }
 
 function wilsonLower(k: number, n: number, z = 1.96): number {
@@ -53,7 +56,8 @@ function wilsonLower(k: number, n: number, z = 1.96): number {
   return Math.max(0, (centre - margin) / denom);
 }
 
-function riskLabel(score: number): RiskLevel {
+function riskLabel(score: number, isCritical: boolean): RiskLevel {
+  if (isCritical) return "Critical";
   if (score >= 2.0) return "Severe";
   if (score >= 1.5) return "High";
   return "Elevated";
@@ -85,7 +89,7 @@ export function analyze(
   loads: LoadInput[],
   carriers: Map<number, FmcsaCarrier>
 ): AuditResult {
-  // Group loads by carrier (DOT)
+  // Group loads by carrier
   const byCarrier = new Map<number, { loadIds: Set<string>; hazmatLoadIds: Set<string> }>();
   for (let i = 0; i < loads.length; i++) {
     const load = loads[i];
@@ -108,21 +112,53 @@ export function analyze(
     const reasons: string[] = [];
     let score = 0;
     let axes = 0;
+    let hasCritical = false;
 
-    const units = c.totalPowerUnits;
-    const crashes = c.crashTotal;
-    if (units > 0) {
-      const cpu = crashes / units;
-      const lo = wilsonLower(crashes, units);
+    // -------- CRITICAL binary checks (refuse to tender) --------
+    if (c.bipdInsuranceRequired === "Y" && c.bipdInsuranceOnFile < c.bipdRequiredAmount) {
+      reasons.push(
+        `🛑 Insurance lapsed: $${c.bipdInsuranceOnFile}k on file vs $${c.bipdRequiredAmount}k required (BIPD liability)`
+      );
+      hasCritical = true;
+    }
+    if (c.oosDate) {
+      reasons.push(`🛑 Active out-of-service order issued ${c.oosDate}`);
+      hasCritical = true;
+    }
+    if (c.safetyRating && c.safetyRating.toUpperCase() === "UNSATISFACTORY") {
+      reasons.push(`🛑 FMCSA safety rating: Unsatisfactory`);
+      hasCritical = true;
+    }
+    if (c.allowedToOperate && c.allowedToOperate.toUpperCase() !== "Y") {
+      reasons.push(`🛑 FMCSA not allowed to operate (allowedToOperate=${c.allowedToOperate})`);
+      hasCritical = true;
+    }
+
+    // -------- Insurance info even when not lapsed --------
+    // (Surface this on flagged carriers so operators can verify the actual coverage.)
+    let insuranceInfo: string | null = null;
+    if (c.bipdInsuranceOnFile > 0) {
+      insuranceInfo = `Insurance: $${c.bipdInsuranceOnFile}k BIPD on file${
+        c.bipdRequiredAmount > 0 ? ` (required $${c.bipdRequiredAmount}k)` : ""
+      }`;
+    } else if (c.bipdInsuranceRequired === "Y") {
+      // Required but $0 on file is more concerning than just "0" — still treat as critical
+      reasons.push(`🛑 Insurance: $0 BIPD on file (carrier is required to carry $${c.bipdRequiredAmount}k)`);
+      hasCritical = true;
+    }
+
+    // -------- Statistical safety axes --------
+    if (c.totalPowerUnits > 0) {
+      const cpu = c.crashTotal / c.totalPowerUnits;
+      const lo = wilsonLower(c.crashTotal, c.totalPowerUnits);
       if (lo >= thresholds.crashPerTruck) {
         score += lo / thresholds.crashPerTruck;
         axes += 1;
         reasons.push(
-          fmtCrash(crashes, units, cpu, c.fatalCrash, c.injCrash, c.towawayCrash, thresholds.crashPerTruck)
+          fmtCrash(c.crashTotal, c.totalPowerUnits, cpu, c.fatalCrash, c.injCrash, c.towawayCrash, thresholds.crashPerTruck)
         );
       }
     }
-
     if (c.driverInsp >= 3) {
       const lo = wilsonLower(c.driverOosInsp, c.driverInsp);
       if (lo >= thresholds.driverOos) {
@@ -147,19 +183,25 @@ export function analyze(
         reasons.push(fmtOos("Hazmat OOS", c.hazmatOosInsp, c.hazmatInsp, thresholds.hazmatOos));
       }
     }
-    // PHMSA registration is load-conditional — flagged for hazmat loads as a
-    // manual-check reminder (we can't programmatically verify in serverless).
+
+    // PHMSA reminder for hazmat loads (can't programmatically verify in serverless)
     if (g.hazmatLoadIds.size > 0) {
       reasons.push(
         "⚠ Hazmat load — verify PHMSA registration manually at portal.phmsa.dot.gov"
       );
     }
+
+    // Surface insurance status on any flagged carrier as supplementary context
+    if (insuranceInfo && reasons.length > 0) {
+      reasons.push(insuranceInfo);
+    }
+
     if (axes >= 2) score += axes;
 
-    if (score > 0) {
+    if (hasCritical || score > 0) {
       flags.push({
-        riskLevel: riskLabel(score),
-        riskScore: score,
+        riskLevel: riskLabel(score, hasCritical),
+        riskScore: hasCritical ? Math.max(score, 99) : score, // Critical always ranks first
         dot,
         carrierName: c.legalName,
         loadCount: g.loadIds.size,
@@ -167,13 +209,19 @@ export function analyze(
         hazmatLoadIds: Array.from(g.hazmatLoadIds).sort(),
         reasons,
         hasFatalCrash: c.fatalCrash > 0,
+        hasCriticalFailure: hasCritical,
       });
     }
   }
 
   flags.sort((a, b) => b.riskScore - a.riskScore);
   const ranked: CarrierFlag[] = flags.map((f, i) => ({ rank: i + 1, ...f }));
-  const bySeverity: Record<RiskLevel, number> = { Severe: 0, High: 0, Elevated: 0 };
+  const bySeverity: Record<RiskLevel, number> = {
+    Critical: 0,
+    Severe: 0,
+    High: 0,
+    Elevated: 0,
+  };
   for (const f of ranked) bySeverity[f.riskLevel] += 1;
 
   return {
@@ -188,11 +236,10 @@ export function analyze(
 }
 
 /**
- * Parse the user's pasted input. One load per line. Tolerates several formats:
+ * Parse pasted input. One load per line. Tolerates:
  *   3621624
  *   3621624, INF31459-18990
  *   3621624 INF31459-18990 HAZMAT
- *   3621624,INF31459-18990,HAZMAT
  */
 export function parseInput(raw: string): { loads: LoadInput[]; errors: string[] } {
   const loads: LoadInput[] = [];
@@ -201,11 +248,8 @@ export function parseInput(raw: string): { loads: LoadInput[]; errors: string[] 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-    if (line.startsWith("#")) continue; // comment
-    const tokens = line
-      .split(/[,\s\t]+/)
-      .map((t) => t.trim())
-      .filter(Boolean);
+    if (line.startsWith("#")) continue;
+    const tokens = line.split(/[,\s\t]+/).map((t) => t.trim()).filter(Boolean);
     if (!tokens.length) continue;
     const dotStr = tokens[0].replace(/^DOT[:#]?/i, "").replace(/\D/g, "");
     const dot = parseInt(dotStr, 10);
