@@ -54,6 +54,12 @@ export async function POST(req: NextRequest) {
   });
 
   const webhook = process.env.SLACK_LEAD_WEBHOOK_URL;
+  // Track Slack delivery status — exposed in the response so we can debug
+  // without trawling function logs. Set in the live deployment so the
+  // browser-side fetch result tells us whether the webhook is wired.
+  let slackStatus: "ok" | "missing-env" | "http-error" | "exception" = "missing-env";
+  let slackDetail: string | undefined;
+
   if (webhook) {
     const text =
       `*New audit-tool lead:* ${body.email}` +
@@ -63,15 +69,24 @@ export async function POST(req: NextRequest) {
           `(${body.summary.bySeverity.Critical ?? 0}C / ${body.summary.bySeverity.Severe ?? 0}S / ${body.summary.bySeverity.High ?? 0}H / ${body.summary.bySeverity.Elevated ?? 0}E)`
         : "");
     try {
-      await fetch(webhook, {
+      const res = await fetch(webhook, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
       });
-    } catch {
-      // Don't surface webhook failures to the user — lead is already captured in logs
+      if (res.ok) {
+        slackStatus = "ok";
+      } else {
+        slackStatus = "http-error";
+        slackDetail = `Slack returned ${res.status} ${res.statusText}: ${await res.text().catch(() => "")}`;
+        console.error("[lead] Slack webhook HTTP error", slackDetail);
+      }
+    } catch (e) {
+      slackStatus = "exception";
+      slackDetail = e instanceof Error ? e.message : String(e);
+      console.error("[lead] Slack webhook threw", slackDetail);
     }
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, slack: slackStatus, slackDetail });
 }
