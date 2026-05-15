@@ -15,8 +15,15 @@ export const metadata = {
 
 export default function EmbedPage() {
   return (
-    <main className="bg-white px-6 py-8">
-      <AuditWidget compact />
-    </main>
+    <>
+      {/* Override the global body background so the iframe inherits whatever
+          color the Framer parent page is rendering behind it. Without this
+          the iframe shows as a hard white rectangle on dark/cream Framer
+          pages. */}
+      <style>{`html, body { background: transparent !important; }`}</style>
+      <main className="bg-transparent px-2 py-2">
+        <AuditWidget compact />
+      </main>
+    </>
   );
 }
