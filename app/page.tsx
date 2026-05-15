@@ -294,12 +294,10 @@ export default function Home() {
             Want this report every morning — plus the audit trail?
           </h2>
           <p className="mt-3 max-w-2xl text-augment-100">
-            Augie — Augment&apos;s AI teammate for supply chain — runs this audit on every
-            tendered load and sends a daily risk briefing. More importantly, Augie keeps a
-            <strong className="text-white"> complete audit trail of every carrier decision</strong>{" "}
-            your team makes: what FMCSA data was reviewed, by whom, when, and the
-            documented reason for any override. The record Montgomery now requires — kept for
-            you, automatically.
+            Augie — Augment&apos;s AI teammate for supply chain — checks every carrier behind
+            the scenes and{" "}
+            <strong className="text-white">documents who&apos;s compliant for your records</strong>{" "}
+            and who isn&apos;t, so you can fix it before it becomes an issue.
           </p>
           <p className="mt-3 max-w-2xl text-augment-100">
             Augie also handles the rest of the brokerage workflow: carrier selection,
