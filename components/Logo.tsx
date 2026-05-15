@@ -9,7 +9,7 @@ export function Logo({ className = "" }: { className?: string }) {
     <div className={`inline-flex items-center gap-1.5 ${className}`}>
       <AugmentIcon size={22} />
       <span
-        className="font-semibold tracking-tight text-ink-900"
+        className="font-medium tracking-tight text-ink-900"
         style={{ fontSize: "16px", lineHeight: 1 }}
       >
         augment
