@@ -291,13 +291,19 @@ export default function Home() {
       <section className="border-b border-ink-100 bg-augment-700 text-white">
         <div className="mx-auto max-w-5xl px-6 py-14">
           <h2 className="text-2xl font-semibold tracking-tight">
-            Want this report every morning?
+            Want this report every morning — plus the audit trail?
           </h2>
           <p className="mt-3 max-w-2xl text-augment-100">
             Augie — Augment&apos;s AI teammate for supply chain — runs this audit on every
-            tendered load and sends a daily risk briefing. It also handles the rest of the
-            brokerage workflow: carrier selection, track-and-trace, POD collection, customer
-            email triage.
+            tendered load and sends a daily risk briefing. More importantly, Augie keeps a
+            <strong className="text-white"> complete audit trail of every carrier decision</strong>{" "}
+            your team makes: what FMCSA data was reviewed, by whom, when, and the documented
+            reason for any override. The kind of discoverable record the Montgomery ruling
+            now requires.
+          </p>
+          <p className="mt-3 max-w-2xl text-augment-100">
+            Augie also handles the rest of the brokerage workflow: carrier selection,
+            track-and-trace, POD collection, customer email triage.
           </p>
           <a
             href="https://goaugment.com/contact"
@@ -344,6 +350,11 @@ export default function Home() {
                 <li>FMCSA QCMobile (live carrier records)</li>
                 <li>Hazmat carriers flagged for manual PHMSA verification</li>
               </ul>
+              <p className="mt-3 text-xs text-ink-500">
+                FMCSA&apos;s public carrier data — QCMobile, SAFER, and the SMS Input files —
+                is the standard reference plaintiff&apos;s attorneys use in negligent-hiring
+                litigation and underlies this tool. The data is free and publicly accessible.
+              </p>
             </div>
           </div>
         </div>
