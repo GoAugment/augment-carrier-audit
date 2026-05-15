@@ -10,14 +10,18 @@ export function Logo({
   className?: string;
   height?: number;
 }) {
-  // Wordmark aspect ratio: 71 × 16 (≈4.44:1)
-  const wordmarkWidth = (height * 71) / 16;
+  // Wordmark SVG viewBox is 71×16, but glyphs only occupy ~12.3 of the 16
+  // vertical units — the rest is em-square padding. To make the wordmark
+  // visually match the icon's height, we scale it up ~1.25× so the cap-height
+  // of "augment" ≈ the icon diameter.
+  const wordmarkRenderHeight = height * 1.25;
+  const wordmarkWidth = (wordmarkRenderHeight * 71) / 16;
   return (
     <div className={`inline-flex items-center gap-2 ${className}`}>
       <AugmentIcon size={height} />
       <svg
         width={wordmarkWidth}
-        height={height * 0.78}
+        height={wordmarkRenderHeight}
         viewBox="0 0 71 16"
         xmlns="http://www.w3.org/2000/svg"
         aria-hidden
