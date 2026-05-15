@@ -1,21 +1,23 @@
 /**
- * Carrier risk analyzer. Port of the Python script from the T1/Zeal audit work.
+ * Carrier risk analyzer — tier-based scoring.
  *
- * Methodology:
- * - First, four CRITICAL binary compliance checks (insurance, OOS order,
- *   safety rating, operating status). Any failure here = refuse, regardless
- *   of statistical signals.
- * - Then statistical safety axes (crash rate, driver/vehicle/hazmat OOS):
- *   - Wilson 95% CI lower bound for the carrier's observed rate
- *   - Flagged only if CI lower bound exceeds the threshold (small-sample
- *     noise excluded)
- * - Score = sum of (CI lower bound / threshold) across flagged axes + multi-
- *   axis bonus. Score >= 2.0 = Severe, >= 1.5 = High, otherwise Elevated.
+ * Risk tiers, top-down:
+ *   - Critical — binary regulatory failure (insurance lapsed, unsatisfactory
+ *     rating, OOS order, not allowed to operate). Refuse to tender.
+ *   - Severe   — at least one statistical axis above its P95 cutoff, OR any
+ *     fatal crash on a flagged carrier.
+ *   - High     — at least one axis above its P90 cutoff.
+ *   - Elevated — at least one axis above its P85 cutoff.
+ *
+ * OOS rates (driver/vehicle/hazmat) use Wilson 95% CI lower bound so a 1-of-1
+ * sample doesn't trigger. Crash rate uses the raw point estimate, gated by a
+ * minimum-fleet guard (≥5 power units) unless a fatal/injury crash exists.
  */
 import type { FmcsaCarrier } from "./fmcsa";
-import { thresholds } from "./thresholds";
+import { tierThresholds, MIN_PU_FOR_CRASH, type TierCutoffs } from "./thresholds";
 
 export type RiskLevel = "Critical" | "Severe" | "High" | "Elevated";
+export type Tier = RiskLevel | null;
 
 export interface LoadInput {
   dot: number;
@@ -26,7 +28,6 @@ export interface LoadInput {
 export interface CarrierFlag {
   rank: number;
   riskLevel: RiskLevel;
-  riskScore: number;
   dot: number;
   carrierName: string | null;
   loadCount: number;
@@ -43,8 +44,29 @@ export interface AuditResult {
   flaggedCarriers: number;
   bySeverity: Record<RiskLevel, number>;
   flags: CarrierFlag[];
-  thresholdsUsed: typeof thresholds;
+  thresholdsUsed: typeof tierThresholds;
   unresolvedDots: number[];
+}
+
+const TIER_ORDER: RiskLevel[] = ["Critical", "Severe", "High", "Elevated"];
+
+const RECENT_REVOCATION_WINDOW_DAYS = 730; // 24 months
+const CHRONIC_REVOCATION_THRESHOLD = 3;
+const RECENT_ENFORCEMENT_WINDOW_DAYS = 730;
+const ENFORCEMENT_LARGE_SETTLEMENT = 25_000; // $ — solo High trigger
+
+function daysAgo(isoDate: string | null): number | null {
+  if (!isoDate) return null;
+  const d = Date.parse(isoDate.slice(0, 10));
+  if (Number.isNaN(d)) return null;
+  return (Date.now() - d) / (1000 * 60 * 60 * 24);
+}
+
+function bumpUp(level: Tier): Tier {
+  if (level === "Elevated") return "High";
+  if (level === "High") return "Severe";
+  if (level === "Severe") return "Severe";
+  return level;
 }
 
 function wilsonLower(k: number, n: number, z = 1.96): number {
@@ -56,45 +78,110 @@ function wilsonLower(k: number, n: number, z = 1.96): number {
   return Math.max(0, (centre - margin) / denom);
 }
 
-function riskLabel(score: number, isCritical: boolean): RiskLevel {
-  if (isCritical) return "Critical";
-  if (score >= 2.0) return "Severe";
-  if (score >= 1.5) return "High";
-  return "Elevated";
+/** Map a value to a tier (P95→Severe, P90→High, P85→Elevated, else null). */
+function statTier(value: number, cuts: TierCutoffs): Tier {
+  if (value >= cuts.p95) return "Severe";
+  if (value >= cuts.p90) return "High";
+  if (value >= cuts.p85) return "Elevated";
+  return null;
 }
 
-function fmtCrash(
+/** Return the more severe of two tiers (Critical > Severe > High > Elevated). */
+function worse(a: Tier, b: Tier): Tier {
+  if (!a) return b;
+  if (!b) return a;
+  return TIER_ORDER.indexOf(a) < TIER_ORDER.indexOf(b) ? a : b;
+}
+
+/** Compact label combining the tier name with its national-percentile band. */
+function tierBand(tier: Tier): string {
+  if (tier === "Severe") return "Severe/P95";
+  if (tier === "High") return "High/P90";
+  if (tier === "Elevated") return "Elevated/P85";
+  return "";
+}
+
+/**
+ * Unified template: shows the observed rate, the conservative statistical
+ * floor (what we actually compare against the cutoff), and which percentile
+ * band it landed in. The "statistical floor" wording replaces "Wilson95-low"
+ * because the term is opaque to non-statisticians.
+ *
+ * The statistical floor is the 95% confidence lower bound on the true OOS
+ * rate, calculated via Wilson's score interval. We compare *it* (not the raw
+ * observed rate) against the cutoff so that a single 1-of-1 inspection doesn't
+ * trigger a flag — only carriers where even the carrier-favorable estimate is
+ * above the cutoff get surfaced.
+ */
+function fmtOosReason(
+  label: string,
+  oos: number,
+  insp: number,
+  lo: number,
+  cuts: TierCutoffs,
+  tier: Tier
+): string {
+  const pct = (oos / insp) * 100;
+  const loPct = lo * 100;
+  const cutoff =
+    tier === "Severe" ? cuts.p95 : tier === "High" ? cuts.p90 : cuts.p85;
+  return `${label} ${pct.toFixed(0)}% — ${oos} of ${insp} inspections. Statistical floor ${loPct.toFixed(0)}% exceeds the ${tierBand(tier)} cutoff (${(cutoff * 100).toFixed(0)}%).`;
+}
+
+function fmtCrashReason(
   crashes: number,
   units: number,
   cpu: number,
   fatal: number,
   injury: number,
   tow: number,
-  p85: number
+  /** Tier the carrier was *placed* in. May be higher than rateTier when a fatal override applies. */
+  tier: Tier,
+  /** Tier that the raw rate alone would map to. */
+  rateTier: Tier
 ): string {
   const sev: string[] = [];
   if (fatal > 0) sev.push(`${fatal} fatal`);
   if (injury > 0) sev.push(`${injury} injury`);
   if (tow > 0) sev.push(`${tow} tow`);
-  const s = sev.length ? ` (${sev.join(", ")})` : "";
-  return `Crashes: ${cpu.toFixed(2)}/truck (cutoff ${p85.toFixed(2)}) — ${crashes} crashes on ${units} trucks${s}`;
-}
-
-function fmtOos(label: string, oos: number, insp: number, p85: number): string {
-  const pct = (oos / insp) * 100;
-  return `${label}: ${pct.toFixed(0)}% (cutoff ${(p85 * 100).toFixed(0)}%) — ${oos} of ${insp} inspections`;
+  const s = sev.length ? `, ${sev.join(", ")}` : "";
+  const cuts = tierThresholds.crashPerTruck;
+  // Always describe the cutoff that the raw rate actually exceeded.
+  const ratedAtCutoff =
+    rateTier === "Severe"
+      ? cuts.p95
+      : rateTier === "High"
+        ? cuts.p90
+        : rateTier === "Elevated"
+          ? cuts.p85
+          : null;
+  const ratePart = ratedAtCutoff
+    ? `Crashes ${cpu.toFixed(2)}/truck (above ${tierBand(rateTier)} cutoff: ${ratedAtCutoff.toFixed(2)})`
+    : `Crashes ${cpu.toFixed(2)}/truck`;
+  // If the assigned tier is Severe but the rate alone didn't reach P95, the
+  // fatal override is what pushed it there — be explicit about that.
+  const override =
+    tier === "Severe" && rateTier !== "Severe" && fatal > 0
+      ? ` · ${fatal} fatal crash → tier promoted to Severe`
+      : "";
+  return `${ratePart} — ${crashes} on ${units} trucks${s}${override}`;
 }
 
 export function analyze(
   loads: LoadInput[],
   carriers: Map<number, FmcsaCarrier>
 ): AuditResult {
-  // Group loads by carrier
-  const byCarrier = new Map<number, { loadIds: Set<string>; hazmatLoadIds: Set<string> }>();
+  const byCarrier = new Map<
+    number,
+    { loadIds: Set<string>; hazmatLoadIds: Set<string> }
+  >();
   for (let i = 0; i < loads.length; i++) {
     const load = loads[i];
     const id = load.loadId ?? `row-${i + 1}`;
-    const g = byCarrier.get(load.dot) ?? { loadIds: new Set(), hazmatLoadIds: new Set() };
+    const g = byCarrier.get(load.dot) ?? {
+      loadIds: new Set(),
+      hazmatLoadIds: new Set(),
+    };
     g.loadIds.add(id);
     if (load.isHazmat) g.hazmatLoadIds.add(id);
     byCarrier.set(load.dot, g);
@@ -110,12 +197,14 @@ export function analyze(
       continue;
     }
     const reasons: string[] = [];
-    let score = 0;
-    let axes = 0;
+    let tier: Tier = null;
     let hasCritical = false;
 
     // -------- CRITICAL binary checks (refuse to tender) --------
-    if (c.bipdInsuranceRequired === "Y" && c.bipdInsuranceOnFile < c.bipdRequiredAmount) {
+    if (
+      c.bipdInsuranceRequired === "Y" &&
+      c.bipdInsuranceOnFile < c.bipdRequiredAmount
+    ) {
       reasons.push(
         `🛑 Insurance lapsed: $${c.bipdInsuranceOnFile}k on file vs $${c.bipdRequiredAmount}k required (BIPD liability)`
       );
@@ -130,78 +219,142 @@ export function analyze(
       hasCritical = true;
     }
     if (c.allowedToOperate && c.allowedToOperate.toUpperCase() !== "Y") {
-      reasons.push(`🛑 FMCSA not allowed to operate (allowedToOperate=${c.allowedToOperate})`);
+      reasons.push(
+        `🛑 FMCSA not allowed to operate (allowedToOperate=${c.allowedToOperate})`
+      );
       hasCritical = true;
     }
 
-    // -------- Insurance info even when not lapsed --------
-    // (Surface this on flagged carriers so operators can verify the actual coverage.)
-    let insuranceInfo: string | null = null;
-    if (c.bipdInsuranceOnFile > 0) {
-      insuranceInfo = `Insurance: $${c.bipdInsuranceOnFile}k BIPD on file${
-        c.bipdRequiredAmount > 0 ? ` (required $${c.bipdRequiredAmount}k)` : ""
-      }`;
-    } else if (c.bipdInsuranceRequired === "Y") {
-      // Required but $0 on file is more concerning than just "0" — still treat as critical
-      reasons.push(`🛑 Insurance: $0 BIPD on file (carrier is required to carry $${c.bipdRequiredAmount}k)`);
-      hasCritical = true;
-    }
+    if (hasCritical) tier = "Critical";
 
-    // -------- Statistical safety axes --------
+    // -------- Statistical axes --------
     if (c.totalPowerUnits > 0) {
       const cpu = c.crashTotal / c.totalPowerUnits;
-      const lo = wilsonLower(c.crashTotal, c.totalPowerUnits);
-      if (lo >= thresholds.crashPerTruck) {
-        score += lo / thresholds.crashPerTruck;
-        axes += 1;
-        reasons.push(
-          fmtCrash(c.crashTotal, c.totalPowerUnits, cpu, c.fatalCrash, c.injCrash, c.towawayCrash, thresholds.crashPerTruck)
-        );
+      // Small-fleet guard: only count if PU≥5 OR fatal/injury exists
+      const passesGuard =
+        c.totalPowerUnits >= MIN_PU_FOR_CRASH ||
+        c.fatalCrash >= 1 ||
+        c.injCrash >= 1;
+      if (passesGuard && c.crashTotal >= 1) {
+        const rateTier = statTier(cpu, tierThresholds.crashPerTruck);
+        // Any fatal crash on an already-flagged carrier → tier promoted to Severe
+        const crashTier: Tier =
+          c.fatalCrash > 0 && rateTier !== null ? "Severe" : rateTier;
+        if (crashTier) {
+          reasons.push(
+            fmtCrashReason(
+              c.crashTotal,
+              c.totalPowerUnits,
+              cpu,
+              c.fatalCrash,
+              c.injCrash,
+              c.towawayCrash,
+              crashTier,
+              rateTier
+            )
+          );
+          tier = worse(tier, crashTier);
+        }
       }
     }
+
     if (c.driverInsp >= 3) {
       const lo = wilsonLower(c.driverOosInsp, c.driverInsp);
-      if (lo >= thresholds.driverOos) {
-        score += lo / thresholds.driverOos;
-        axes += 1;
-        reasons.push(fmtOos("Driver OOS", c.driverOosInsp, c.driverInsp, thresholds.driverOos));
+      const t = statTier(lo, tierThresholds.driverOos);
+      if (t) {
+        reasons.push(
+          fmtOosReason(
+            "Driver OOS",
+            c.driverOosInsp,
+            c.driverInsp,
+            lo,
+            tierThresholds.driverOos,
+            t
+          )
+        );
+        tier = worse(tier, t);
       }
     }
     if (c.vehicleInsp >= 3) {
       const lo = wilsonLower(c.vehicleOosInsp, c.vehicleInsp);
-      if (lo >= thresholds.vehicleOos) {
-        score += lo / thresholds.vehicleOos;
-        axes += 1;
-        reasons.push(fmtOos("Vehicle OOS", c.vehicleOosInsp, c.vehicleInsp, thresholds.vehicleOos));
+      const t = statTier(lo, tierThresholds.vehicleOos);
+      if (t) {
+        reasons.push(
+          fmtOosReason(
+            "Vehicle OOS",
+            c.vehicleOosInsp,
+            c.vehicleInsp,
+            lo,
+            tierThresholds.vehicleOos,
+            t
+          )
+        );
+        tier = worse(tier, t);
       }
     }
     if (c.hazmatInsp >= 3) {
       const lo = wilsonLower(c.hazmatOosInsp, c.hazmatInsp);
-      if (lo >= thresholds.hazmatOos) {
-        score += lo / thresholds.hazmatOos;
-        axes += 1;
-        reasons.push(fmtOos("Hazmat OOS", c.hazmatOosInsp, c.hazmatInsp, thresholds.hazmatOos));
+      const t = statTier(lo, tierThresholds.hazmatOos);
+      if (t) {
+        reasons.push(
+          fmtOosReason(
+            "Hazmat OOS",
+            c.hazmatOosInsp,
+            c.hazmatInsp,
+            lo,
+            tierThresholds.hazmatOos,
+            t
+          )
+        );
+        tier = worse(tier, t);
       }
     }
 
-    // PHMSA reminder for hazmat loads (can't programmatically verify in serverless)
-    if (g.hazmatLoadIds.size > 0) {
+    // -------- Revocation history --------
+    const sinceLastInvol = daysAgo(c.mostRecentInvoluntaryDate);
+    const recentRevocation =
+      sinceLastInvol !== null && sinceLastInvol <= RECENT_REVOCATION_WINDOW_DAYS;
+    const chronicRevocation =
+      c.involuntaryRevocations >= CHRONIC_REVOCATION_THRESHOLD;
+
+    if (recentRevocation) {
       reasons.push(
-        "⚠ Hazmat load — verify PHMSA registration manually at portal.phmsa.dot.gov"
+        `🚨 Recent involuntary revocation: ${c.mostRecentInvoluntaryDate} — FMCSA pulled the carrier's authority within the last 24 months.`
       );
+      // Recent revocation alone → High. Combined with any statistical signal → Severe.
+      const revTier: Tier = tier ? "Severe" : "High";
+      tier = worse(tier, revTier);
+    }
+    if (chronicRevocation) {
+      reasons.push(
+        `⚠ Chronic revocation history: ${c.involuntaryRevocations} involuntary revocations on record (total ${c.revocationsTotal}).`
+      );
+      // Chronic bumps the current tier up one
+      tier = bumpUp(tier ?? "Elevated");
     }
 
-    // Surface insurance status on any flagged carrier as supplementary context
-    if (insuranceInfo && reasons.length > 0) {
-      reasons.push(insuranceInfo);
+    // -------- Enforcement cases --------
+    const sinceLastEnf = daysAgo(c.enforcementRecentDate);
+    const recentEnforcement =
+      sinceLastEnf !== null &&
+      sinceLastEnf <= RECENT_ENFORCEMENT_WINDOW_DAYS &&
+      c.enforcementCasesCount >= 1;
+    if (recentEnforcement) {
+      reasons.push(
+        `⚖ Recent enforcement: ${c.enforcementCasesCount} closed case(s), $${c.enforcementTotalSettled.toLocaleString()} settled (latest ${c.enforcementRecentDate}).`
+      );
+      if (c.enforcementTotalSettled >= ENFORCEMENT_LARGE_SETTLEMENT) {
+        // Large settlement is a High on its own
+        tier = worse(tier, "High");
+      } else {
+        // Smaller settlement bumps existing tier up one
+        if (tier) tier = bumpUp(tier);
+      }
     }
 
-    if (axes >= 2) score += axes;
-
-    if (hasCritical || score > 0) {
+    if (tier) {
       flags.push({
-        riskLevel: riskLabel(score, hasCritical),
-        riskScore: hasCritical ? Math.max(score, 99) : score, // Critical always ranks first
+        riskLevel: tier,
         dot,
         carrierName: c.legalName,
         loadCount: g.loadIds.size,
@@ -214,7 +367,12 @@ export function analyze(
     }
   }
 
-  flags.sort((a, b) => b.riskScore - a.riskScore);
+  flags.sort((a, b) => {
+    const td = TIER_ORDER.indexOf(a.riskLevel) - TIER_ORDER.indexOf(b.riskLevel);
+    if (td !== 0) return td;
+    return b.loadCount - a.loadCount;
+  });
+
   const ranked: CarrierFlag[] = flags.map((f, i) => ({ rank: i + 1, ...f }));
   const bySeverity: Record<RiskLevel, number> = {
     Critical: 0,
@@ -230,7 +388,7 @@ export function analyze(
     flaggedCarriers: ranked.length,
     bySeverity,
     flags: ranked,
-    thresholdsUsed: thresholds,
+    thresholdsUsed: tierThresholds,
     unresolvedDots,
   };
 }

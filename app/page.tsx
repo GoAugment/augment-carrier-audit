@@ -4,11 +4,31 @@ import { SAMPLE_INPUT } from "@/lib/sample";
 import type { AuditResult, RiskLevel } from "@/lib/analyzer";
 import { Logo } from "@/components/Logo";
 
-const thresholdsDisplay = [
-  { label: "Crash rate per truck (24-month)", value: "≥ 0.20" },
-  { label: "Driver out-of-service rate", value: "≥ 10%" },
-  { label: "Vehicle out-of-service rate", value: "≥ 40%" },
-  { label: "Hazmat out-of-service rate", value: "≥ 5%" },
+const tierThresholds = [
+  {
+    signal: "Driver OOS rate",
+    elevated: "≥ 25%",
+    high: "≥ 33%",
+    severe: "≥ 40%",
+  },
+  {
+    signal: "Vehicle OOS rate",
+    elevated: "≥ 50%",
+    high: "≥ 60%",
+    severe: "≥ 67%",
+  },
+  {
+    signal: "Hazmat OOS rate",
+    elevated: "≥ 6%",
+    high: "≥ 12%",
+    severe: "≥ 24%",
+  },
+  {
+    signal: "Crashes per truck (24-mo)",
+    elevated: "≥ 0.10",
+    high: "≥ 0.20",
+    severe: "≥ 0.40 or any fatal",
+  },
 ];
 
 const riskStyles: Record<RiskLevel, string> = {
@@ -16,6 +36,14 @@ const riskStyles: Record<RiskLevel, string> = {
   Severe: "bg-red-100 text-red-900 border-red-200",
   High: "bg-orange-100 text-orange-900 border-orange-200",
   Elevated: "bg-amber-50 text-amber-900 border-amber-200",
+};
+
+/** Subtle whole-row tint so severity tiers cluster visually when scanning. */
+const rowTint: Record<RiskLevel, string> = {
+  Critical: "bg-red-50/80",
+  Severe: "bg-red-50/40",
+  High: "bg-orange-50/40",
+  Elevated: "bg-amber-50/30",
 };
 
 export default function Home() {
@@ -163,7 +191,7 @@ export default function Home() {
             <code className="rounded bg-ink-100 px-1 py-0.5 font-mono text-xs">
               DOT, LoadID, HAZMAT
             </code>
-            . Up to 100 loads per submission.
+            . Up to 1,000 loads per submission.
           </p>
           <textarea
             value={input}
@@ -205,10 +233,10 @@ export default function Home() {
               <strong>{result.flaggedCarriers} flagged for review</strong>
             </p>
             <div className="mt-4 grid grid-cols-2 gap-3 sm:max-w-2xl sm:grid-cols-4">
-              <Stat label="Critical" value={result.bySeverity.Critical} style="bg-red-200 text-red-950" />
-              <Stat label="Severe" value={result.bySeverity.Severe} style="bg-red-100 text-red-900" />
-              <Stat label="High" value={result.bySeverity.High} style="bg-orange-100 text-orange-900" />
-              <Stat label="Elevated" value={result.bySeverity.Elevated} style="bg-amber-50 text-amber-900" />
+              <Stat label="Critical" value={result.bySeverity.Critical} activeStyle="bg-red-200 text-red-950" />
+              <Stat label="Severe" value={result.bySeverity.Severe} activeStyle="bg-red-100 text-red-900" />
+              <Stat label="High" value={result.bySeverity.High} activeStyle="bg-orange-100 text-orange-900" />
+              <Stat label="Elevated" value={result.bySeverity.Elevated} activeStyle="bg-amber-50 text-amber-900" />
             </div>
 
             {result.flags.length > 0 ? (
@@ -227,7 +255,10 @@ export default function Home() {
                   </thead>
                   <tbody>
                     {result.flags.map((f) => (
-                      <tr key={f.dot} className="border-t border-ink-100 align-top">
+                      <tr
+                        key={f.dot}
+                        className={`border-t border-ink-100 align-top ${rowTint[f.riskLevel]}`}
+                      >
                         <td className="px-3 py-2 text-ink-500">{f.rank}</td>
                         <td className="px-3 py-2">
                           <span
@@ -241,13 +272,21 @@ export default function Home() {
                           {f.loadIds.join(", ")}
                         </td>
                         <td className="px-3 py-2">
-                          {f.carrierName ?? <span className="text-ink-400">unknown</span>}
-                          {f.hazmatLoadIds.length > 0 && (
-                            <span className="ml-1 text-xs text-amber-700">⚠ HAZMAT</span>
-                          )}
-                          {f.hasFatalCrash && (
-                            <span className="ml-1 text-xs text-red-700">☠ fatal</span>
-                          )}
+                          <div>
+                            {f.carrierName ?? <span className="text-ink-400">unknown</span>}
+                          </div>
+                          <div className="mt-0.5 flex flex-wrap gap-1">
+                            {f.hasFatalCrash && (
+                              <span className="inline-flex rounded-full border border-red-300 bg-red-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-red-800">
+                                Fatal crash
+                              </span>
+                            )}
+                            {f.hazmatLoadIds.length > 0 && (
+                              <span className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-800">
+                                Hazmat
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-3 py-2 font-mono text-xs text-ink-700">{f.dot}</td>
                         <td className="px-3 py-2 text-ink-700">
@@ -318,40 +357,145 @@ export default function Home() {
       <section className="border-b border-ink-100">
         <div className="mx-auto max-w-5xl px-6 py-12">
           <h2 className="text-xl font-semibold text-ink-900">Methodology</h2>
-          <div className="mt-4 grid gap-6 sm:grid-cols-2">
-            <div>
-              <p className="text-sm font-semibold text-ink-900">Thresholds applied</p>
-              <ul className="mt-2 space-y-1 text-sm text-ink-700">
-                {thresholdsDisplay.map((t) => (
-                  <li key={t.label} className="flex justify-between gap-3">
-                    <span>{t.label}</span>
-                    <span className="font-mono">{t.value}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-3 text-xs text-ink-500">
-                Cutoffs derived from FMCSA SMS Methodology v3.0.4 §4.6 (Crash Indicator BASIC
-                P85 framework), rounded to defensible whole numbers from a representative
-                1,356-carrier industry sample.
-              </p>
+
+          {/* Tier definitions */}
+          <div className="mt-6">
+            <p className="text-sm font-semibold text-ink-900">Risk tiers</p>
+            <p className="mt-2 text-sm text-ink-700">
+              Tiers are anchored to the national distribution of all ~2M FMCSA-registered
+              carriers — so a flag means &ldquo;worse than X% of US carriers,&rdquo; not a
+              made-up cutoff.
+            </p>
+            <div className="mt-3 overflow-x-auto rounded-lg border border-ink-200 bg-white">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-ink-50 text-xs uppercase tracking-wide text-ink-600">
+                  <tr>
+                    <th className="px-3 py-2">Tier</th>
+                    <th className="px-3 py-2">Meaning</th>
+                    <th className="px-3 py-2">When it fires</th>
+                  </tr>
+                </thead>
+                <tbody className="text-ink-700">
+                  <tr className="border-t border-ink-100">
+                    <td className="px-3 py-2 align-top">
+                      <span className="inline-flex rounded-full border border-red-400 bg-red-200 px-2 py-0.5 text-xs font-semibold text-red-950">
+                        Critical
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 align-top">Refuse to tender</td>
+                    <td className="px-3 py-2 align-top">
+                      Binary regulatory failure: insurance lapsed, FMCSA safety rating
+                      Unsatisfactory, operating status not Active, or active out-of-service
+                      order.
+                    </td>
+                  </tr>
+                  <tr className="border-t border-ink-100">
+                    <td className="px-3 py-2 align-top">
+                      <span className="inline-flex rounded-full border border-red-200 bg-red-100 px-2 py-0.5 text-xs font-medium text-red-900">
+                        Severe
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 align-top">Worse than P95</td>
+                    <td className="px-3 py-2 align-top">
+                      Top 5% nationally on at least one axis; or any fatal crash; or a recent
+                      involuntary revocation combined with another statistical signal.
+                    </td>
+                  </tr>
+                  <tr className="border-t border-ink-100">
+                    <td className="px-3 py-2 align-top">
+                      <span className="inline-flex rounded-full border border-orange-200 bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-900">
+                        High
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 align-top">Worse than P90</td>
+                    <td className="px-3 py-2 align-top">
+                      Top 10% nationally on at least one axis; or recent involuntary revocation
+                      (≤ 24 mo); or chronic revocations (≥ 3 historical).
+                    </td>
+                  </tr>
+                  <tr className="border-t border-ink-100">
+                    <td className="px-3 py-2 align-top">
+                      <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">
+                        Elevated
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 align-top">Worse than P85</td>
+                    <td className="px-3 py-2 align-top">
+                      Top 15% nationally on at least one axis. Operator awareness — not
+                      automatically blocking.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
+          </div>
+
+          {/* Per-axis thresholds */}
+          <div className="mt-8">
+            <p className="text-sm font-semibold text-ink-900">Per-axis thresholds</p>
+            <p className="mt-2 text-sm text-ink-700">
+              Derived from the national distribution of all qualifying carriers in the May 2026
+              FMCSA snapshot. Crashes/truck uses fixed thresholds because the national
+              distribution is zero-dominated (P90 = 0 crashes), so percentile cutoffs would be
+              meaningless; the fixed values still correspond to roughly the top 1% of the
+              population.
+            </p>
+            <div className="mt-3 overflow-x-auto rounded-lg border border-ink-200 bg-white">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-ink-50 text-xs uppercase tracking-wide text-ink-600">
+                  <tr>
+                    <th className="px-3 py-2">Signal</th>
+                    <th className="px-3 py-2">Elevated (P85)</th>
+                    <th className="px-3 py-2">High (P90)</th>
+                    <th className="px-3 py-2">Severe (P95)</th>
+                  </tr>
+                </thead>
+                <tbody className="text-ink-700">
+                  {tierThresholds.map((t) => (
+                    <tr key={t.signal} className="border-t border-ink-100">
+                      <td className="px-3 py-2">{t.signal}</td>
+                      <td className="px-3 py-2 font-mono text-xs">{t.elevated}</td>
+                      <td className="px-3 py-2 font-mono text-xs">{t.high}</td>
+                      <td className="px-3 py-2 font-mono text-xs">{t.severe}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Statistical method + data sources */}
+          <div className="mt-8 grid gap-6 sm:grid-cols-2">
             <div>
               <p className="text-sm font-semibold text-ink-900">Statistical method</p>
               <p className="mt-2 text-sm text-ink-700">
-                Each carrier&apos;s observed rate is bounded by a Wilson 95% confidence interval
-                (Wilson, E.B. 1927). A flag fires only when the CI lower bound — even the
-                carrier-favorable estimate — exceeds the cutoff. Small-sample noise (e.g.
-                1-of-1 inspections) doesn&apos;t trigger.
+                Each OOS rate is compared against its cutoff using a{" "}
+                <strong>statistical floor</strong> — the 95% confidence lower bound on the
+                carrier&apos;s true rate (Wilson&apos;s score interval). A flag fires only when
+                even this carrier-favorable estimate exceeds the cutoff, so a single 1-of-1
+                inspection doesn&apos;t trigger a false positive.
               </p>
-              <p className="mt-3 text-sm font-semibold text-ink-900">Data sources</p>
+              <p className="mt-3 text-sm text-ink-700">
+                Crash rate uses raw crashes per power unit over a trailing 24-month window
+                with a minimum-fleet guard (≥ 5 power units, or any fatal/injury crash) so a
+                single incident on a one-truck fleet doesn&apos;t pin a carrier as &ldquo;top
+                1% worst.&rdquo; Any fatal crash promotes the carrier to Severe regardless of
+                rate.
+              </p>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-ink-900">Data sources</p>
               <ul className="mt-1 list-inside list-disc text-sm text-ink-700">
-                <li>FMCSA QCMobile (live carrier records)</li>
+                <li>FMCSA SMS Input (Census, Inspection, Crash, Violation) — May 2026</li>
+                <li>FMCSA Company Census File (safety rating, status)</li>
+                <li>FMCSA Carrier &amp; ActPendInsur (insurance amounts, authority)</li>
+                <li>FMCSA Revocation history &amp; closed enforcement cases</li>
                 <li>Hazmat carriers flagged for manual PHMSA verification</li>
               </ul>
               <p className="mt-3 text-xs text-ink-500">
                 FMCSA&apos;s public carrier data — QCMobile, SAFER, and the SMS Input files —
-                is the federal source of record for motor carrier safety. The same data
-                underlies this tool. Free and publicly accessible.
+                is the federal source of record for motor carrier safety. Free and publicly
+                accessible.
               </p>
             </div>
           </div>
@@ -392,10 +536,24 @@ function Pillar({ title, body }: { title: string; body: React.ReactNode }) {
   );
 }
 
-function Stat({ label, value, style }: { label: string; value: number; style: string }) {
+function Stat({
+  label,
+  value,
+  activeStyle,
+}: {
+  label: string;
+  value: number;
+  activeStyle: string;
+}) {
+  const isZero = value === 0;
+  const cls = isZero ? "bg-white text-ink-400" : activeStyle;
   return (
-    <div className={`rounded-md border border-ink-200 ${style} px-3 py-2`}>
-      <div className="text-2xl font-semibold tabular-nums">{value}</div>
+    <div className={`rounded-md border border-ink-200 ${cls} px-3 py-2`}>
+      <div
+        className={`text-2xl font-semibold tabular-nums ${isZero ? "text-ink-300" : ""}`}
+      >
+        {value}
+      </div>
       <div className="text-xs">{label}</div>
     </div>
   );

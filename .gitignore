@@ -3,6 +3,7 @@ node_modules
 out
 .env
 .env.local
+.env.local.*
 .env.*.local
 .vercel
 *.log

@@ -10,6 +10,13 @@ const riskStyles: Record<RiskLevel, string> = {
   Elevated: "bg-amber-50 text-amber-900 border-amber-200",
 };
 
+const rowTint: Record<RiskLevel, string> = {
+  Critical: "bg-red-50/80",
+  Severe: "bg-red-50/40",
+  High: "bg-orange-50/40",
+  Elevated: "bg-amber-50/30",
+};
+
 /**
  * The interactive paste form + results table. Embeddable anywhere
  * (used by both the marketing landing page and the /embed iframe route).
@@ -95,7 +102,7 @@ export function AuditWidget({ compact = false }: { compact?: boolean }) {
         <code className="rounded bg-ink-100 px-1 py-0.5 font-mono text-xs">
           DOT, LoadID, HAZMAT
         </code>
-        . Up to 100 loads.
+        . Up to 1,000 loads.
       </p>
       <textarea
         value={input}
@@ -133,10 +140,10 @@ export function AuditWidget({ compact = false }: { compact?: boolean }) {
             <strong>{result.flaggedCarriers} flagged for review</strong>
           </p>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:max-w-2xl sm:grid-cols-4">
-            <Stat label="Critical" value={result.bySeverity.Critical} style="bg-red-200 text-red-950" />
-            <Stat label="Severe" value={result.bySeverity.Severe} style="bg-red-100 text-red-900" />
-            <Stat label="High" value={result.bySeverity.High} style="bg-orange-100 text-orange-900" />
-            <Stat label="Elevated" value={result.bySeverity.Elevated} style="bg-amber-50 text-amber-900" />
+            <Stat label="Critical" value={result.bySeverity.Critical} activeStyle="bg-red-200 text-red-950" />
+            <Stat label="Severe" value={result.bySeverity.Severe} activeStyle="bg-red-100 text-red-900" />
+            <Stat label="High" value={result.bySeverity.High} activeStyle="bg-orange-100 text-orange-900" />
+            <Stat label="Elevated" value={result.bySeverity.Elevated} activeStyle="bg-amber-50 text-amber-900" />
           </div>
 
           {result.flags.length > 0 ? (
@@ -155,7 +162,10 @@ export function AuditWidget({ compact = false }: { compact?: boolean }) {
                 </thead>
                 <tbody>
                   {result.flags.map((f) => (
-                    <tr key={f.dot} className="border-t border-ink-100 align-top">
+                    <tr
+                      key={f.dot}
+                      className={`border-t border-ink-100 align-top ${rowTint[f.riskLevel]}`}
+                    >
                       <td className="px-3 py-2 text-ink-500">{f.rank}</td>
                       <td className="px-3 py-2">
                         <span
@@ -169,13 +179,21 @@ export function AuditWidget({ compact = false }: { compact?: boolean }) {
                         {f.loadIds.join(", ")}
                       </td>
                       <td className="px-3 py-2">
-                        {f.carrierName ?? <span className="text-ink-400">unknown</span>}
-                        {f.hazmatLoadIds.length > 0 && (
-                          <span className="ml-1 text-xs text-amber-700">⚠ HAZMAT</span>
-                        )}
-                        {f.hasFatalCrash && (
-                          <span className="ml-1 text-xs text-red-700">☠ fatal</span>
-                        )}
+                        <div>
+                          {f.carrierName ?? <span className="text-ink-400">unknown</span>}
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap gap-1">
+                          {f.hasFatalCrash && (
+                            <span className="inline-flex rounded-full border border-red-300 bg-red-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-red-800">
+                              Fatal crash
+                            </span>
+                          )}
+                          {f.hazmatLoadIds.length > 0 && (
+                            <span className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-800">
+                              Hazmat
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-2 font-mono text-xs text-ink-700">{f.dot}</td>
                       <td className="px-3 py-2 text-ink-700">
@@ -217,10 +235,24 @@ export function AuditWidget({ compact = false }: { compact?: boolean }) {
   );
 }
 
-function Stat({ label, value, style }: { label: string; value: number; style: string }) {
+function Stat({
+  label,
+  value,
+  activeStyle,
+}: {
+  label: string;
+  value: number;
+  activeStyle: string;
+}) {
+  const isZero = value === 0;
+  const cls = isZero ? "bg-white text-ink-400" : activeStyle;
   return (
-    <div className={`rounded-md border border-ink-200 ${style} px-3 py-2`}>
-      <div className="text-2xl font-semibold tabular-nums">{value}</div>
+    <div className={`rounded-md border border-ink-200 ${cls} px-3 py-2`}>
+      <div
+        className={`text-2xl font-semibold tabular-nums ${isZero ? "text-ink-300" : ""}`}
+      >
+        {value}
+      </div>
       <div className="text-xs">{label}</div>
     </div>
   );

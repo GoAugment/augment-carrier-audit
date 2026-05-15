@@ -1,6 +1,15 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: { typedRoutes: true },
+  experimental: {
+    typedRoutes: true,
+    // duckdb is a native binding; don't try to bundle it. (Renamed to
+    // `serverExternalPackages` in Next 15.)
+    serverComponentsExternalPackages: ["duckdb"],
+    // Ensure the parquet snapshot ships with the analyze serverless function.
+    outputFileTracingIncludes: {
+      "/api/analyze": ["./data/**/*"],
+    },
+  },
   async headers() {
     return [
       {

@@ -1,21 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseInput, analyze } from "@/lib/analyzer";
 import { fetchCarriers } from "@/lib/fmcsa";
-import { thresholds, maxLoadsPerSubmission } from "@/lib/thresholds";
+import { tierThresholds, maxLoadsPerSubmission } from "@/lib/thresholds";
 import { logEvent, hashIp } from "@/lib/log";
 
 export const runtime = "nodejs";
 export const maxDuration = 60; // Vercel Pro: 60s
 
 export async function POST(req: NextRequest) {
-  const webKey = process.env.FMCSA_WEBKEY;
-  if (!webKey) {
-    return NextResponse.json(
-      { error: "FMCSA_WEBKEY is not configured on the server." },
-      { status: 500 }
-    );
-  }
-
   let body: { input?: string };
   try {
     body = await req.json();
@@ -44,7 +36,7 @@ export async function POST(req: NextRequest) {
 
   const t0 = Date.now();
   const dots = Array.from(new Set(loads.map((l) => l.dot)));
-  const carriers = await fetchCarriers(dots, webKey);
+  const carriers = await fetchCarriers(dots);
   const t1 = Date.now();
 
   const result = analyze(loads, carriers);
@@ -66,7 +58,7 @@ export async function POST(req: NextRequest) {
     nParseErrors: errors.length,
     fmcsaCacheMissMs: t1 - t0,
     analyzeMs: t2 - t1,
-    thresholds,
+    thresholds: tierThresholds,
   });
 
   return NextResponse.json({
