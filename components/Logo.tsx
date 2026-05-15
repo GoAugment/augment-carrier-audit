@@ -1,42 +1,32 @@
 /**
- * Augment logo — green flower icon + wordmark.
- * Both SVG inline so they ship with the HTML and theme via currentColor
- * (wordmark) / explicit fills (icon).
+ * Augment logo — green flower icon + "augment" text wordmark.
+ *
+ * Wordmark is plain HTML text (not SVG) so it sits properly with the icon
+ * and inherits text styling. Matches the goaugment.com header treatment.
  */
 export function Logo({
   className = "",
-  height = 28,
+  size = 24,
 }: {
   className?: string;
-  height?: number;
+  /** Pixel height of the icon and the wordmark cap-height. */
+  size?: number;
 }) {
-  // Wordmark SVG viewBox is 71×16, but glyphs only occupy ~12.3 of the 16
-  // vertical units — the rest is em-square padding. To make the wordmark
-  // visually match the icon's height, we scale it up ~1.25× so the cap-height
-  // of "augment" ≈ the icon diameter.
-  const wordmarkRenderHeight = height * 1.25;
-  const wordmarkWidth = (wordmarkRenderHeight * 71) / 16;
   return (
     <div className={`inline-flex items-center gap-2 ${className}`}>
-      <AugmentIcon size={height} />
-      <svg
-        width={wordmarkWidth}
-        height={wordmarkRenderHeight}
-        viewBox="0 0 71 16"
-        xmlns="http://www.w3.org/2000/svg"
-        aria-hidden
+      <AugmentIcon size={size} />
+      <span
+        className="font-semibold tracking-tight text-ink-900"
+        style={{ fontSize: `${size}px`, lineHeight: 1 }}
       >
-        <path
-          d="M 66.626 9.838 L 66.626 4.082 L 65.174 4.082 L 65.174 2.7 L 66.626 2.7 L 66.626 -0.045 L 68.223 -0.045 L 68.223 2.7 L 70.358 2.7 L 70.358 4.082 L 68.223 4.082 L 68.223 9.588 C 68.223 10.576 68.708 10.755 69.533 10.755 C 69.909 10.755 70.178 10.737 70.555 10.647 L 70.555 12.029 C 70.089 12.127 69.614 12.175 69.138 12.172 C 67.542 12.172 66.626 11.634 66.626 9.84 Z M 56.251 12.082 L 56.251 2.7 L 57.865 2.7 L 57.865 3.974 C 58.496 3.052 59.546 2.506 60.662 2.52 C 62.653 2.52 63.784 3.902 63.784 5.892 L 63.784 12.082 L 62.169 12.082 L 62.169 6.323 C 62.169 5.014 61.613 4.027 60.214 4.027 C 59.047 4.027 57.864 4.924 57.864 6.485 L 57.864 12.082 L 56.249 12.082 Z M 50.312 12.279 C 47.711 12.279 45.917 10.288 45.917 7.4 C 45.917 4.601 47.693 2.52 50.241 2.52 C 52.859 2.52 54.24 4.511 54.24 7.112 L 54.24 7.651 L 47.459 7.651 C 47.549 9.624 48.679 10.88 50.312 10.88 C 51.568 10.88 52.464 10.198 52.751 9.086 L 54.168 9.587 C 53.595 11.256 52.177 12.279 50.312 12.279 Z M 50.223 3.901 C 48.859 3.901 47.837 4.816 47.549 6.413 L 52.608 6.413 C 52.572 5.085 51.855 3.902 50.223 3.902 Z M 32.551 6.467 L 32.551 12.081 L 30.937 12.081 L 30.937 2.7 L 32.551 2.7 L 32.551 3.975 C 33.14 3.052 34.166 2.502 35.26 2.521 C 36.516 2.521 37.394 3.149 37.861 4.117 C 38.382 3.346 39.385 2.521 40.856 2.521 C 42.794 2.521 43.96 3.903 43.96 5.893 L 43.96 12.083 L 42.344 12.083 L 42.344 6.323 C 42.344 5.014 41.807 4.027 40.479 4.027 C 39.402 4.027 38.255 4.942 38.255 6.467 L 38.255 12.081 L 36.64 12.081 L 36.64 6.324 C 36.64 5.015 36.102 4.028 34.775 4.028 C 33.698 4.028 32.55 4.943 32.55 6.468 Z M 28.249 11.238 C 28.249 13.984 26.439 15.508 23.891 15.508 C 21.827 15.508 20.321 14.557 19.801 12.835 L 21.308 12.261 C 21.612 13.463 22.582 14.163 23.891 14.163 C 25.541 14.163 26.635 13.32 26.635 11.364 L 26.635 10.306 C 26.134 11.22 25.075 11.866 23.765 11.866 C 21.2 11.866 19.694 9.749 19.694 7.185 C 19.694 4.637 21.2 2.52 23.765 2.52 C 25.056 2.52 26.133 3.166 26.635 4.081 L 26.635 2.7 L 28.249 2.7 L 28.249 11.239 Z M 26.653 7.041 C 26.653 4.942 25.397 3.938 24.052 3.938 C 22.348 3.938 21.308 5.211 21.308 7.185 C 21.308 9.158 22.349 10.449 24.053 10.449 C 25.397 10.449 26.653 9.445 26.653 7.382 Z M 17.622 2.7 L 17.622 12.082 L 16.008 12.082 L 16.008 10.79 C 15.469 11.579 14.555 12.279 13.227 12.279 C 11.218 12.279 10.088 10.898 10.088 8.907 L 10.088 2.699 L 11.703 2.699 L 11.703 8.566 C 11.703 9.893 12.276 10.791 13.658 10.791 C 14.824 10.791 16.008 9.911 16.008 8.35 L 16.008 2.7 Z M 3.086 12.243 C 1.38 12.243 0 11.239 0 9.552 C 0 7.687 1.453 6.915 3.552 6.485 L 5.83 6.018 L 5.83 5.624 C 5.83 4.547 5.238 3.938 3.983 3.938 C 2.798 3.938 2.099 4.493 1.812 5.534 L 0.288 5.139 C 0.736 3.615 2.117 2.52 4.037 2.52 C 6.135 2.52 7.426 3.543 7.426 5.552 L 7.426 10.126 C 7.426 10.737 7.803 10.933 8.431 10.79 L 8.431 12.082 C 6.996 12.262 6.17 11.921 5.973 11.023 C 5.4 11.759 4.359 12.243 3.086 12.243 Z M 5.83 8.889 L 5.83 7.273 L 4.001 7.667 C 2.565 7.954 1.596 8.349 1.596 9.479 C 1.596 10.394 2.261 10.933 3.283 10.933 C 4.664 10.933 5.83 10.09 5.83 8.888 Z"
-          fill="currentColor"
-        />
-      </svg>
+        augment
+      </span>
     </div>
   );
 }
 
-/** Standalone flower icon — useful for favicons, tabs, etc. */
-export function AugmentIcon({ size = 28 }: { size?: number }) {
+/** Standalone flower icon — useful for favicons, tabs, social cards, etc. */
+export function AugmentIcon({ size = 24 }: { size?: number }) {
   return (
     <svg
       width={size}
