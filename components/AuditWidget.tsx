@@ -29,7 +29,11 @@ export function AuditWidget({ compact = false }: { compact?: boolean }) {
         document.body.scrollHeight,
         el.scrollHeight
       );
+      // Namespaced message for parents that opt-in to our specific event...
       window.parent.postMessage({ type: "augment-audit:height", height: h }, "*");
+      // ...and a generic {type: "resize", height} that Framer + most generic
+      // iframe-resize parents listen for out of the box.
+      window.parent.postMessage({ type: "resize", height: h }, "*");
     };
     postHeight(); // initial
     const ro = new ResizeObserver(postHeight);
