@@ -24,10 +24,16 @@ const nextConfig = {
       {
         // Allow Framer (and anyone else) to embed /embed in an iframe.
         // The marketing landing page at / is intentionally NOT iframe-embeddable.
+        //
+        // Note: do NOT set X-Frame-Options. The spec only defines DENY,
+        // SAMEORIGIN, and ALLOW-FROM — there's no valid "allow all" value.
+        // "ALLOWALL" is non-standard; some browsers treat it as DENY and
+        // block the iframe. CSP `frame-ancestors *` is the standards-compliant
+        // way to permit embedding from anywhere, and modern browsers prefer
+        // CSP over X-Frame-Options anyway.
         source: "/embed",
         headers: [
           { key: "Content-Security-Policy", value: "frame-ancestors *" },
-          { key: "X-Frame-Options", value: "ALLOWALL" },
         ],
       },
     ];
