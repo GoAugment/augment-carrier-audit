@@ -350,14 +350,10 @@ function FullReportCta({
   }
 
   return (
-    <div className="mt-5 rounded-lg border border-augment-200 bg-augment-50 p-5">
-      <p className="text-sm font-semibold text-augment-900">
-        {hiddenCount} more {hiddenCount === 1 ? "carrier" : "carriers"} in this audit
-        — download the full report
-      </p>
-      <p className="mt-1 text-sm text-augment-900/80">
-        Get a CSV with all {totalRows} carriers, every axis score, and the methodology
-        notes — file it as your Montgomery audit trail.
+    <div className="mt-5 rounded-lg border border-ink-200 bg-[#f5f1ea] p-5">
+      <p className="text-base font-semibold text-ink-900">Download the full report</p>
+      <p className="mt-1 text-sm text-ink-700">
+        Get a comprehensive CSV with all {totalRows} carriers fully analyzed.
       </p>
       <form
         onSubmit={submit}
@@ -368,23 +364,29 @@ function FullReportCta({
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@brokerage.com"
-          className="flex-1 rounded-md border border-augment-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 focus:border-augment-500 focus:outline-none focus:ring-1 focus:ring-augment-500"
+          placeholder="Enter your work email"
+          className="flex-1 rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 focus:border-augment-500 focus:outline-none focus:ring-1 focus:ring-augment-500"
         />
         <button
           type="submit"
           disabled={loading || !email}
-          className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-md border border-ink-900 bg-white px-4 py-2 text-sm font-medium text-ink-900 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? "Preparing…" : "Download the CSV"}
         </button>
       </form>
-      {error && (
-        <p className="mt-2 text-xs text-red-700">{error}</p>
-      )}
-      <p className="mt-3 text-xs text-augment-900/70">
-        No signup, no spam. We use your email to offer the daily-tendering version
-        (Augie) — one follow-up max.
+      {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
+      <p className="mt-3 text-xs text-ink-500">
+        By continuing, you agree to our{" "}
+        <a
+          href="https://www.goaugment.com/privacy"
+          target="_blank"
+          rel="noreferrer"
+          className="underline decoration-ink-300 underline-offset-2 hover:decoration-ink-700"
+        >
+          Privacy Policy
+        </a>
+        , and to receive marketing communications from us.
       </p>
     </div>
   );
