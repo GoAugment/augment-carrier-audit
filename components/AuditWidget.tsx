@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SAMPLE_INPUT } from "@/lib/sample";
 import type { AuditResult, RiskLevel } from "@/lib/analyzer";
 
@@ -19,6 +19,34 @@ export function AuditWidget({ compact = false }: { compact?: boolean }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<(AuditResult & { parseErrors?: string[] }) | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // When embedded in an iframe, continuously post our content height to the parent
+  // so it can auto-resize the iframe. Uses ResizeObserver — fires on any DOM
+  // change including textarea growth, results appearing, error banners, etc.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.parent === window) return; // not embedded
+    const el = containerRef.current;
+    if (!el) return;
+    const postHeight = () => {
+      const h = Math.max(
+        document.documentElement.scrollHeight,
+        document.body.scrollHeight,
+        el.scrollHeight
+      );
+      window.parent.postMessage({ type: "augment-audit:height", height: h }, "*");
+    };
+    postHeight(); // initial
+    const ro = new ResizeObserver(postHeight);
+    ro.observe(el);
+    ro.observe(document.body);
+    window.addEventListener("load", postHeight);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("load", postHeight);
+    };
+  }, []);
 
   async function runAudit() {
     setLoading(true);
@@ -37,15 +65,8 @@ export function AuditWidget({ compact = false }: { compact?: boolean }) {
       setError(e instanceof Error ? e.message : "Network error.");
     } finally {
       setLoading(false);
-      // Embedded iframe: tell parent to resize after results render
-      if (typeof window !== "undefined" && window.parent !== window) {
-        requestAnimationFrame(() => {
-          window.parent.postMessage(
-            { type: "augment-audit:height", height: document.documentElement.scrollHeight },
-            "*"
-          );
-        });
-      }
+      // The ResizeObserver in the useEffect above will fire automatically once
+      // the result DOM appears, so no manual postMessage needed here.
     }
   }
 
@@ -56,7 +77,7 @@ export function AuditWidget({ compact = false }: { compact?: boolean }) {
   }
 
   return (
-    <div className={compact ? "" : "mx-auto max-w-3xl"}>
+    <div ref={containerRef} className={compact ? "" : "mx-auto max-w-3xl"}>
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-ink-900">Run an audit</h2>
         <button
