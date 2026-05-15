@@ -27,7 +27,7 @@ const tierThresholds = [
     signal: "Crashes per truck (24-mo)",
     elevated: "≥ 0.10",
     high: "≥ 0.20",
-    severe: "≥ 0.40 or any fatal",
+    severe: "≥ 0.40",
   },
 ];
 
@@ -290,9 +290,14 @@ export default function Home() {
                         </td>
                         <td className="px-3 py-2 font-mono text-xs text-ink-700">{f.dot}</td>
                         <td className="px-3 py-2 text-ink-700">
-                          <ul className="space-y-1">
+                          <ul className="space-y-1.5">
                             {f.reasons.map((r, i) => (
-                              <li key={i}>• {r}</li>
+                              <li key={i}>
+                                <strong className="font-semibold text-ink-900">
+                                  {r.label}
+                                </strong>{" "}
+                                <span>{r.detail}</span>
+                              </li>
                             ))}
                           </ul>
                         </td>
@@ -397,8 +402,8 @@ export default function Home() {
                     </td>
                     <td className="px-3 py-2 align-top">Worse than P95</td>
                     <td className="px-3 py-2 align-top">
-                      Top 5% nationally on at least one axis; or any fatal crash; or a recent
-                      involuntary revocation combined with another statistical signal.
+                      Top 5% nationally on at least one axis; or a recent involuntary
+                      revocation combined with another statistical signal.
                     </td>
                   </tr>
                   <tr className="border-t border-ink-100">
@@ -479,8 +484,9 @@ export default function Home() {
                 Crash rate uses raw crashes per power unit over a trailing 24-month window
                 with a minimum-fleet guard (≥ 5 power units, or any fatal/injury crash) so a
                 single incident on a one-truck fleet doesn&apos;t pin a carrier as &ldquo;top
-                1% worst.&rdquo; Any fatal crash promotes the carrier to Severe regardless of
-                rate.
+                1% worst.&rdquo; Fatal crashes are flagged as a badge on the row but do not
+                automatically promote the tier — the per-truck rate already reflects the
+                carrier&apos;s safety record at fleet scale.
               </p>
             </div>
             <div>

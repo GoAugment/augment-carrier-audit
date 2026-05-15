@@ -25,6 +25,15 @@ export interface LoadInput {
   isHazmat?: boolean;
 }
 
+/**
+ * A single reason line. The UI renders `label` bold and `detail` plain
+ * so each reason scans as a category-first headline rather than prose.
+ */
+export interface Reason {
+  label: string;
+  detail: string;
+}
+
 export interface CarrierFlag {
   rank: number;
   riskLevel: RiskLevel;
@@ -33,7 +42,7 @@ export interface CarrierFlag {
   loadCount: number;
   loadIds: string[];
   hazmatLoadIds: string[];
-  reasons: string[];
+  reasons: Reason[];
   hasFatalCrash: boolean;
   hasCriticalFailure: boolean;
 }
@@ -120,12 +129,15 @@ function fmtOosReason(
   lo: number,
   cuts: TierCutoffs,
   tier: Tier
-): string {
+): Reason {
   const pct = (oos / insp) * 100;
   const loPct = lo * 100;
   const cutoff =
     tier === "Severe" ? cuts.p95 : tier === "High" ? cuts.p90 : cuts.p85;
-  return `${label} ${pct.toFixed(0)}% — ${oos} of ${insp} inspections. Statistical floor ${loPct.toFixed(0)}% exceeds the ${tierBand(tier)} cutoff (${(cutoff * 100).toFixed(0)}%).`;
+  return {
+    label,
+    detail: `${pct.toFixed(0)}% — ${oos} of ${insp} inspections. Statistical floor ${loPct.toFixed(0)}% exceeds the ${tierBand(tier)} cutoff (${(cutoff * 100).toFixed(0)}%).`,
+  };
 }
 
 function fmtCrashReason(
@@ -135,36 +147,29 @@ function fmtCrashReason(
   fatal: number,
   injury: number,
   tow: number,
-  /** Tier the carrier was *placed* in. May be higher than rateTier when a fatal override applies. */
-  tier: Tier,
-  /** Tier that the raw rate alone would map to. */
-  rateTier: Tier
-): string {
+  tier: Tier
+): Reason {
   const sev: string[] = [];
   if (fatal > 0) sev.push(`${fatal} fatal`);
   if (injury > 0) sev.push(`${injury} injury`);
   if (tow > 0) sev.push(`${tow} tow`);
   const s = sev.length ? `, ${sev.join(", ")}` : "";
   const cuts = tierThresholds.crashPerTruck;
-  // Always describe the cutoff that the raw rate actually exceeded.
-  const ratedAtCutoff =
-    rateTier === "Severe"
+  const cutoff =
+    tier === "Severe"
       ? cuts.p95
-      : rateTier === "High"
+      : tier === "High"
         ? cuts.p90
-        : rateTier === "Elevated"
+        : tier === "Elevated"
           ? cuts.p85
           : null;
-  const ratePart = ratedAtCutoff
-    ? `Crashes ${cpu.toFixed(2)}/truck (above ${tierBand(rateTier)} cutoff: ${ratedAtCutoff.toFixed(2)})`
-    : `Crashes ${cpu.toFixed(2)}/truck`;
-  // If the assigned tier is Severe but the rate alone didn't reach P95, the
-  // fatal override is what pushed it there — be explicit about that.
-  const override =
-    tier === "Severe" && rateTier !== "Severe" && fatal > 0
-      ? ` · ${fatal} fatal crash → tier promoted to Severe`
-      : "";
-  return `${ratePart} — ${crashes} on ${units} trucks${s}${override}`;
+  const ratePart = cutoff
+    ? `${cpu.toFixed(2)}/truck (above ${tierBand(tier)} cutoff: ${cutoff.toFixed(2)})`
+    : `${cpu.toFixed(2)}/truck`;
+  return {
+    label: "Crashes",
+    detail: `${ratePart} — ${crashes} on ${units} trucks${s}`,
+  };
 }
 
 export function analyze(
@@ -196,7 +201,7 @@ export function analyze(
       unresolvedDots.push(dot);
       continue;
     }
-    const reasons: string[] = [];
+    const reasons: Reason[] = [];
     let tier: Tier = null;
     let hasCritical = false;
 
@@ -205,23 +210,31 @@ export function analyze(
       c.bipdInsuranceRequired === "Y" &&
       c.bipdInsuranceOnFile < c.bipdRequiredAmount
     ) {
-      reasons.push(
-        `🛑 Insurance lapsed: $${c.bipdInsuranceOnFile}k on file vs $${c.bipdRequiredAmount}k required (BIPD liability)`
-      );
+      reasons.push({
+        label: "🛑 Insurance lapsed",
+        detail: `$${c.bipdInsuranceOnFile}k on file vs $${c.bipdRequiredAmount}k required (BIPD liability)`,
+      });
       hasCritical = true;
     }
     if (c.oosDate) {
-      reasons.push(`🛑 Active out-of-service order issued ${c.oosDate}`);
+      reasons.push({
+        label: "🛑 Out-of-service order",
+        detail: `Active OOS order issued ${c.oosDate}`,
+      });
       hasCritical = true;
     }
     if (c.safetyRating && c.safetyRating.toUpperCase() === "UNSATISFACTORY") {
-      reasons.push(`🛑 FMCSA safety rating: Unsatisfactory`);
+      reasons.push({
+        label: "🛑 Safety rating",
+        detail: "FMCSA rating: Unsatisfactory",
+      });
       hasCritical = true;
     }
     if (c.allowedToOperate && c.allowedToOperate.toUpperCase() !== "Y") {
-      reasons.push(
-        `🛑 FMCSA not allowed to operate (allowedToOperate=${c.allowedToOperate})`
-      );
+      reasons.push({
+        label: "🛑 Authority",
+        detail: `FMCSA not allowed to operate (allowedToOperate=${c.allowedToOperate})`,
+      });
       hasCritical = true;
     }
 
@@ -236,10 +249,7 @@ export function analyze(
         c.fatalCrash >= 1 ||
         c.injCrash >= 1;
       if (passesGuard && c.crashTotal >= 1) {
-        const rateTier = statTier(cpu, tierThresholds.crashPerTruck);
-        // Any fatal crash on an already-flagged carrier → tier promoted to Severe
-        const crashTier: Tier =
-          c.fatalCrash > 0 && rateTier !== null ? "Severe" : rateTier;
+        const crashTier = statTier(cpu, tierThresholds.crashPerTruck);
         if (crashTier) {
           reasons.push(
             fmtCrashReason(
@@ -249,8 +259,7 @@ export function analyze(
               c.fatalCrash,
               c.injCrash,
               c.towawayCrash,
-              crashTier,
-              rateTier
+              crashTier
             )
           );
           tier = worse(tier, crashTier);
@@ -318,17 +327,19 @@ export function analyze(
       c.involuntaryRevocations >= CHRONIC_REVOCATION_THRESHOLD;
 
     if (recentRevocation) {
-      reasons.push(
-        `🚨 Recent involuntary revocation: ${c.mostRecentInvoluntaryDate} — FMCSA pulled the carrier's authority within the last 24 months.`
-      );
+      reasons.push({
+        label: "🚨 Recent revocation",
+        detail: `${c.mostRecentInvoluntaryDate} — FMCSA pulled the carrier's authority within the last 24 months.`,
+      });
       // Recent revocation alone → High. Combined with any statistical signal → Severe.
       const revTier: Tier = tier ? "Severe" : "High";
       tier = worse(tier, revTier);
     }
     if (chronicRevocation) {
-      reasons.push(
-        `⚠ Chronic revocation history: ${c.involuntaryRevocations} involuntary revocations on record (total ${c.revocationsTotal}).`
-      );
+      reasons.push({
+        label: "⚠ Chronic revocations",
+        detail: `${c.involuntaryRevocations} involuntary revocations on record (total ${c.revocationsTotal}).`,
+      });
       // Chronic bumps the current tier up one
       tier = bumpUp(tier ?? "Elevated");
     }
@@ -340,9 +351,10 @@ export function analyze(
       sinceLastEnf <= RECENT_ENFORCEMENT_WINDOW_DAYS &&
       c.enforcementCasesCount >= 1;
     if (recentEnforcement) {
-      reasons.push(
-        `⚖ Recent enforcement: ${c.enforcementCasesCount} closed case(s), $${c.enforcementTotalSettled.toLocaleString()} settled (latest ${c.enforcementRecentDate}).`
-      );
+      reasons.push({
+        label: "⚖ Recent enforcement",
+        detail: `${c.enforcementCasesCount} closed case(s), $${c.enforcementTotalSettled.toLocaleString()} settled (latest ${c.enforcementRecentDate}).`,
+      });
       if (c.enforcementTotalSettled >= ENFORCEMENT_LARGE_SETTLEMENT) {
         // Large settlement is a High on its own
         tier = worse(tier, "High");

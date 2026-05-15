@@ -197,9 +197,14 @@ export function AuditWidget({ compact = false }: { compact?: boolean }) {
                       </td>
                       <td className="px-3 py-2 font-mono text-xs text-ink-700">{f.dot}</td>
                       <td className="px-3 py-2 text-ink-700">
-                        <ul className="space-y-1">
+                        <ul className="space-y-1.5">
                           {f.reasons.map((r, i) => (
-                            <li key={i}>• {r}</li>
+                            <li key={i}>
+                              <strong className="font-semibold text-ink-900">
+                                {r.label}
+                              </strong>{" "}
+                              <span>{r.detail}</span>
+                            </li>
                           ))}
                         </ul>
                       </td>
