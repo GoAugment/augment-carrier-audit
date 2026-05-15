@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseInput, analyze } from "@/lib/analyzer";
 import { fetchCarriers } from "@/lib/fmcsa";
-import { tierThresholds, maxLoadsPerSubmission } from "@/lib/thresholds";
+import { nationalThresholds, maxLoadsPerSubmission } from "@/lib/thresholds";
 import { logEvent, hashIp } from "@/lib/log";
 
 export const runtime = "nodejs";
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     nParseErrors: errors.length,
     fmcsaCacheMissMs: t1 - t0,
     analyzeMs: t2 - t1,
-    thresholds: tierThresholds,
+    thresholds: nationalThresholds,
   });
 
   return NextResponse.json({

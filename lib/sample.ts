@@ -16,5 +16,4 @@ export const SAMPLE_INPUT = `# Sample carrier-load list. Format: DOT, optional l
 80806, L-1012                   # J.B. HUNT — clean large fleet
 264184, L-1013                  # SCHNEIDER NATIONAL — clean large fleet
 74432, L-1014                   # MARTEN TRANSPORT — clean large fleet
-241572, L-1015                  # LANDSTAR RANGER — clean large fleet
 `;

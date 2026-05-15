@@ -54,6 +54,12 @@ interface ParquetRow {
   enforcement_cases_count: number | bigint | null;
   enforcement_total_settled: number | bigint | null;
   enforcement_recent_date: string | null;
+  crash_measure: number | null;
+  peer_group: string | null;
+  crashes_per_million_miles: number | null;
+  annual_mileage: number | bigint | null;
+  unsafe_driving_violations_24mo: number | bigint | null;
+  hos_violations_24mo: number | bigint | null;
 }
 
 function asInt(v: number | bigint | null | undefined): number {
@@ -95,6 +101,12 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
     enforcementCasesCount: asInt(r.enforcement_cases_count),
     enforcementTotalSettled: asInt(r.enforcement_total_settled),
     enforcementRecentDate: r.enforcement_recent_date,
+    crashMeasure: r.crash_measure ?? 0,
+    crashesPerMillionMiles: r.crashes_per_million_miles,
+    annualMileage: asInt(r.annual_mileage),
+    peerGroup: r.peer_group ?? "unknown",
+    unsafeDrivingViolations: asInt(r.unsafe_driving_violations_24mo),
+    hosViolations: asInt(r.hos_violations_24mo),
   };
 }
 
@@ -116,7 +128,9 @@ export async function fetchCarriersFromParquet(
       crashes_24mo, fatal_crashes_24mo, injury_crashes_24mo, tow_crashes_24mo,
       bipd_insurance_required, bipd_insurance_on_file, bipd_required_amount,
       revocations_total, involuntary_revocations, most_recent_involuntary_date,
-      enforcement_cases_count, enforcement_total_settled, enforcement_recent_date
+      enforcement_cases_count, enforcement_total_settled, enforcement_recent_date,
+      crash_measure, peer_group, crashes_per_million_miles, annual_mileage,
+      unsafe_driving_violations_24mo, hos_violations_24mo
     FROM read_parquet('${PARQUET_PATH.replace(/'/g, "''")}')
     WHERE DOT_NUMBER IN (${placeholders})
   `;

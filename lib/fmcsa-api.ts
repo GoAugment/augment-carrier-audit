@@ -55,6 +55,9 @@ async function fetchOne(
     vehicleOosInsp: asInt(carrier.vehicleOosInsp),
     hazmatInsp: asInt(carrier.hazmatInsp),
     hazmatOosInsp: asInt(carrier.hazmatOosInsp),
+    // API doesn't expose BASIC violation counts directly
+    unsafeDrivingViolations: 0,
+    hosViolations: 0,
     crashTotal: asInt(carrier.crashTotal),
     fatalCrash: asInt(carrier.fatalCrash),
     injCrash: asInt(carrier.injCrash),
@@ -71,6 +74,10 @@ async function fetchOne(
     enforcementCasesCount: 0,
     enforcementTotalSettled: 0,
     enforcementRecentDate: null,
+    crashMeasure: 0,
+    crashesPerMillionMiles: null,
+    annualMileage: asInt(carrier.mcs150Mileage),
+    peerGroup: "unknown",
   };
 }
 

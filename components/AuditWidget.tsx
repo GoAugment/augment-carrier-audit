@@ -1,21 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { SAMPLE_INPUT } from "@/lib/sample";
-import type { AuditResult, RiskLevel } from "@/lib/analyzer";
-
-const riskStyles: Record<RiskLevel, string> = {
-  Critical: "bg-red-200 text-red-950 border-red-400 font-semibold",
-  Severe: "bg-red-100 text-red-900 border-red-200",
-  High: "bg-orange-100 text-orange-900 border-orange-200",
-  Elevated: "bg-amber-50 text-amber-900 border-amber-200",
-};
-
-const rowTint: Record<RiskLevel, string> = {
-  Critical: "bg-red-50/80",
-  Severe: "bg-red-50/40",
-  High: "bg-orange-50/40",
-  Elevated: "bg-amber-50/30",
-};
+import type { AuditResult } from "@/lib/analyzer";
+import { Scorecard } from "@/components/Scorecard";
 
 /**
  * The interactive paste form + results table. Embeddable anywhere
@@ -134,85 +121,36 @@ export function AuditWidget({ compact = false }: { compact?: boolean }) {
       {result && (
         <div className="mt-8">
           <h3 className="text-lg font-semibold text-ink-900">Audit result</h3>
-          <p className="mt-1 text-sm text-ink-700">
-            {result.totalLoads} load{result.totalLoads === 1 ? "" : "s"} ·{" "}
-            {result.totalCarriers} unique carrier{result.totalCarriers === 1 ? "" : "s"} ·{" "}
-            <strong>{result.flaggedCarriers} flagged for review</strong>
-          </p>
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:max-w-2xl sm:grid-cols-4">
-            <Stat label="Critical" value={result.bySeverity.Critical} activeStyle="bg-red-200 text-red-950" />
-            <Stat label="Severe" value={result.bySeverity.Severe} activeStyle="bg-red-100 text-red-900" />
-            <Stat label="High" value={result.bySeverity.High} activeStyle="bg-orange-100 text-orange-900" />
-            <Stat label="Elevated" value={result.bySeverity.Elevated} activeStyle="bg-amber-50 text-amber-900" />
+          <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm text-ink-700">
+            <span>
+              {result.totalLoads} load{result.totalLoads === 1 ? "" : "s"} ·{" "}
+              {result.totalCarriers} carrier{result.totalCarriers === 1 ? "" : "s"} ·{" "}
+              <strong>{result.flaggedCarriers} flagged</strong>
+            </span>
+            {(["Critical", "Severe", "High", "Elevated"] as const).map((tier) => {
+              const v = result.bySeverity[tier];
+              if (v === 0) return null;
+              const cls =
+                tier === "Critical"
+                  ? "bg-red-200 text-red-950 font-semibold"
+                  : tier === "Severe"
+                    ? "bg-red-100 text-red-900"
+                    : tier === "High"
+                      ? "bg-orange-100 text-orange-900"
+                      : "bg-amber-50 text-amber-900";
+              return (
+                <span
+                  key={tier}
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${cls}`}
+                >
+                  <strong className="tabular-nums">{v}</strong> {tier}
+                </span>
+              );
+            })}
           </div>
 
-          {result.flags.length > 0 ? (
-            <div className="mt-5 overflow-x-auto rounded-lg border border-ink-200 bg-white">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-ink-50 text-xs uppercase tracking-wide text-ink-600">
-                  <tr>
-                    <th className="px-3 py-2">#</th>
-                    <th className="px-3 py-2">Risk</th>
-                    <th className="px-3 py-2">Loads</th>
-                    <th className="px-3 py-2">Load IDs</th>
-                    <th className="px-3 py-2">Carrier</th>
-                    <th className="px-3 py-2">DOT</th>
-                    <th className="px-3 py-2">Why</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.flags.map((f) => (
-                    <tr
-                      key={f.dot}
-                      className={`border-t border-ink-100 align-top ${rowTint[f.riskLevel]}`}
-                    >
-                      <td className="px-3 py-2 text-ink-500">{f.rank}</td>
-                      <td className="px-3 py-2">
-                        <span
-                          className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${riskStyles[f.riskLevel]}`}
-                        >
-                          {f.riskLevel}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2">{f.loadCount}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-ink-700">
-                        {f.loadIds.join(", ")}
-                      </td>
-                      <td className="px-3 py-2">
-                        <div>
-                          {f.carrierName ?? <span className="text-ink-400">unknown</span>}
-                        </div>
-                        <div className="mt-0.5 flex flex-wrap gap-1">
-                          {f.hasFatalCrash && (
-                            <span className="inline-flex rounded-full border border-red-300 bg-red-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-red-800">
-                              Fatal crash
-                            </span>
-                          )}
-                          {f.hazmatLoadIds.length > 0 && (
-                            <span className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-800">
-                              Hazmat
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 font-mono text-xs text-ink-700">{f.dot}</td>
-                      <td className="px-3 py-2 text-ink-700">
-                        <ul className="space-y-1.5">
-                          {f.reasons.map((r, i) => (
-                            <li key={i}>
-                              <strong className="font-semibold text-ink-900">
-                                {r.label}
-                              </strong>{" "}
-                              <span>{r.detail}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {result.rows.length > 0 ? (
+            <Scorecard rows={result.rows} result={result} />
           ) : (
             <div className="mt-5 rounded-lg border border-augment-200 bg-augment-50 px-4 py-6 text-sm text-augment-900">
               <strong>No carriers flagged.</strong> All {result.totalCarriers} carriers in this

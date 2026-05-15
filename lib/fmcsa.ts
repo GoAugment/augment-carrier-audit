@@ -31,6 +31,10 @@ export interface FmcsaCarrier {
   vehicleOosInsp: number;
   hazmatInsp: number;
   hazmatOosInsp: number;
+  /** Driver inspections with any Unsafe Driving violation (24mo). */
+  unsafeDrivingViolations: number;
+  /** Driver inspections with any HOS Compliance violation (24mo). */
+  hosViolations: number;
   crashTotal: number;
   fatalCrash: number;
   injCrash: number;
@@ -46,6 +50,14 @@ export interface FmcsaCarrier {
   enforcementCasesCount: number;
   enforcementTotalSettled: number;
   enforcementRecentDate: string | null;
+  /** SMS-style Crash Indicator measure: severity × time-weighted crashes ÷ PU. */
+  crashMeasure: number;
+  /** Industry-standard crashes per million miles (raw count ÷ VMT). */
+  crashesPerMillionMiles: number | null;
+  /** Annual mileage from MCS-150 (in miles). */
+  annualMileage: number;
+  /** Fleet-size bucket string ("micro" | "small" | ... | "unknown"). */
+  peerGroup: string;
 }
 
 export async function fetchCarriers(
