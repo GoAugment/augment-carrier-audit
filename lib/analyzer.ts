@@ -241,14 +241,12 @@ export function analyze(
     if (hasCritical) tier = "Critical";
 
     // -------- Statistical axes --------
-    if (c.totalPowerUnits > 0) {
+    if (c.totalPowerUnits >= MIN_PU_FOR_CRASH) {
       const cpu = c.crashTotal / c.totalPowerUnits;
-      // Small-fleet guard: only count if PU≥5 OR fatal/injury exists
-      const passesGuard =
-        c.totalPowerUnits >= MIN_PU_FOR_CRASH ||
-        c.fatalCrash >= 1 ||
-        c.injCrash >= 1;
-      if (passesGuard && c.crashTotal >= 1) {
+      // Strict small-fleet guard: per-truck rate is statistically meaningless
+      // on fleets under 5 PU. Fatal/injury crashes still surface as row
+      // badges but don't drive the crash-rate tier on tiny fleets.
+      if (c.crashTotal >= 1) {
         const crashTier = statTier(cpu, tierThresholds.crashPerTruck);
         if (crashTier) {
           reasons.push(

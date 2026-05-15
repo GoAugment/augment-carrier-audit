@@ -481,11 +481,12 @@ export default function Home() {
                 inspection doesn&apos;t trigger a false positive.
               </p>
               <p className="mt-3 text-sm text-ink-700">
-                Crash rate uses raw crashes per power unit over a trailing 24-month window
-                with a minimum-fleet guard (≥ 5 power units, or any fatal/injury crash) so a
-                single incident on a one-truck fleet doesn&apos;t pin a carrier as &ldquo;top
-                1% worst.&rdquo; Fatal crashes are flagged as a badge on the row but do not
-                automatically promote the tier — the per-truck rate already reflects the
+                Crash rate uses raw crashes per power unit over a trailing 24-month window,
+                gated by a minimum-fleet guard of ≥ 5 power units — below that, per-truck
+                rate is too noisy to mean anything (one incident on a one-truck fleet would
+                otherwise pin a carrier as &ldquo;top 1% worst&rdquo;). Fatal crashes still
+                surface as a row badge regardless of fleet size, but they don&apos;t
+                automatically promote the tier; the per-truck rate already reflects the
                 carrier&apos;s safety record at fleet scale.
               </p>
             </div>
