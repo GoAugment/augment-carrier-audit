@@ -80,9 +80,9 @@ export default function Home() {
             Carrier Safety Audit
           </h1>
           <p className="mt-4 max-w-2xl text-lg text-ink-700">
-            Paste a list of carrier DOT numbers. We pull FMCSA safety data, compare against
-            industry safety thresholds, and produce a defensible pre-tender risk report — the
-            kind plaintiff&apos;s attorneys will subpoena in the new negligent-hiring era.
+            Paste a list of carrier DOT numbers. We pull live FMCSA safety data, compare
+            against industry-standard thresholds, and return a defensible pre-tender risk
+            report in seconds.
           </p>
         </div>
       </section>
@@ -116,12 +116,12 @@ export default function Home() {
               }
             />
             <Pillar
-              title="The exposure"
+              title="The record"
               body={
                 <>
-                  If a broker has no documented carrier vetting process, that absence is itself
-                  evidence. Every load tendered to a carrier with public red flags becomes
-                  discoverable in subsequent litigation.
+                  Every load you tender now needs a documented trail — what safety data you
+                  saw, when, and the reasoning for any override. Operationally
+                  straightforward; the gap is what creates exposure.
                 </>
               }
             />
@@ -297,9 +297,9 @@ export default function Home() {
             Augie — Augment&apos;s AI teammate for supply chain — runs this audit on every
             tendered load and sends a daily risk briefing. More importantly, Augie keeps a
             <strong className="text-white"> complete audit trail of every carrier decision</strong>{" "}
-            your team makes: what FMCSA data was reviewed, by whom, when, and the documented
-            reason for any override. The kind of discoverable record the Montgomery ruling
-            now requires.
+            your team makes: what FMCSA data was reviewed, by whom, when, and the
+            documented reason for any override. The record Montgomery now requires — kept for
+            you, automatically.
           </p>
           <p className="mt-3 max-w-2xl text-augment-100">
             Augie also handles the rest of the brokerage workflow: carrier selection,
@@ -352,8 +352,8 @@ export default function Home() {
               </ul>
               <p className="mt-3 text-xs text-ink-500">
                 FMCSA&apos;s public carrier data — QCMobile, SAFER, and the SMS Input files —
-                is the standard reference plaintiff&apos;s attorneys use in negligent-hiring
-                litigation and underlies this tool. The data is free and publicly accessible.
+                is the federal source of record for motor carrier safety. The same data
+                underlies this tool. Free and publicly accessible.
               </p>
             </div>
           </div>
