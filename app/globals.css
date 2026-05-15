@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+@layer base {
+  body {
+    @apply bg-white text-ink-900 antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  /* Subtle selection styling matching brand */
+  ::selection {
+    @apply bg-augment-200 text-augment-900;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-md bg-augment-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-augment-800 disabled:cursor-not-allowed disabled:bg-ink-300;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded-md border border-augment-700 bg-white px-4 py-2 text-sm font-semibold text-augment-700 transition-colors hover:bg-augment-50;
+  }
+}
