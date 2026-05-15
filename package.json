@@ -26,5 +26,11 @@
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
     "typescript": "^5"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "duckdb",
+      "@mapbox/node-pre-gyp"
+    ]
   }
 }
