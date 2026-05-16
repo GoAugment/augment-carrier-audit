@@ -65,6 +65,11 @@ async function fetchOne(
     bipdInsuranceRequired: (carrier.bipdInsuranceRequired as string) ?? null,
     bipdInsuranceOnFile: asInt(carrier.bipdInsuranceOnFile),
     bipdRequiredAmount: asInt(carrier.bipdRequiredAmount),
+    // API doesn't expose cargo, physical state, or DOT add date directly.
+    cargoInsuranceOnFile: 0,
+    cargoInsuranceRequired: false,
+    physicalState: null,
+    dotAddDate: null,
     mcs150Mileage: asInt(carrier.mcs150Mileage),
     // The API doesn't expose these — leave as zero/null so the analyzer's
     // revocation/enforcement rules become no-ops when running on API data.

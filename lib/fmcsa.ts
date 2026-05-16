@@ -42,7 +42,15 @@ export interface FmcsaCarrier {
   bipdInsuranceRequired: string | null;
   bipdInsuranceOnFile: number;
   bipdRequiredAmount: number;
+  /** Cargo insurance on file (in thousands of dollars). */
+  cargoInsuranceOnFile: number;
+  /** Whether FMCSA marks cargo insurance as required for this carrier. */
+  cargoInsuranceRequired: boolean;
   mcs150Mileage: number;
+  /** Physical state from FMCSA Census (2-letter abbreviation), e.g. "TX", "NJ". */
+  physicalState: string | null;
+  /** Date the USDOT number was issued (YYYY-MM-DD), parsed from FMCSA ADD_DATE. */
+  dotAddDate: string | null;
   // Parquet-only signals (zero/null when fetched via the API path).
   revocationsTotal: number;
   involuntaryRevocations: number;

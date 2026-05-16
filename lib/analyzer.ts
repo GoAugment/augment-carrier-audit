@@ -45,6 +45,16 @@ export type AxisStatus =
 
 const TIER_ORDER: RiskLevel[] = ["Critical", "Severe", "High", "Elevated"];
 const ABSOLUTE_CRASH_FLOOR = 2.0; // crashes per million miles
+
+// Industry-standard insurance + tenure floors (mirrors what Armstrong Transport
+// Group and similar broker stacks enforce). FMCSA's "required" amount can be
+// lower than the industry norm; we apply max(FMCSA-required, industry-floor).
+const BIPD_FLOOR_DEFAULT_K = 1_000;   // $1.0M
+const BIPD_FLOOR_HAZMAT_K = 5_000;    // $5.0M for hazmat loads
+const BIPD_FLOOR_NJ_K = 1_500;        // $1.5M for NJ-based carriers
+const CARGO_FLOOR_K = 100;            // $100k cargo minimum
+const MIN_AUTHORITY_AGE_DAYS = 90;    // 90-day authority tenure
+
 const RECENT_REVOCATION_WINDOW_DAYS = 730;
 const CHRONIC_REVOCATION_THRESHOLD = 3;
 const RECENT_ENFORCEMENT_WINDOW_DAYS = 730;
@@ -359,42 +369,87 @@ function classifyRevocation(c: FmcsaCarrier): {
   };
 }
 
+/**
+ * Composite Authority cell — captures three related regulatory facts in one
+ * column: status (Active/Inactive), safety rating (S/C/U), and DOT tenure
+ * (90-day chameleon-prevention rule). The cell status is the worst of the
+ * three; reasons are pushed separately so each Critical fact is documented.
+ */
 function classifyAuthority(c: FmcsaCarrier): {
   cell: AxisCell;
-  reason: Reason | null;
+  reasons: Reason[];
 } {
+  const reasons: Reason[] = [];
+  const parts: string[] = [];
+  let worst: AxisStatus = "clean";
+  const promote = (s: AxisStatus) => {
+    if (statusRank(s) > statusRank(worst)) worst = s;
+  };
+
+  // --- Status code ---
   const code = (c.statusCode ?? "").toUpperCase();
   const allowed = (c.allowedToOperate ?? "").toUpperCase();
   if (code === "A" || allowed === "Y") {
-    return {
-      cell: {
-        status: "clean",
-        display: "Active",
-        detail: `FMCSA operating authority: Active.`,
-      },
-      reason: null,
-    };
+    parts.push("Active");
+  } else if (code) {
+    parts.push(code);
+    promote("critical");
+    reasons.push({
+      label: "🛑 Authority",
+      detail: `FMCSA operating authority is not Active (status_code=${code}).`,
+    });
+  } else {
+    parts.push("—");
   }
-  if (code) {
-    return {
-      cell: {
-        status: "critical",
-        display: code,
-        detail: `FMCSA operating authority is not Active (status_code=${code}).`,
-      },
-      reason: {
-        label: "🛑 Authority",
-        detail: `FMCSA not allowed to operate (status_code=${code}).`,
-      },
-    };
+
+  // --- Safety rating (FMCSA uses single letters: S/C/U, or null = none) ---
+  const rating = (c.safetyRating ?? "").trim().toUpperCase();
+  if (rating === "U" || rating === "UNSATISFACTORY") {
+    parts.push("Unsat");
+    promote("critical");
+    reasons.push({
+      label: "🛑 Safety rating",
+      detail: "FMCSA safety rating: Unsatisfactory.",
+    });
+  } else if (rating === "C" || rating === "CONDITIONAL") {
+    parts.push("Cond");
+    promote("critical");
+    reasons.push({
+      label: "🛑 Safety rating",
+      detail: "FMCSA safety rating: Conditional (industry standard is to refuse).",
+    });
+  } else if (rating === "S" || rating === "SATISFACTORY") {
+    parts.push("Sat");
   }
+  // No rating on file → omit from display; common, not a flag
+
+  // --- DOT tenure / new entrant ---
+  const days = daysSinceAuthorityIssued(c.dotAddDate);
+  if (days != null) {
+    if (days < MIN_AUTHORITY_AGE_DAYS) {
+      parts.push(`${days}d NEW`);
+      promote("critical");
+      reasons.push({
+        label: "🛑 New authority",
+        detail: `DOT issued ${days} days ago (${c.dotAddDate}) — below the ${MIN_AUTHORITY_AGE_DAYS}-day industry tenure floor.`,
+      });
+    } else if (days < 365) {
+      parts.push(`${days}d`);
+    } else {
+      const y = days / 365;
+      parts.push(`${y >= 10 ? y.toFixed(0) : y.toFixed(1)}y`);
+    }
+  }
+
+  const display = parts.join(" · ");
+  const worstStatus: AxisStatus = worst;
+  const detail =
+    worstStatus !== "clean" && reasons.length > 0
+      ? reasons.map((r) => r.detail).join(" ")
+      : `${display}. Active authority, no rating issues, established tenure.`;
   return {
-    cell: {
-      status: "na",
-      display: "—",
-      detail: "FMCSA operating status not on file in the snapshot.",
-    },
-    reason: null,
+    cell: { status: worstStatus, display: display || "—", detail },
+    reasons,
   };
 }
 
@@ -408,13 +463,30 @@ function fmtMoney(amountInThousands: number): string {
   return `$${amountInThousands}k`;
 }
 
-function classifyInsurance(c: FmcsaCarrier): {
-  cell: AxisCell;
-  reason: Reason | null;
-} {
-  const required = c.bipdRequiredAmount;
+/**
+ * Compute the effective BIPD floor for a carrier (in $ thousands), as
+ * max(FMCSA-required, industry-norm). Industry norms come from Armstrong's
+ * published vetting standard: $1M default, $5M for hazmat, $1.5M for NJ-based.
+ */
+function effectiveBipdFloorK(c: FmcsaCarrier, hasHazmatLoad: boolean): number {
+  let floor = BIPD_FLOOR_DEFAULT_K;
+  if (hasHazmatLoad) floor = Math.max(floor, BIPD_FLOOR_HAZMAT_K);
+  if ((c.physicalState ?? "").toUpperCase() === "NJ") {
+    floor = Math.max(floor, BIPD_FLOOR_NJ_K);
+  }
+  // FMCSA-required can be higher than industry floor; respect that too.
+  return Math.max(floor, c.bipdRequiredAmount);
+}
+
+function classifyInsurance(
+  c: FmcsaCarrier,
+  hasHazmatLoad: boolean
+): { cell: AxisCell; reason: Reason | null } {
   const onFile = c.bipdInsuranceOnFile;
-  if (c.bipdInsuranceRequired !== "Y") {
+  const fmcsaRequired = c.bipdRequiredAmount;
+  // BIPD is "n/a" only when FMCSA explicitly doesn't require it AND we don't
+  // know enough to apply an industry floor (broker-only or private carrier).
+  if (c.bipdInsuranceRequired !== "Y" && fmcsaRequired === 0) {
     return {
       cell: {
         status: "na",
@@ -424,29 +496,50 @@ function classifyInsurance(c: FmcsaCarrier): {
       reason: null,
     };
   }
+  const floor = effectiveBipdFloorK(c, hasHazmatLoad);
+  // Critical: actual lapse (below FMCSA-required)
   if (onFile === 0) {
     return {
       cell: {
         status: "critical",
         display: "$0",
-        detail: `BIPD required: ${fmtMoney(required)}, on file: $0 — insurance not on record.`,
+        detail: `BIPD on file: $0. FMCSA required: ${fmtMoney(fmcsaRequired)}. Industry floor: ${fmtMoney(floor)}.`,
       },
       reason: {
         label: "🛑 Insurance lapsed",
-        detail: `Required ${fmtMoney(required)} BIPD, $0 on file.`,
+        detail: `$0 BIPD on file vs ${fmtMoney(fmcsaRequired || floor)} required.`,
       },
     };
   }
-  if (onFile < required) {
+  if (fmcsaRequired > 0 && onFile < fmcsaRequired) {
     return {
       cell: {
         status: "critical",
         display: fmtMoney(onFile),
-        detail: `BIPD insurance on file (${fmtMoney(onFile)}) is below required (${fmtMoney(required)}).`,
+        detail: `BIPD on file (${fmtMoney(onFile)}) is below FMCSA-required (${fmtMoney(fmcsaRequired)}).`,
       },
       reason: {
         label: "🛑 Insurance lapsed",
-        detail: `${fmtMoney(onFile)} on file vs ${fmtMoney(required)} required.`,
+        detail: `${fmtMoney(onFile)} on file vs ${fmtMoney(fmcsaRequired)} FMCSA-required.`,
+      },
+    };
+  }
+  // Elevated: meets FMCSA but below the higher industry floor (broker-norm).
+  if (onFile < floor) {
+    const floorReason = hasHazmatLoad
+      ? "hazmat industry floor"
+      : (c.physicalState ?? "").toUpperCase() === "NJ"
+        ? "NJ-based industry floor"
+        : "industry floor";
+    return {
+      cell: {
+        status: "elevated",
+        display: `${fmtMoney(onFile)} ↓`,
+        detail: `BIPD on file (${fmtMoney(onFile)}) meets FMCSA-required but is below the ${floorReason} (${fmtMoney(floor)}). Many large brokers won't tender below this floor.`,
+      },
+      reason: {
+        label: "⚠ Insurance below industry floor",
+        detail: `${fmtMoney(onFile)} BIPD on file vs ${fmtMoney(floor)} broker-standard ${floorReason} (carrier still meets FMCSA's ${fmtMoney(fmcsaRequired)} minimum).`,
       },
     };
   }
@@ -454,7 +547,113 @@ function classifyInsurance(c: FmcsaCarrier): {
     cell: {
       status: "clean",
       display: fmtMoney(onFile),
-      detail: `BIPD: ${fmtMoney(onFile)} on file (required ${fmtMoney(required)}).`,
+      detail: `BIPD: ${fmtMoney(onFile)} on file (floor: ${fmtMoney(floor)}).`,
+    },
+    reason: null,
+  };
+}
+
+function classifyCargoInsurance(c: FmcsaCarrier): {
+  cell: AxisCell;
+  reason: Reason | null;
+} {
+  const onFile = c.cargoInsuranceOnFile;
+  // If cargo isn't required AND nothing's on file, treat as n/a (some
+  // carriers don't haul cargo subject to FMCSA cargo-coverage rules).
+  if (!c.cargoInsuranceRequired && onFile === 0) {
+    return {
+      cell: {
+        status: "na",
+        display: "—",
+        detail: "Cargo insurance not on file (not flagged as required by FMCSA).",
+      },
+      reason: null,
+    };
+  }
+  if (onFile === 0) {
+    return {
+      cell: {
+        status: "elevated",
+        display: "$0 ↓",
+        detail: `Cargo insurance: $0 on file. Industry floor is ${fmtMoney(CARGO_FLOOR_K)} but many large carriers self-insure cargo — verify a current COI directly with the carrier before tendering.`,
+      },
+      reason: {
+        label: "⚠ Cargo insurance missing on file",
+        detail: `$0 cargo on file (industry floor ${fmtMoney(CARGO_FLOOR_K)}). Many large carriers self-insure cargo — verify via direct COI before tender.`,
+      },
+    };
+  }
+  if (onFile < CARGO_FLOOR_K) {
+    return {
+      cell: {
+        status: "elevated",
+        display: `${fmtMoney(onFile)} ↓`,
+        detail: `Cargo insurance (${fmtMoney(onFile)}) is below the ${fmtMoney(CARGO_FLOOR_K)} industry floor.`,
+      },
+      reason: {
+        label: "⚠ Cargo insurance below industry floor",
+        detail: `${fmtMoney(onFile)} cargo on file vs ${fmtMoney(CARGO_FLOOR_K)} broker-standard industry floor.`,
+      },
+    };
+  }
+  return {
+    cell: {
+      status: "clean",
+      display: fmtMoney(onFile),
+      detail: `Cargo: ${fmtMoney(onFile)} on file.`,
+    },
+    reason: null,
+  };
+}
+
+/** Compute days since DOT was issued. Null if no add date or future date. */
+function daysSinceAuthorityIssued(addDateIso: string | null): number | null {
+  if (!addDateIso) return null;
+  const d = Date.parse(addDateIso);
+  if (Number.isNaN(d)) return null;
+  const diffMs = Date.now() - d;
+  if (diffMs < 0) return null;
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
+function classifyAuthorityAge(c: FmcsaCarrier): {
+  cell: AxisCell;
+  reason: Reason | null;
+} {
+  const days = daysSinceAuthorityIssued(c.dotAddDate);
+  if (days == null) {
+    return {
+      cell: {
+        status: "na",
+        display: "—",
+        detail: "DOT issue date not on file.",
+      },
+      reason: null,
+    };
+  }
+  const years = days / 365;
+  const display =
+    years >= 1
+      ? `${years.toFixed(years >= 10 ? 0 : 1)}y`
+      : `${days}d`;
+  if (days < MIN_AUTHORITY_AGE_DAYS) {
+    return {
+      cell: {
+        status: "critical",
+        display,
+        detail: `DOT issued ${days} days ago — below the ${MIN_AUTHORITY_AGE_DAYS}-day industry tenure rule (chameleon-prevention).`,
+      },
+      reason: {
+        label: "🛑 New authority",
+        detail: `DOT issued ${days} days ago (${c.dotAddDate}) — below the ${MIN_AUTHORITY_AGE_DAYS}-day industry tenure minimum.`,
+      },
+    };
+  }
+  return {
+    cell: {
+      status: "clean",
+      display,
+      detail: `DOT issued ${c.dotAddDate} — ${days} days old (${years.toFixed(1)} years).`,
     },
     reason: null,
   };
@@ -559,13 +758,29 @@ function scoreCarrier(
   );
   const revocation = classifyRevocation(c);
   const authority = classifyAuthority(c);
-  const insurance = classifyInsurance(c);
+  const hasHazmatLoad = loadInfo.hazmatLoadIds.size > 0;
+  const bipd = classifyInsurance(c, hasHazmatLoad);
+  const cargo = classifyCargoInsurance(c);
+  // Combine BIPD + cargo into a single insurance cell so the scorecard
+  // doesn't balloon to 12 columns. Worst status wins; display shows both.
+  const insurance: { cell: AxisCell; reason: Reason | null } = (() => {
+    const status = statusRank(bipd.cell.status) >= statusRank(cargo.cell.status)
+      ? bipd.cell.status
+      : cargo.cell.status;
+    const displayParts: string[] = [];
+    if (bipd.cell.status !== "na") displayParts.push(bipd.cell.display);
+    if (cargo.cell.status !== "na") displayParts.push(cargo.cell.display);
+    const display = displayParts.length ? displayParts.join(" / ") : "—";
+    const detail = [bipd.cell.detail, cargo.cell.detail].filter(Boolean).join(" ");
+    return { cell: { status, display, detail }, reason: null };
+  })();
   const enforcement = classifyEnforcement(c);
 
   // Collect reasons (for tooltip/expand)
   const reasons: Reason[] = [];
-  if (insurance.reason) reasons.push(insurance.reason);
-  if (authority.reason) reasons.push(authority.reason);
+  if (bipd.reason) reasons.push(bipd.reason);
+  if (cargo.reason) reasons.push(cargo.reason);
+  reasons.push(...authority.reasons);
   if (crash.reason) reasons.push(crash.reason);
   if (unsafeDriving.reason) reasons.push(unsafeDriving.reason);
   if (hos.reason) reasons.push(hos.reason);
