@@ -750,27 +750,15 @@ function scoreCarrier(
   const revocation = classifyRevocation(c);
   const authority = classifyAuthority(c);
   const hasHazmatLoad = loadInfo.hazmatLoadIds.size > 0;
-  const bipd = classifyInsurance(c, hasHazmatLoad);
-  const cargo = classifyCargoInsurance(c);
-  // Combine BIPD + cargo into a single insurance cell so the scorecard
-  // doesn't balloon to 12 columns. Worst status wins; display shows both.
-  const insurance: { cell: AxisCell; reason: Reason | null } = (() => {
-    const status = statusRank(bipd.cell.status) >= statusRank(cargo.cell.status)
-      ? bipd.cell.status
-      : cargo.cell.status;
-    const displayParts: string[] = [];
-    if (bipd.cell.status !== "na") displayParts.push(bipd.cell.display);
-    if (cargo.cell.status !== "na") displayParts.push(cargo.cell.display);
-    const display = displayParts.length ? displayParts.join(" / ") : "—";
-    const detail = [bipd.cell.detail, cargo.cell.detail].filter(Boolean).join(" ");
-    return { cell: { status, display, detail }, reason: null };
-  })();
+  // BIPD only — we pulled cargo from the scorecard because FMCSA's cargo-on-
+  // file flag is too noisy (most carriers self-insure or file cargo via COI
+  // direct with the broker, not in FMCSA's bulk file).
+  const insurance = classifyInsurance(c, hasHazmatLoad);
   const enforcement = classifyEnforcement(c);
 
   // Collect reasons (for tooltip/expand)
   const reasons: Reason[] = [];
-  if (bipd.reason) reasons.push(bipd.reason);
-  if (cargo.reason) reasons.push(cargo.reason);
+  if (insurance.reason) reasons.push(insurance.reason);
   reasons.push(...authority.reasons);
   if (crash.reason) reasons.push(crash.reason);
   if (unsafeDriving.reason) reasons.push(unsafeDriving.reason);
