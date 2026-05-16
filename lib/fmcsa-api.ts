@@ -66,7 +66,7 @@ async function fetchOne(
     bipdInsuranceOnFile: asInt(carrier.bipdInsuranceOnFile),
     bipdRequiredAmount: asInt(carrier.bipdRequiredAmount),
     // API doesn't expose cargo, physical state, or DOT add date directly.
-    cargoInsuranceOnFile: 0,
+    cargoInsuranceOnFile: false,
     cargoInsuranceRequired: false,
     physicalState: null,
     dotAddDate: null,

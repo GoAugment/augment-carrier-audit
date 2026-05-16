@@ -60,10 +60,11 @@ interface ParquetRow {
   annual_mileage: number | bigint | null;
   unsafe_driving_violations_24mo: number | bigint | null;
   hos_violations_24mo: number | bigint | null;
-  cargo_insurance_on_file: number | null;
+  cargo_on_file_flag: boolean | null;
   cargo_required_flag: boolean | null;
   physical_state: string | null;
-  dot_add_date: number | bigint | null;
+  /** Parquet stores already-formatted YYYY-MM-DD string. */
+  dot_add_date: string | null;
 }
 
 function asInt(v: number | bigint | null | undefined): number {
@@ -72,14 +73,6 @@ function asInt(v: number | bigint | null | undefined): number {
   return Math.floor(v);
 }
 
-function parseFmcsaAddDate(raw: number | bigint | null): string | null {
-  if (raw == null) return null;
-  const n = typeof raw === "bigint" ? Number(raw) : raw;
-  if (!Number.isFinite(n) || n < 19000101) return null;
-  const s = String(Math.floor(n));
-  if (s.length !== 8) return null;
-  return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
-}
 
 function rowToCarrier(r: ParquetRow): FmcsaCarrier {
   const status = (r.status_code ?? "").toUpperCase();
@@ -120,10 +113,10 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
     peerGroup: r.peer_group ?? "unknown",
     unsafeDrivingViolations: asInt(r.unsafe_driving_violations_24mo),
     hosViolations: asInt(r.hos_violations_24mo),
-    cargoInsuranceOnFile: asInt(r.cargo_insurance_on_file),
+    cargoInsuranceOnFile: r.cargo_on_file_flag === true,
     cargoInsuranceRequired: r.cargo_required_flag === true,
     physicalState: r.physical_state,
-    dotAddDate: parseFmcsaAddDate(r.dot_add_date),
+    dotAddDate: r.dot_add_date,
   };
 }
 
@@ -148,7 +141,7 @@ export async function fetchCarriersFromParquet(
       enforcement_cases_count, enforcement_total_settled, enforcement_recent_date,
       crash_measure, peer_group, crashes_per_million_miles, annual_mileage,
       unsafe_driving_violations_24mo, hos_violations_24mo,
-      cargo_insurance_on_file, cargo_required_flag, physical_state, dot_add_date
+      cargo_on_file_flag, cargo_required_flag, physical_state, dot_add_date
     FROM read_parquet('${PARQUET_PATH.replace(/'/g, "''")}')
     WHERE DOT_NUMBER IN (${placeholders})
   `;

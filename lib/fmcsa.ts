@@ -42,8 +42,12 @@ export interface FmcsaCarrier {
   bipdInsuranceRequired: string | null;
   bipdInsuranceOnFile: number;
   bipdRequiredAmount: number;
-  /** Cargo insurance on file (in thousands of dollars). */
-  cargoInsuranceOnFile: number;
+  /**
+   * Cargo insurance on file (boolean — Carrier-AllWithHistory's CARGO_FILE
+   * is a Y/N flag, not an amount. Actual cargo policy amounts live in
+   * ActPendInsur but we don't currently pull them.)
+   */
+  cargoInsuranceOnFile: boolean;
   /** Whether FMCSA marks cargo insurance as required for this carrier. */
   cargoInsuranceRequired: boolean;
   mcs150Mileage: number;

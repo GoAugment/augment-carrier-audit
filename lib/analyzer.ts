@@ -557,50 +557,41 @@ function classifyCargoInsurance(c: FmcsaCarrier): {
   cell: AxisCell;
   reason: Reason | null;
 } {
-  const onFile = c.cargoInsuranceOnFile;
-  // If cargo isn't required AND nothing's on file, treat as n/a (some
-  // carriers don't haul cargo subject to FMCSA cargo-coverage rules).
-  if (!c.cargoInsuranceRequired && onFile === 0) {
+  // FMCSA's Carrier-AllWithHistory bulk file only exposes a Y/N flag for cargo
+  // (not the actual amount). So this axis can only answer "is cargo on file
+  // with FMCSA?" — useful for compliance check but not for amount-vs-floor.
+  if (!c.cargoInsuranceRequired && !c.cargoInsuranceOnFile) {
     return {
       cell: {
         status: "na",
         display: "—",
-        detail: "Cargo insurance not on file (not flagged as required by FMCSA).",
+        detail: "Cargo insurance not flagged as required for this carrier.",
       },
       reason: null,
     };
   }
-  if (onFile === 0) {
+  if (c.cargoInsuranceRequired && !c.cargoInsuranceOnFile) {
     return {
       cell: {
         status: "elevated",
-        display: "$0 ↓",
-        detail: `Cargo insurance: $0 on file. Industry floor is ${fmtMoney(CARGO_FLOOR_K)} but many large carriers self-insure cargo — verify a current COI directly with the carrier before tendering.`,
+        display: "Missing",
+        detail:
+          "FMCSA flags cargo insurance as required for this carrier, but no cargo policy is on file. Many large carriers legitimately self-insure cargo — verify a current COI directly before tendering.",
       },
       reason: {
-        label: "⚠ Cargo insurance missing on file",
-        detail: `$0 cargo on file (industry floor ${fmtMoney(CARGO_FLOOR_K)}). Many large carriers self-insure cargo — verify via direct COI before tender.`,
-      },
-    };
-  }
-  if (onFile < CARGO_FLOOR_K) {
-    return {
-      cell: {
-        status: "elevated",
-        display: `${fmtMoney(onFile)} ↓`,
-        detail: `Cargo insurance (${fmtMoney(onFile)}) is below the ${fmtMoney(CARGO_FLOOR_K)} industry floor.`,
-      },
-      reason: {
-        label: "⚠ Cargo insurance below industry floor",
-        detail: `${fmtMoney(onFile)} cargo on file vs ${fmtMoney(CARGO_FLOOR_K)} broker-standard industry floor.`,
+        label: "⚠ Cargo insurance not on file",
+        detail:
+          "FMCSA marks cargo as required but no policy on file. Many large carriers self-insure cargo — verify via direct COI before tender.",
       },
     };
   }
   return {
     cell: {
       status: "clean",
-      display: fmtMoney(onFile),
-      detail: `Cargo: ${fmtMoney(onFile)} on file.`,
+      display: "On file",
+      detail: c.cargoInsuranceRequired
+        ? "Cargo insurance is required by FMCSA and on file."
+        : "Cargo insurance is on file (not required by FMCSA).",
     },
     reason: null,
   };
