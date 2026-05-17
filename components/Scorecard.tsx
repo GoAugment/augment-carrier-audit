@@ -87,6 +87,13 @@ function Cell({ cell }: { cell: AxisCell }) {
 
 const PREVIEW_ROWS = 10;
 
+/** Skip the lead-capture gate on local dev so the full list is visible. */
+function isLocalDev(): boolean {
+  if (typeof window === "undefined") return false;
+  const h = window.location.hostname;
+  return h === "localhost" || h === "127.0.0.1" || h.endsWith(".local");
+}
+
 export function Scorecard({
   rows,
   result,
@@ -99,8 +106,8 @@ export function Scorecard({
   const allFlagged = rows.filter((r) => r.riskLevel !== "Clean");
   const allRows = showClean ? rows : allFlagged;
   const cleanCount = rows.filter((r) => r.riskLevel === "Clean").length;
-  const overLimit = allRows.length > PREVIEW_ROWS && !unlocked;
-  const visibleRows = overLimit ? allRows.slice(0, PREVIEW_ROWS) : allRows;
+  const gateActive = !isLocalDev() && allRows.length > PREVIEW_ROWS && !unlocked;
+  const visibleRows = gateActive ? allRows.slice(0, PREVIEW_ROWS) : allRows;
   const hiddenCount = allRows.length - visibleRows.length;
   return (
     <div className="mt-6">
@@ -279,7 +286,7 @@ export function Scorecard({
           </tbody>
         </table>
       </div>
-      {hiddenCount > 0 && result && (
+      {gateActive && hiddenCount > 0 && result && (
         <FullReportCta
           hiddenCount={hiddenCount}
           totalRows={allRows.length}

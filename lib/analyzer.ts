@@ -524,7 +524,11 @@ function classifyInsurance(
       },
     };
   }
-  // Elevated: meets FMCSA but below the higher industry floor (broker-norm).
+  // Info (surfaced but does NOT bump overall tier): meets FMCSA but below
+  // the higher industry floor. Flagging this as Elevated would put nearly
+  // every $750k-BIPD small carrier on the list — too noisy. Surface as
+  // context only; the broker can use the info to ask for more coverage
+  // direct from the carrier if needed.
   if (onFile < floor) {
     const floorReason = hasHazmatLoad
       ? "hazmat industry floor"
@@ -533,14 +537,11 @@ function classifyInsurance(
         : "industry floor";
     return {
       cell: {
-        status: "elevated",
+        status: "info",
         display: `${fmtMoney(onFile)} ↓`,
-        detail: `BIPD on file (${fmtMoney(onFile)}) meets FMCSA-required but is below the ${floorReason} (${fmtMoney(floor)}). Many large brokers won't tender below this floor.`,
+        detail: `BIPD on file (${fmtMoney(onFile)}) meets FMCSA-required but is below the ${floorReason} (${fmtMoney(floor)}). Many large brokers won't tender below this floor; surfaced as context.`,
       },
-      reason: {
-        label: "⚠ Insurance below industry floor",
-        detail: `${fmtMoney(onFile)} BIPD on file vs ${fmtMoney(floor)} broker-standard ${floorReason} (carrier still meets FMCSA's ${fmtMoney(fmcsaRequired)} minimum).`,
-      },
+      reason: null,
     };
   }
   return {
