@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.97.1",
+    "@sendgrid/mail": "^8.1.6",
     "duckdb": "^1.4.4",
     "next": "14.2.18",
     "react": "^18.3.1",
