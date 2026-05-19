@@ -204,6 +204,30 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
   };
 }
 
+/**
+ * Resolve a carrier's DOT from their MC number. Used by the email-check
+ * pipeline when an inbound carrier email references only "MC-133655" without
+ * a DOT — common in small-carrier outreach. Normalizes MC to digits-only so
+ * "MC-133655", "MC 133655", "MC#133655" all match the same record.
+ *
+ * Returns null when no carrier has that MC on file. Returns the first match
+ * when (rarely) multiple DOTs share an MC — usually that's an
+ * authority-transfer artifact and the most-recent active carrier is the
+ * intended match.
+ */
+export async function fetchDotByMc(mc: string): Promise<number | null> {
+  const digits = mc.replace(/\D/g, "");
+  if (!digits) return null;
+  const sql = `
+    SELECT DOT_NUMBER FROM read_parquet('${PARQUET_PATH.replace(/'/g, "''")}')
+    WHERE REGEXP_REPLACE(mc_number, '[^0-9]', '', 'g') = ?
+    LIMIT 1
+  `;
+  const rows = await runQuery<{ DOT_NUMBER: number | bigint }>(sql, [digits]);
+  if (rows.length === 0) return null;
+  return asInt(rows[0].DOT_NUMBER);
+}
+
 export async function fetchCarriersFromParquet(
   dots: number[]
 ): Promise<Map<number, FmcsaCarrier>> {

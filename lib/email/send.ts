@@ -25,6 +25,9 @@ export interface ReplyParams {
   to: string;
   subject: string;
   text: string;
+  /** HTML alternative — SendGrid sends multipart/alternative so the receiving
+   *  client picks. Omit to send plain-text only. */
+  html?: string;
   /** Optional Message-ID from the inbound email — when present, the reply
    *  threads correctly in the broker's mail client. */
   inReplyTo?: string;
@@ -46,6 +49,7 @@ export async function sendReply(p: ReplyParams): Promise<void> {
     from,
     subject: p.subject,
     text: p.text,
+    ...(p.html ? { html: p.html } : {}),
     headers,
   });
 }

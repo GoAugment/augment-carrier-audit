@@ -35,12 +35,17 @@ IMPORTANT: Do not wrap your response in markdown, code blocks, or any other form
 
 <analysis_order>
 1. Read the full email including headers
-2. Separate body content from quoted/forwarded prior messages
-3. Extract identity_claims from body + signature (what the carrier SAYS)
-4. Extract sender_metadata from headers (what the email INFRASTRUCTURE reveals)
-5. Score behavioral signals from how the email is written
-6. Pull lane details only if a specific lane is mentioned
+2. Identify the forwarded carrier's email INSIDE the body (after a "Forwarded message" / "Original Message" / "----- Forwarded by" / "Begin forwarded message" delimiter). The OUTER headers section is the broker who forwarded — IGNORE the outer From/Reply-To when extracting sender_metadata.
+3. Find the INNER forwarded header block in the body — this block has the carrier's actual From, Date, Subject, To lines. THAT is what you extract sender_metadata from.
+4. Extract identity_claims from body + signature (what the carrier SAYS)
+5. Extract sender_metadata from the INNER forwarded From/Reply-To lines in the body (NOT from the outer HEADERS section)
+6. Score behavioral signals from how the email is written
+7. Pull lane details only if a specific lane is mentioned
 </analysis_order>
+
+<critical_warning>
+The outer HEADERS section contains the BROKER who forwarded the email — that broker's From address is NOT the carrier. Extracting sender_email from outer headers will give you the broker's address and silently break downstream identity verification. ALWAYS pull sender_email from the inner forwarded header block in the body. If no forwarded block is present (rare — the email came directly to safe@augie.ai without being forwarded), only then use the outer From.
+</critical_warning>
 
 <identity_claims>
 Extract identity claims the carrier makes in the email body or signature:
@@ -52,13 +57,21 @@ Extract identity claims the carrier makes in the email body or signature:
 </identity_claims>
 
 <sender_metadata>
-Extract from email headers — these are observable facts about the sender, NOT claims:
-  - sender_email_domain: domain portion of the From: address, lowercased. ("Bob <bob@dispatch.acme.com>" → "dispatch.acme.com")
-  - sender_display_name: human-readable part of From:. ("Schneider Dispatch <foo@bar.com>" → "Schneider Dispatch")
-  - reply_to_domain: domain of Reply-To: header. Return null if Reply-To is absent OR matches From: domain.
-  - spf_pass: whether Authentication-Results headers indicate SPF passed (true/false/null if header absent)
-  - dkim_pass: same for DKIM
-  - dmarc_pass: same for DMARC
+Extract these from the INNER FORWARDED HEADER BLOCK in the body — NOT from the outer HEADERS section (which is the broker's envelope). The inner block typically looks like:
+
+  ---------- Forwarded message ---------
+  From: Carrier Dispatch <dispatch@carrier.com>
+  Date: Mon, May 18, 2026 at 10:23 AM
+  Subject: Truck available
+  To: broker@brokerage.com
+
+Pull values from those four lines (especially From and Reply-To if present):
+  - sender_email: full carrier's From: address, lowercased. ("Bob <Bob@Dispatch.Acme.com>" → "bob@dispatch.acme.com")
+  - sender_email_domain: domain portion of the carrier's From:, lowercased. ("Bob <bob@dispatch.acme.com>" → "dispatch.acme.com")
+  - sender_display_name: human-readable part of the carrier's From:. ("Schneider Dispatch <foo@bar.com>" → "Schneider Dispatch")
+  - reply_to_domain: domain of the carrier's Reply-To: header. Return null if Reply-To is absent OR matches From: domain.
+
+If the email is direct to safe@augie.ai (no forwarded block) and the outer HEADERS section IS the carrier, use those outer values. But verify there's truly no inner forwarded block first — the common case is that there IS one.
 </sender_metadata>
 
 <behavioral_signals>
@@ -77,8 +90,9 @@ Observe how the email is constructed:
 If the carrier mentions a specific lane they want to run:
   - lane.origin_city, lane.origin_state
   - lane.destination_city, lane.destination_state
-  - lane.equipment_type ("dry van", "reefer", "flatbed", "step deck", etc.)
-All null if no specific lane is mentioned.
+  - lane.equipment_type ("dry van", "reefer", "flatbed", "step deck", "tanker", etc.)
+  - lane.is_hazmat_load: true ONLY when the body or load description clearly references regulated hazardous materials. Triggers: explicit "hazmat" / "haz mat" / "placarded", mention of UN numbers (e.g. "UN 1203"), hazard class numbers ("class 3", "class 8"), specific regulated chemicals (gasoline, diesel, propane, lithium batteries, ammonium nitrate, anhydrous ammonia, sulfuric acid, etc.), or "DOT-regulated chemicals". Return false for ambiguous "chemicals" mentions (cleaning supplies, consumer goods, paint) and for non-placarded ORM-D consumer commodities.
+All null/false if no specific lane is mentioned.
 </lane_extraction>
 
 <text_extraction>
@@ -103,12 +117,10 @@ Clean message content:
     "contact_person": "..." or null
   },
   "sender_metadata": {
+    "sender_email": "...",
     "sender_email_domain": "...",
     "sender_display_name": "...",
-    "reply_to_domain": "..." or null,
-    "spf_pass": true|false|null,
-    "dkim_pass": true|false|null,
-    "dmarc_pass": true|false|null
+    "reply_to_domain": "..." or null
   },
   "behavioral_signals": {
     "is_response_to_load_posting": true|false,
@@ -121,7 +133,8 @@ Clean message content:
     "origin_state": "..." or null,
     "destination_city": "..." or null,
     "destination_state": "..." or null,
-    "equipment_type": "..." or null
+    "equipment_type": "..." or null,
+    "is_hazmat_load": true|false
   }
 }
 </output_format>

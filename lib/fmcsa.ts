@@ -173,3 +173,11 @@ export async function fetchCarriers(
   const { fetchCarriersFromParquet } = await import("./fmcsa-parquet");
   return fetchCarriersFromParquet(dots);
 }
+
+/** Resolve MC → DOT. Parquet-only — the live FMCSA API doesn't expose a
+ *  fast MC lookup, so this falls back to the snapshot regardless of
+ *  FMCSA_WEBKEY. Returns null when no carrier matches. */
+export async function fetchDotByMc(mc: string): Promise<number | null> {
+  const { fetchDotByMc: impl } = await import("./fmcsa-parquet");
+  return impl(mc);
+}

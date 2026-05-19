@@ -12,14 +12,18 @@
  *   2. Defensible. "Why did this email get marked High?" maps to specific
  *      rule hits in this file, not an opaque model decision.
  */
-import { fetchCarriers, type FmcsaCarrier } from "../fmcsa";
-import { fetchIdentity, findIdentityByPhone, type CarrierIdentity } from "../fmcsa-identity";
+import { fetchCarriers, fetchDotByMc, type FmcsaCarrier } from "../fmcsa";
+import { fetchIdentity, findIdentityByPhone, cargoLabels, type CarrierIdentity } from "../fmcsa-identity";
 import { analyze } from "../analyzer";
+import { getCutoffs, type AxisKey, type PeerGroup } from "../thresholds";
+import { lookupDomainAge } from "./whois";
+import { checkDomainAuth } from "./dns-check";
 import type {
   ExtractedEmail,
   Signal,
   SignalTier,
   Verdict,
+  VerdictCarrierSummary,
   VerdictCoverage,
   VerdictTier,
 } from "./types";
@@ -45,9 +49,20 @@ const COMPANY_NAME_MATCH_THRESHOLD = 0.6;
 
 export async function checkCarrierEmail(e: ExtractedEmail): Promise<Verdict> {
   const dotStr = e.identity_claims.dot_number;
-  const dot = dotStr ? parseInt(dotStr.replace(/\D/g, ""), 10) : NaN;
+  let dot = dotStr ? parseInt(dotStr.replace(/\D/g, ""), 10) : NaN;
 
-  // Email claims no DOT at all. Can't cross-check against FMCSA without one.
+  // Fall back to MC lookup when DOT is missing. Many small-carrier outreach
+  // emails reference only "MC-133655" without a DOT — the parquet has both,
+  // so we can resolve MC → DOT and continue with the full verdict pipeline
+  // instead of bailing to Caution.
+  if ((!Number.isFinite(dot) || dot <= 0) && e.identity_claims.mc_number) {
+    const resolved = await fetchDotByMc(e.identity_claims.mc_number);
+    if (resolved && resolved > 0) {
+      dot = resolved;
+    }
+  }
+
+  // Still no DOT after MC fallback. Can't cross-check against FMCSA.
   if (!Number.isFinite(dot) || dot <= 0) {
     return verdictNoDot(e);
   }
@@ -79,17 +94,22 @@ export async function checkCarrierEmail(e: ExtractedEmail): Promise<Verdict> {
     lane_viability_checked:
       !!e.lane.origin_state && !!e.lane.destination_state && !!identity,
     chameleon_cluster_checked: !!identity?.phone,
-    email_auth_checked: true,
+    // True whenever we have a sender domain — the DNS/WHOIS checks run on
+    // that domain. We no longer try to verify per-message SPF/DKIM/DMARC
+    // because inline forwards make those headers unreliable.
+    email_auth_checked: domainAuthApplicable(e),
+    hazmat_match_checked: !!e.lane.is_hazmat_load && !!identity,
   };
 
   const signals: Signal[] = [];
   signals.push(...evalAuditTier(carrier, dot));
   signals.push(...evalIdentityCoherence(e, carrier, identity));
   signals.push(...evalLaneViability(e, identity));
+  signals.push(...evalHazmat(e, identity, carrier));
   if (identity) {
     signals.push(...(await evalChameleonCluster(identity, dot)));
   }
-  signals.push(...evalEmailAuthenticity(e, identity));
+  signals.push(...(await evalEmailAuthenticity(e, identity)));
 
   return composeVerdict(carrier, identity, signals, coverage);
 }
@@ -191,34 +211,60 @@ function evalIdentityCoherence(
     });
   }
 
-  // --- Sender domain match ---
-  // Compare to FMCSA-registered email_domain (from identity parquet). The
-  // signal is "claim doesn't match record," NOT "free email = bad."
-  if (identity?.emailDomain) {
-    const fmcsa = identity.emailDomain.toLowerCase();
-    const sender = e.sender_metadata.sender_email_domain.toLowerCase();
-    if (fmcsa !== sender) {
-      // Free email on the sender side is suspicious when FMCSA has a
-      // business domain on file. Free-on-free is fine for small carriers.
-      const senderIsFree = FREE_EMAIL_DOMAINS.has(sender);
-      const fmcsaIsFree = FREE_EMAIL_DOMAINS.has(fmcsa);
-      if (senderIsFree && !fmcsaIsFree) {
+  // --- Sender email/domain match ---
+  // For business-domain FMCSA records we compare domains (sufficient signal).
+  // For free-email FMCSA records (gmail.com, etc.) we compare the FULL email
+  // address because "matches gmail.com" tells us nothing — every Gmail user
+  // matches. The local-part is what identifies the sender.
+  const senderEmail = e.sender_metadata.sender_email?.toLowerCase() ?? "";
+  const senderDomain = e.sender_metadata.sender_email_domain.toLowerCase();
+  if (identity?.email) {
+    const fmcsaEmail = identity.email.toLowerCase();
+    const fmcsaDomain = identity.emailDomain?.toLowerCase() ?? "";
+    const fmcsaIsFree = FREE_EMAIL_DOMAINS.has(fmcsaDomain);
+
+    if (fmcsaIsFree) {
+      // Compare full local-part@domain. Sender's full address required here
+      // — if Stage 1 didn't pull it (older payloads), fall back to a
+      // skip-coverage rather than a misleading domain-only pass.
+      if (senderEmail && senderEmail !== fmcsaEmail) {
+        signals.push({
+          category: "identity_coherence",
+          tier: "high",
+          label: "Sender email doesn't match FMCSA registration",
+          detail: `Email from ${senderEmail}, FMCSA records this carrier at ${fmcsaEmail}. Free-mail domain match alone is meaningless — the local-part differs, which is the actual identifier on shared providers.`,
+        });
+      }
+    } else if (fmcsaDomain !== senderDomain) {
+      const senderIsFree = FREE_EMAIL_DOMAINS.has(senderDomain);
+      if (senderIsFree) {
         signals.push({
           category: "identity_coherence",
           tier: "high",
           label: "Sender uses free email but FMCSA has business domain",
-          detail: `Email comes from ${sender} but FMCSA records this carrier at ${fmcsa}. Possible impersonation.`,
+          detail: `Email comes from ${senderDomain} but FMCSA records this carrier at ${fmcsaDomain}. Possible impersonation.`,
         });
       } else {
         signals.push({
           category: "identity_coherence",
           tier: "high",
           label: "Sender domain doesn't match FMCSA registration",
-          detail: `Sender at ${sender}, FMCSA registered ${fmcsa} for this DOT.`,
+          detail: `Sender at ${senderDomain}, FMCSA registered ${fmcsaDomain} for this DOT.`,
         });
       }
     }
-  } else if (FREE_EMAIL_DOMAINS.has(e.sender_metadata.sender_email_domain)) {
+  } else if (identity?.emailDomain) {
+    // FMCSA has domain only (older data?) — fall back to domain compare.
+    const fmcsa = identity.emailDomain.toLowerCase();
+    if (fmcsa !== senderDomain) {
+      signals.push({
+        category: "identity_coherence",
+        tier: "high",
+        label: "Sender domain doesn't match FMCSA registration",
+        detail: `Sender at ${senderDomain}, FMCSA registered ${fmcsa} for this DOT.`,
+      });
+    }
+  } else if (FREE_EMAIL_DOMAINS.has(senderDomain)) {
     // FMCSA has no email on file AND sender is using free email. Surface
     // as info — too common in small-carrier population to flag.
     signals.push({
@@ -314,6 +360,69 @@ function evalLaneViability(
   }
 
   return [];
+}
+
+// ============================================================================
+// Evaluator 3b: Hazmat capability
+// ============================================================================
+
+/**
+ * Did the email pitch a hazmat load, and is this carrier actually authorized
+ * to haul hazmat? FMCSA's HM_Ind flag (from Census) is the carrier's own
+ * indication that they handle hazmat. Tendering placarded hazmat to a carrier
+ * without HM_Ind is a regulatory and liability problem regardless of fraud
+ * concerns — even when the carrier is otherwise legitimate.
+ *
+ * Stage 1 extraction (is_hazmat_load) intentionally errs toward false
+ * positives — we'd rather flag "are these chemicals hazmat?" and let the
+ * broker confirm than miss an actual hazmat pitch.
+ */
+function evalHazmat(
+  e: ExtractedEmail,
+  identity: CarrierIdentity | undefined,
+  carrier: FmcsaCarrier
+): Signal[] {
+  if (!e.lane.is_hazmat_load) return [];
+
+  // No identity row → can't check. Stay silent rather than emit a misleading
+  // signal — the missing-coverage line in the verdict surfaces the gap.
+  if (!identity) return [];
+
+  if (!identity.hazmatFlag) {
+    return [
+      {
+        category: "lane_viability",
+        tier: "critical",
+        label: "Carrier not registered for hazmat",
+        detail:
+          "Email proposes a hazmat load, but FMCSA Census shows HM_Ind=N for this carrier — they have not indicated they handle hazardous materials on their MCS-150. Tendering placarded hazmat would be a regulatory and liability problem.",
+      },
+    ];
+  }
+
+  // Carrier has the flag. Check that they have any hazmat-inspection
+  // activity in the last 24mo — a flag with zero hazmat inspections suggests
+  // a stale self-report.
+  if (carrier.hazmatInsp === 0) {
+    return [
+      {
+        category: "lane_viability",
+        tier: "caution",
+        label: "Hazmat-registered carrier with no recent hazmat activity",
+        detail:
+          "Carrier's MCS-150 indicates hazmat capability (HM_Ind=Y), but FMCSA has no hazmat inspections on record for them in the last 24 months. Verify their current hazmat permit and driver endorsements before tendering.",
+      },
+    ];
+  }
+
+  return [
+    {
+      category: "lane_viability",
+      tier: "info",
+      label: "Hazmat-registered, with recent hazmat activity",
+      detail: `Carrier handles hazmat per MCS-150 (HM_Ind=Y) and has ${carrier.hazmatInsp} hazmat inspection${carrier.hazmatInsp === 1 ? "" : "s"} in the last 24 months. Confirm specific endorsements (HM placard, tanker, etc.) match the load.`,
+    },
+  ];
 }
 
 // ============================================================================
@@ -429,28 +538,17 @@ async function evalChameleonCluster(
 // Evaluator 5: Email authenticity (DNS + headers + behavior)
 // ============================================================================
 
-function evalEmailAuthenticity(
+async function evalEmailAuthenticity(
   e: ExtractedEmail,
   identity: CarrierIdentity | undefined
-): Signal[] {
+): Promise<Signal[]> {
   const signals: Signal[] = [];
   const sm = e.sender_metadata;
 
-  // --- Hard signal: SPF/DKIM/DMARC explicit fail ---
-  // Only fire on explicit FAIL (not neutral/missing — many legit small senders
-  // don't have full email auth set up).
-  const authFails: string[] = [];
-  if (sm.spf_pass === false) authFails.push("SPF");
-  if (sm.dkim_pass === false) authFails.push("DKIM");
-  if (sm.dmarc_pass === false) authFails.push("DMARC");
-  if (authFails.length > 0) {
-    signals.push({
-      category: "email_authenticity",
-      tier: "high",
-      label: `Email authentication failed: ${authFails.join(", ")}`,
-      detail: `Sending server failed ${authFails.join(", ")} verification. The email may be spoofed.`,
-    });
-  }
+  // NOTE: per-message SPF/DKIM/DMARC was removed. Inline forwards strip the
+  // original carrier's Authentication-Results; the remaining header reflects
+  // the broker's forwarding server (always passes — meaningless). Reply-To
+  // mismatch IS preserved across forwards and stays useful below.
 
   // --- Hard signal: Reply-To domain mismatch ---
   if (
@@ -493,18 +591,118 @@ function evalEmailAuthenticity(
     });
   }
 
-  // --- Soft signal: free email domain with no FMCSA business domain ---
-  // (Only fires when identity coherence didn't already cover it.)
+  // --- Positive info signal: sender identity matches FMCSA ---
+  // For business domains, surface domain match. For free-mail, surface full
+  // address match (when we have FMCSA's email on file). The mismatch cases
+  // fire under identity_coherence.
+  const senderDomainLc = sm.sender_email_domain.toLowerCase();
+  const senderEmailLc = sm.sender_email?.toLowerCase() ?? "";
   if (
-    FREE_EMAIL_DOMAINS.has(sm.sender_email_domain) &&
-    identity?.emailDomain &&
-    !FREE_EMAIL_DOMAINS.has(identity.emailDomain) &&
-    sm.sender_email_domain !== identity.emailDomain.toLowerCase()
+    identity?.email &&
+    FREE_EMAIL_DOMAINS.has(senderDomainLc) &&
+    identity.email.toLowerCase() === senderEmailLc
   ) {
-    // Already covered by identity_coherence — skip duplicate signal.
+    signals.push({
+      category: "email_authenticity",
+      tier: "info",
+      label: "Sender email matches FMCSA registration",
+      detail: `Full address ${senderEmailLc} matches the email on file with FMCSA for this DOT — strong identity signal on a free-mail domain.`,
+    });
+  } else if (
+    identity?.emailDomain &&
+    !FREE_EMAIL_DOMAINS.has(senderDomainLc) &&
+    identity.emailDomain.toLowerCase() === senderDomainLc
+  ) {
+    signals.push({
+      category: "email_authenticity",
+      tier: "info",
+      label: "Sender domain matches FMCSA registration",
+      detail: `Sender at ${sm.sender_email_domain} matches the email domain on file with FMCSA for this DOT.`,
+    });
+  }
+
+  // --- Domain-level config check + WHOIS age ---
+  // Skip free email providers (gmail/yahoo/etc. — well-established and the
+  // domain isn't owned by the sender anyway) and skip when the domain matches
+  // FMCSA's registration (the carrier's history with FMCSA is stronger
+  // evidence than these external lookups).
+  const senderDomain = sm.sender_email_domain.toLowerCase();
+  const skipDomainLookups =
+    FREE_EMAIL_DOMAINS.has(senderDomain) ||
+    identity?.emailDomain?.toLowerCase() === senderDomain;
+  if (!skipDomainLookups && senderDomain) {
+    // Run DNS + WHOIS in parallel — both are external network lookups, no
+    // dependency between them.
+    const [dnsConfig, age] = await Promise.all([
+      checkDomainAuth(senderDomain),
+      lookupDomainAge(senderDomain),
+    ]);
+
+    if (dnsConfig) {
+      if (!dnsConfig.hasMx) {
+        signals.push({
+          category: "email_authenticity",
+          tier: "high",
+          label: "Sender domain has no MX records",
+          detail: `${senderDomain} has no mail servers configured to receive email. Replies to this address will bounce — typical of parked, throwaway, or typo-squat domains.`,
+        });
+      } else if (!dnsConfig.hasSpf && !dnsConfig.hasDmarc) {
+        signals.push({
+          category: "email_authenticity",
+          tier: "caution",
+          label: "Sender domain lacks email authentication setup",
+          detail: `${senderDomain} accepts mail (MX on file) but publishes neither SPF nor DMARC. Unusual for a real business — most legitimate carriers configure at least one. Worth confirming the carrier's identity through another channel.`,
+        });
+      } else {
+        // Positive info signal: domain is properly set up. NOT the same as
+        // "this email passed auth" — we can't claim that from forwarded mail.
+        const parts: string[] = [];
+        if (dnsConfig.hasSpf) parts.push("SPF");
+        if (dnsConfig.hasDmarc) parts.push("DMARC");
+        signals.push({
+          category: "email_authenticity",
+          tier: "info",
+          label: "Sender domain configured for authenticated email",
+          detail: `${senderDomain} publishes ${parts.join(" + ")} on DNS and accepts inbound mail (MX configured). This doesn't prove this specific email is authentic (inline forwards strip auth headers), but the domain itself is set up like a real business.`,
+        });
+      }
+    }
+
+    if (age) {
+      if (age.ageDays < 90) {
+        signals.push({
+          category: "email_authenticity",
+          tier: "high",
+          label: `Sender domain registered ${age.ageDays} days ago`,
+          detail: `${senderDomain} was registered on ${age.registeredAt.toISOString().slice(0, 10)} — less than 90 days old. Brand-new domains are unusual for legitimate carriers and a common fraud pattern.`,
+        });
+      } else if (age.ageDays < 365) {
+        signals.push({
+          category: "email_authenticity",
+          tier: "caution",
+          label: `Sender domain less than a year old`,
+          detail: `${senderDomain} was registered on ${age.registeredAt.toISOString().slice(0, 10)} (${age.ageDays} days ago). Worth verifying — most established carriers have older domains.`,
+        });
+      } else {
+        signals.push({
+          category: "email_authenticity",
+          tier: "info",
+          label: `Sender domain age: ${Math.floor(age.ageDays / 365)}+ years`,
+          detail: `${senderDomain} was registered on ${age.registeredAt.toISOString().slice(0, 10)}, ${Math.floor(age.ageDays / 365)} years ago.`,
+        });
+      }
+    }
   }
 
   return signals;
+}
+
+/** True when at least one of the email-authenticity domain checks could be
+ *  evaluated for this email — i.e. the email had a sender domain we could
+ *  look up. Free-mail domains count as "checked" too (their setup is known
+ *  good by definition). */
+function domainAuthApplicable(e: ExtractedEmail): boolean {
+  return !!e.sender_metadata.sender_email_domain;
 }
 
 // ============================================================================
@@ -555,24 +753,38 @@ function composeVerdict(
     .filter((s) => s.tier !== "info")
     .sort((a, b) => tierRank(b.tier) - tierRank(a.tier))[0];
 
+  // Re-run analyze() once — used both to surface concrete reasons in the
+  // summary AND to populate the audit summary block at the bottom.
+  const dot = carrier.dotNumber as number;
+  const audit = analyze(
+    [{ dot, loadId: "email-check" }],
+    new Map([[dot, carrier]])
+  ).rows[0];
+
+  // The reply's headline already conveys the tier + recommended action.
+  // The summary should explain WHY — surface the concrete reasons, not a
+  // generic "Carrier in Severe tier" which just restates a tier label.
   let summary: string;
   if (dominantSignal) {
-    summary = `${tier} risk — ${dominantSignal.label.toLowerCase()}.`;
+    if (dominantSignal.category === "audit_tier" && audit?.reasons?.length) {
+      summary = audit.reasons.map((r) => phraseReason(r.label)).join(" · ") + ".";
+    } else {
+      summary = `${dominantSignal.label}.`;
+    }
   } else if (richChecksCount <= 1) {
     // Clean verdict from a sparse email — be honest about why.
     summary =
       "Carrier audit is clean and email headers look legitimate, but the email itself didn't include enough info (no lane, no claimed phone or company name) to fully verify identity. Treat as the equivalent of running the website audit.";
   } else {
     summary =
-      "Looks legitimate — sender identity matches FMCSA records and carrier audit is clean.";
+      "Sender identity matches FMCSA records and carrier audit is clean.";
   }
 
-  // Re-run analyze() to populate the audit summary block on the verdict.
-  const dot = carrier.dotNumber as number;
-  const audit = analyze(
-    [{ dot, loadId: "email-check" }],
-    new Map([[dot, carrier]])
-  ).rows[0];
+  const physicalLocation =
+    identity?.phyCity && identity?.phyState
+      ? `${titleCase(identity.phyCity)}, ${identity.phyState}`
+      : null;
+  const cargoCaps = identity ? cargoLabels(identity.cargo).slice(0, 3) : [];
 
   return {
     tier,
@@ -585,12 +797,183 @@ function composeVerdict(
       audit: {
         tier: audit?.riskLevel ?? "Unknown",
         reasonLabels: audit?.reasons.map((r) => r.label) ?? [],
+        reasons: audit?.reasons.map((r) => ({ label: r.label, detail: r.detail })) ?? [],
       },
+      physicalState: identity?.phyState ?? carrier.physicalState ?? null,
+      physicalLocation,
+      powerUnits: carrier.totalPowerUnits || null,
+      drivers: carrier.totalDrivers || null,
+      dotIssued: carrier.dotAddDate?.slice(0, 4) ?? null,
+      mostRecentRevocationDate: carrier.mostRecentInvoluntaryDate ?? null,
+      allowedToOperate: carrier.allowedToOperate ?? null,
+      operatingArea: identity?.operatingArea ?? null,
+      cargoCapabilities: cargoCaps,
+      fmcsaEmailDomain: identity?.emailDomain ?? null,
+      fmcsaEmail: identity?.email ?? null,
+      bipdInsurer: carrier.bipdInsurerName ?? null,
+      bipdAmount: carrier.bipdInsuranceOnFile || null,
+      cargoInsurer: carrier.cargoInsurerName ?? null,
+      cargoInsuranceOnFile: carrier.cargoInsuranceOnFile,
+      inspections24mo: carrier.driverInsp + carrier.vehicleInsp,
+      crashes24mo: carrier.crashTotal,
+      safetyRating: isSafetyRatingFresh(carrier.safetyRatingDate)
+        ? carrier.safetyRating
+        : null,
+      safetyRatingDate: isSafetyRatingFresh(carrier.safetyRatingDate)
+        ? carrier.safetyRatingDate
+        : null,
+      companyOfficer: identity?.companyOfficer ?? null,
+      driverInspections: [carrier.driverInsp, carrier.driverOosInsp],
+      vehicleInspections: [carrier.vehicleInsp, carrier.vehicleOosInsp],
+      hazmatInspections: [carrier.hazmatInsp, carrier.hazmatOosInsp],
+      crashBreakdown: [carrier.fatalCrash, carrier.injCrash, carrier.towawayCrash],
+      insuranceCancellations24mo: carrier.insuranceCancellations24mo,
+      insuranceCancellationDate: carrier.mostRecentCancelDate ?? null,
+      crashesPerMillionMiles: carrier.crashesPerMillionMiles ?? null,
+      crashMeasure: carrier.crashMeasure && carrier.crashMeasure > 0 ? carrier.crashMeasure : null,
+      crashMeasureBand: labelCrashMeasure(carrier.crashMeasure),
+      basicAlerts: collectBasicAlerts(carrier),
+      auditAxes: audit
+        ? (() => {
+            const peer = audit.peerGroup as PeerGroup;
+            // Observed values for each axis match the analyzer's input scale.
+            // OOS axes are stored as 0-1 in the analyzer but displayed as %,
+            // so we multiply by 100 to match the cutoffs' percent scale.
+            const driverOosObs = carrier.driverInsp > 0 ? (carrier.driverOosInsp / carrier.driverInsp) * 100 : null;
+            const vehicleOosObs = carrier.vehicleInsp > 0 ? (carrier.vehicleOosInsp / carrier.vehicleInsp) * 100 : null;
+            const hazmatOosObs = carrier.hazmatInsp > 0 ? (carrier.hazmatOosInsp / carrier.hazmatInsp) * 100 : null;
+            return {
+              crash: pickAxis(audit.axes.crash, "crashesPerMillionMiles", peer, carrier.crashesPerMillionMiles ?? null),
+              unsafeDriving: pickAxis(audit.axes.unsafeDriving, "unsafeDriving", peer, carrier.unsafeDrivingMeasure ?? null),
+              hos: pickAxis(audit.axes.hos, "hos", peer, carrier.hosMeasure ?? null),
+              driverOos: pickAxis(audit.axes.driverOos, "driverOos", peer, driverOosObs),
+              vehicleOos: pickAxis(audit.axes.vehicleOos, "vehicleOos", peer, vehicleOosObs),
+              hazmatOos: pickAxis(audit.axes.hazmatOos, "hazmatOos", peer, hazmatOosObs),
+            };
+          })()
+        : {
+            crash: null, unsafeDriving: null, hos: null,
+            driverOos: null, vehicleOos: null, hazmatOos: null,
+          },
+      peerGroupLabel: audit?.peerGroupLabel ?? "",
     },
     signals,
     coverage,
     generatedAt: new Date().toISOString(),
   };
+}
+
+/** Scale factor to convert analyzer-internal cutoff units into the units the
+ *  email renderer expects (matching `observed`). OOS rates live as decimals
+ *  (0.003 = 0.3%) in national_thresholds.json but the email shows percents,
+ *  so we scale them by 100. Crash rate and FMCSA SMS measures already share
+ *  units with the observed values, so scale = 1. */
+const AXIS_SCALE_FOR_DISPLAY: Record<AxisKey, number> = {
+  driverOos: 100,
+  vehicleOos: 100,
+  hazmatOos: 100,
+  crashesPerMillionMiles: 1,
+  crashMeasure: 1,
+  unsafeDriving: 1,
+  hos: 1,
+};
+
+/** Strip the analyzer's AxisCell down to plain JSON + attach the peer-group
+ *  percentile cutoffs so the email renderer can draw bars with markers at
+ *  P85/P90/P95 positions. Cutoffs are normalized to match `observed`'s
+ *  display unit so the renderer can compare them directly. */
+function pickAxis(
+  cell: { status: string; display: string; detail?: string },
+  axisKey: AxisKey | null,
+  peer: PeerGroup,
+  observed: number | null
+): VerdictCarrierSummary["auditAxes"]["crash"] {
+  if (!cell || cell.status === "na" || cell.display === "—") return null;
+  let cutoffs = axisKey ? getCutoffs(axisKey, peer) : null;
+  if (cutoffs && axisKey) {
+    const scale = AXIS_SCALE_FOR_DISPLAY[axisKey];
+    cutoffs = {
+      p85: cutoffs.p85 * scale,
+      p90: cutoffs.p90 * scale,
+      p95: cutoffs.p95 * scale,
+    };
+  }
+  return {
+    status: cell.status,
+    display: cell.display,
+    detail: cell.detail ?? null,
+    cutoffs,
+    observed,
+  };
+}
+
+/** National percentile cutoffs for FMCSA's Crash Indicator (CSI), computed
+ *  from the May 2026 parquet population (~112k carriers with non-zero CSI).
+ *  Used to label a carrier's raw CSI value as "top 5% nationally" etc.,
+ *  matching the framing the analyzer already uses for SMS BASIC measures. */
+const CRASH_MEASURE_CUTOFFS = { p85: 3.0, p95: 6.0, p99: 9.0 } as const;
+
+function labelCrashMeasure(measure: number | null | undefined): string | null {
+  if (measure == null || measure <= 0) return null;
+  const c = CRASH_MEASURE_CUTOFFS;
+  if (measure >= c.p99) return "≥P99 — top 1% nationally";
+  if (measure >= c.p95) return "≈P95 — top 5%";
+  if (measure >= c.p85) return "≈P85 — top 15%";
+  return "below P85";
+}
+
+/** FMCSA's BASIC "alert" flags are Y when a carrier is over the intervention
+ *  threshold on that SMS dimension. These are the most actionable single
+ *  safety signal — FMCSA itself uses them to prioritize compliance review.
+ *  We only surface fired alerts; "all 5 cleared" is the silent default. */
+function collectBasicAlerts(
+  c: import("../fmcsa").FmcsaCarrier
+): VerdictCarrierSummary["basicAlerts"] {
+  const out: VerdictCarrierSummary["basicAlerts"] = [];
+  if (c.unsafeDrivingAlert === "Y") out.push("Unsafe Driving");
+  if (c.hosAlert === "Y") out.push("HOS Compliance");
+  if (c.driverFitnessAlert === "Y") out.push("Driver Fitness");
+  if (c.controlledSubstancesAlert === "Y") out.push("Controlled Substances");
+  if (c.vehicleMaintenanceAlert === "Y") out.push("Vehicle Maintenance");
+  return out;
+}
+
+/** The analyzer emits terse table-cell labels for reasons (e.g. "Crashes",
+ *  "Driver OOS", "Vehicle OOS") that work in a scorecard column but read
+ *  awkwardly as a standalone summary sentence. This map expands those into
+ *  natural prose phrases. Labels not in the map pass through after stripping
+ *  any leading glyph (e.g. "🛑 Severe insurance churn" → "Severe insurance
+ *  churn"), which is the case for the already-descriptive labels. */
+const REASON_PHRASING: Record<string, string> = {
+  Crashes: "Crash rate above peer P95 cutoff",
+  "Driver OOS": "Driver-OOS rate above peer P95 cutoff",
+  "Vehicle OOS": "Vehicle-OOS rate above peer P95 cutoff",
+  "Hazmat OOS": "Hazmat-OOS rate above peer P95 cutoff",
+  "Unsafe Driving": "Unsafe Driving BASIC above peer P95 cutoff",
+  HOS: "HOS Compliance BASIC above peer P95 cutoff",
+};
+
+function phraseReason(label: string): string {
+  const stripped = label.replace(/^[^\w]+\s*/, "");
+  return REASON_PHRASING[stripped] ?? stripped;
+}
+
+/** A safety rating older than 5 years is misleading as a positive signal —
+ *  the carrier may have changed entirely. Suppress old ratings to avoid
+ *  giving brokers false confidence. */
+function isSafetyRatingFresh(rated: string | null): boolean {
+  if (!rated) return false;
+  const t = Date.parse(rated);
+  if (Number.isNaN(t)) return false;
+  return Date.now() - t < 5 * 365 * 86400000;
+}
+
+function titleCase(s: string): string {
+  return s
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => (w.length === 0 ? w : w[0].toUpperCase() + w.slice(1)))
+    .join(" ");
 }
 
 // ============================================================================
@@ -607,6 +990,7 @@ const ZERO_COVERAGE: VerdictCoverage = {
   lane_viability_checked: false,
   chameleon_cluster_checked: false,
   email_auth_checked: false,
+  hazmat_match_checked: false,
 };
 
 function verdictNoDot(e: ExtractedEmail): Verdict {

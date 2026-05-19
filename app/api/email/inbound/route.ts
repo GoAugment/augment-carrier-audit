@@ -112,6 +112,7 @@ export async function POST(req: NextRequest) {
       to: brokerEmail,
       subject: reply.subject,
       text: reply.text,
+      html: reply.html,
       inReplyTo: inboundMessageId,
     });
   } catch (err) {

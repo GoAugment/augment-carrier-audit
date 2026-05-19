@@ -100,9 +100,11 @@ export interface CarrierIdentity {
   phyZip: string | null;
   // Contact
   phone: string | null;
-  /** Email domain only (e.g. "gmail.com", "carriername.com"). Full address
-   *  is dropped from the parquet to fit GitHub's 100MB blob limit; brokers
-   *  who need the full address can look it up on FMCSA SAFER. */
+  /** Full email address (lowercased), or null when FMCSA didn't have one
+   *  on file. ~1.58M of 2.08M carriers have it. */
+  email: string | null;
+  /** Email domain only (e.g. "gmail.com", "carriername.com"). Useful for
+   *  cheap chameleon-clustering by domain. */
   emailDomain: string | null;
   // Corporate identity
   companyOfficer: string | null;     // primary officer (officer_1 in source)
@@ -123,6 +125,11 @@ export interface CarrierIdentity {
    *  Null means the carrier isn't currently in the process. */
   mcsipStep: string | null;
   mcsipDate: string | null;
+  /** Census HM_Ind = 'Y'. Indicates the carrier carries hazmat materials per
+   *  their MCS-150 self-report. Carriers without this flag should not be
+   *  tendered placarded hazmat freight; doing so would put the broker on the
+   *  hook if anything goes wrong. */
+  hazmatFlag: boolean;
 }
 
 interface ParquetRow {
@@ -132,7 +139,9 @@ interface ParquetRow {
   phy_state: string | null;
   phy_zip: string | null;
   phone: string | null;
+  email_address: string | null;
   email_domain: string | null;
+  hazmat_flag: boolean | null;
   company_officer_1: string | null;
   dun_bradstreet_no: string | null;
   interstate_beyond_100mi: boolean | null;
@@ -196,6 +205,7 @@ function rowToIdentity(r: ParquetRow): CarrierIdentity {
     phyState: r.phy_state,
     phyZip: r.phy_zip,
     phone: r.phone,
+    email: r.email_address,
     emailDomain: r.email_domain,
     companyOfficer: r.company_officer_1,
     dunBradstreetNo: r.dun_bradstreet_no,
@@ -247,6 +257,7 @@ function rowToIdentity(r: ParquetRow): CarrierIdentity {
     },
     mcsipStep: r.mcsip_step,
     mcsipDate: r.mcsip_date,
+    hazmatFlag: r.hazmat_flag === true,
   };
 }
 
