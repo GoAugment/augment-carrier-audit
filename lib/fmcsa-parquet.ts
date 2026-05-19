@@ -4,18 +4,23 @@
  * Revocations, Enforcement) refreshed monthly.
  */
 import path from "node:path";
-import duckdb from "duckdb";
+import type { Database } from "duckdb";
 
 import type { FmcsaCarrier } from "./fmcsa";
 
 const PARQUET_PATH = path.join(process.cwd(), "data", "carrier_aggregates.parquet");
 
-let _db: duckdb.Database | null = null;
+// Lazy-load duckdb so Next.js doesn't try to bind the native binary during
+// the build container's static-page-data collection (Vercel's build image
+// is missing GLIBCXX_3.4.30 that duckdb 1.4 requires).
+let _db: Database | null = null;
 
-function db(): duckdb.Database {
+function db(): Database {
   if (_db) return _db;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const duckdb = require("duckdb");
   _db = new duckdb.Database(":memory:");
-  return _db;
+  return _db!;
 }
 
 function runQuery<T>(sql: string, params: unknown[]): Promise<T[]> {

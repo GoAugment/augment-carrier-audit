@@ -13,15 +13,18 @@
  * (see build_identity()). Refreshed monthly alongside the main parquet.
  */
 import path from "node:path";
-import duckdb from "duckdb";
+import type { Database } from "duckdb";
 
 const PARQUET_PATH = path.join(process.cwd(), "data", "carrier_identity.parquet");
 
-let _db: duckdb.Database | null = null;
-function db(): duckdb.Database {
+// Lazy-load duckdb — see fmcsa-parquet.ts for the Vercel-build rationale.
+let _db: Database | null = null;
+function db(): Database {
   if (_db) return _db;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const duckdb = require("duckdb");
   _db = new duckdb.Database(":memory:");
-  return _db;
+  return _db!;
 }
 
 function runQuery<T>(sql: string, params: unknown[]): Promise<T[]> {

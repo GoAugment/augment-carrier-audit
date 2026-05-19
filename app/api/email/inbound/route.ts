@@ -32,6 +32,11 @@ import { logEvent } from "@/lib/log";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+// Prevent Next.js from trying to statically pre-render this route at build
+// time. duckdb's native binary requires libstdc++ ≥12 (GLIBCXX_3.4.30) which
+// isn't available in Vercel's build container — only in the function
+// runtime. Forcing dynamic skips the build-time load attempt.
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   const t0 = Date.now();

@@ -6,6 +6,9 @@ import { logEvent, hashIp } from "@/lib/log";
 
 export const runtime = "nodejs";
 export const maxDuration = 60; // Vercel Pro: 60s
+// Force-dynamic so Next.js doesn't try to load duckdb (native libstdc++
+// binary) during the build container's static-page-data step.
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   let body: { input?: string };
