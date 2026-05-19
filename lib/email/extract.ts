@@ -2,31 +2,33 @@
  * Stage 1 LLM extraction — turn a raw forwarded email into structured
  * identity / authenticity / lane data for the deterministic verdict.
  *
- * Uses claude-haiku-4-5 because:
- *   - Fast (~3-8s p95 for typical email length)
- *   - Cheap (~$0.001/email at typical sizes)
- *   - JSON-mode reliable for this kind of structured extraction
+ * Uses gemini-3.5-flash via Google AI Studio API key (GEMINI_KEY env var).
+ * Picked Gemini Flash for:
+ *   - Speed (~2-5s p95 for typical email length)
+ *   - Cost (~$0.0002/email at typical sizes — ~5× cheaper than Claude Haiku)
+ *   - Native JSON-mode output — model refuses to emit non-JSON, removing
+ *     the markdown-wrapping failure case
  *
  * The model receives the entire forwarded email payload — text body plus
- * the raw headers section — so it can disambiguate the original carrier
- * (in the forwarded section) from the broker who did the forwarding (the
- * outer envelope). The Stage 1 prompt explicitly tells the model to treat
- * the inner forwarded message as the subject of analysis.
+ * raw headers — so it can disambiguate the original carrier (in the
+ * forwarded section) from the broker who did the forwarding. The Stage 1
+ * prompt explicitly tells the model to treat the inner forwarded message
+ * as the subject of analysis.
  */
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 import { STAGE1_SYSTEM_PROMPT } from "./stage1-prompt";
 import type { ExtractedEmail } from "./types";
 
-const MODEL = "claude-haiku-4-5-20251001";
+const MODEL = "gemini-3.5-flash";
 
-let _client: Anthropic | null = null;
-function client(): Anthropic {
+let _client: GoogleGenAI | null = null;
+function client(): GoogleGenAI {
   if (_client) return _client;
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_KEY;
   if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY env var not set");
+    throw new Error("GEMINI_KEY env var not set");
   }
-  _client = new Anthropic({ apiKey });
+  _client = new GoogleGenAI({ apiKey });
   return _client;
 }
 
@@ -35,8 +37,8 @@ export interface RawEmail {
    *  "From: ... To: ... Subject: ..." headers from the original carrier
    *  email after a "---------- Forwarded message ----------" delimiter). */
   bodyText: string;
-  /** HTML body, if the broker's mail client sent one. The prompt uses
-   *  whichever is non-empty; HTML is stripped of tags before LLM input. */
+  /** HTML body, if the broker's mail client sent one. Used when bodyText
+   *  is empty; HTML is stripped of tags before LLM input. */
   bodyHtml?: string;
   /** Raw `Headers:` section from SendGrid's Inbound Parse payload. Stage 1
    *  reads Authentication-Results, Reply-To, etc. here. */
@@ -55,28 +57,38 @@ export interface RawEmail {
 export async function extractEmail(raw: RawEmail): Promise<ExtractedEmail> {
   const userMessage = buildUserMessage(raw);
 
-  const response = await client().messages.create({
+  const response = await client().models.generateContent({
     model: MODEL,
-    max_tokens: 2000,
-    system: STAGE1_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userMessage }],
+    contents: [{ role: "user", parts: [{ text: userMessage }] }],
+    config: {
+      systemInstruction: STAGE1_SYSTEM_PROMPT,
+      // Native JSON mode — model is constrained to emit valid JSON. The
+      // Stage 1 prompt already documents the expected shape inline, so we
+      // don't (yet) pass a strict responseSchema. If we ever see schema
+      // drift in production, add `responseSchema` referencing the
+      // ExtractedEmail structure to lock it down.
+      responseMimeType: "application/json",
+      temperature: 0,
+      // Bumped from 2000 — extracted_text can be long when the carrier
+      // forwarded a verbose email; plus the JSON envelope adds overhead.
+      // At ~250 tokens for a typical email body and 30-ish fields in
+      // ExtractedEmail, 8000 gives us comfortable headroom.
+      maxOutputTokens: 8000,
+    },
   });
 
-  const block = response.content[0];
-  if (block.type !== "text") {
-    throw new Error(`Unexpected content type from LLM: ${block.type}`);
+  const text = response.text?.trim() ?? "";
+  if (!text) {
+    throw new Error("Gemini returned empty response");
   }
-  const text = block.text.trim();
-
-  // The prompt says "no markdown wrapping" but be defensive — strip code
-  // fences if the model included them despite instructions.
-  const json = text.replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "");
 
   try {
-    return JSON.parse(json) as ExtractedEmail;
+    return JSON.parse(text) as ExtractedEmail;
   } catch (err) {
+    // Include the FULL text in the error so we can see what's happening.
+    // Truncating to 200 chars hid the actual parse-failure location.
     throw new Error(
-      `Stage 1 LLM returned non-JSON output. First 200 chars: ${text.slice(0, 200)}`
+      `Stage 1 LLM returned non-JSON output. Parse error: ${err instanceof Error ? err.message : String(err)}. Response (${text.length} chars): ${text}`
     );
   }
 }
@@ -97,8 +109,8 @@ ${raw.rawHeaders}
 ${body}`;
 }
 
-/** Minimal HTML → text conversion. Strips tags and decodes a few common
- *  entities. Doesn't need to be perfect — Claude can read messy text. */
+/** Minimal HTML → text conversion. Strips tags and decodes common
+ *  entities. Doesn't need to be perfect — the LLM can read messy text. */
 function htmlToText(html: string): string {
   return html
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
