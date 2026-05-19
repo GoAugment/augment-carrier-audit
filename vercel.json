@@ -2,7 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "app/api/analyze/route.ts": {
-      "includeFiles": "{data/**,node_modules/duckdb/**,node_modules/@mapbox/node-pre-gyp/**}"
+      "//": "duckdb/lib only — skips the 67MB of C++ source under duckdb/src/ that isn't needed at runtime (the prebuilt binary lives in duckdb/lib/binding/duckdb.node). Including duckdb/** previously pushed us over Vercel's 250MB unzipped function limit.",
+      "includeFiles": "{data/carrier_aggregates.parquet,data/national_thresholds.json,node_modules/duckdb/lib/**,node_modules/duckdb/package.json,node_modules/@mapbox/node-pre-gyp/**}"
     }
   }
 }
