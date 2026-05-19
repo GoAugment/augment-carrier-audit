@@ -50,11 +50,22 @@ export async function POST(req: NextRequest) {
   const brokerEmail = pickFirstAddress(
     (formData.get("from") as string) ?? ""
   );
+  const toField = (formData.get("to") as string) ?? "";
   const subject = (formData.get("subject") as string) ?? "(no subject)";
   const bodyText = (formData.get("text") as string) ?? "";
   const bodyHtml = (formData.get("html") as string) ?? "";
   const rawHeaders = (formData.get("headers") as string) ?? "";
   const inboundMessageId = extractMessageId(rawHeaders);
+
+  // Recipient filter: only process mail addressed to safe@*. We MX'd the
+  // augie.ai apex to SendGrid Inbound Parse, which means ALL @augie.ai mail
+  // arrives here — including marketing@, hello@, anything anyone makes up.
+  // We only have value for the safe@ flow, so silently drop everything else.
+  // (We return 200 so SendGrid doesn't retry.)
+  if (!isSafeRecipient(toField)) {
+    logEvent("email_inbound_ignored_recipient", { to: toField, from: brokerEmail });
+    return NextResponse.json({ ok: true, note: "not a safe@ recipient" });
+  }
 
   if (!brokerEmail) {
     logEvent("email_inbound_no_from", { subject });
@@ -135,6 +146,18 @@ function pickFirstAddress(s: string): string {
   const m = s.match(/<([^>]+)>/);
   if (m) return m[1].trim().toLowerCase();
   return s.trim().toLowerCase();
+}
+
+/**
+ * Recipient guard: only safe@augie.ai (or safe@anything-augie.ai for the
+ * subdomain variant) is in scope. The To: field can have multiple
+ * recipients comma-separated; we treat it as a match if ANY recipient is
+ * a safe@ address.
+ */
+function isSafeRecipient(toField: string): boolean {
+  if (!toField) return false;
+  // Match safe@augie.ai OR safe@<subdomain>.augie.ai (e.g. safe@parse.augie.ai)
+  return /\bsafe@(?:[a-z0-9-]+\.)*augie\.ai\b/i.test(toField);
 }
 
 /** Pull the Message-ID header value from a raw headers blob. */
