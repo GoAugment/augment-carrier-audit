@@ -66,14 +66,18 @@ export interface FmcsaCarrier {
   mcs150Date: string | null;
   /** Physical state from FMCSA Census (2-letter abbreviation), e.g. "TX", "NJ". */
   physicalState: string | null;
-  /** Full physical address fields (for chameleon-clustering against other DOTs). */
-  phyStreet: string | null;
-  phyCity: string | null;
-  phyZip: string | null;
-  phone: string | null;
-  emailAddress: string | null;
-  companyOfficer1: string | null;
-  companyOfficer2: string | null;
+  // -- Identity / contact fields, dropped from the parquet to keep the file
+  //    under GitHub's 100MB blob limit. The data is still in source CSVs;
+  //    re-enable by uncommenting these + adding back to scripts/build_aggregates.py
+  //    SELECT, fmcsa-parquet.ts ParquetRow + SELECT + rowToCarrier, and
+  //    fmcsa-api.ts. Originally added for chameleon-clustering UI (not built).
+  // phyStreet: string | null;
+  // phyCity: string | null;
+  // phyZip: string | null;
+  // phone: string | null;
+  // emailAddress: string | null;
+  // companyOfficer1: string | null;
+  // companyOfficer2: string | null;
   /** Date the USDOT number was issued (YYYY-MM-DD), parsed from FMCSA ADD_DATE. */
   dotAddDate: string | null;
   /**

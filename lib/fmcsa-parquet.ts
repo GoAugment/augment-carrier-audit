@@ -71,13 +71,14 @@ interface ParquetRow {
   cargo_on_file_flag: boolean | null;
   cargo_required_flag: boolean | null;
   physical_state: string | null;
-  phy_street: string | null;
-  phy_city: string | null;
-  phy_zip: string | null;
-  phone: string | null;
-  email_address: string | null;
-  company_officer_1: string | null;
-  company_officer_2: string | null;
+  // Identity / contact columns dropped from parquet — see FmcsaCarrier for re-enable path.
+  // phy_street: string | null;
+  // phy_city: string | null;
+  // phy_zip: string | null;
+  // phone: string | null;
+  // email_address: string | null;
+  // company_officer_1: string | null;
+  // company_officer_2: string | null;
   /** Parquet stores already-formatted YYYY-MM-DD string. */
   dot_add_date: string | null;
   mcs150_date: string | null;
@@ -158,13 +159,10 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
     cargoInsuranceOnFile: r.cargo_on_file_flag === true,
     cargoInsuranceRequired: r.cargo_required_flag === true,
     physicalState: r.physical_state,
-    phyStreet: r.phy_street,
-    phyCity: r.phy_city,
-    phyZip: r.phy_zip,
-    phone: r.phone,
-    emailAddress: r.email_address,
-    companyOfficer1: r.company_officer_1,
-    companyOfficer2: r.company_officer_2,
+    // Identity/contact fields dropped from parquet:
+    // phyStreet: r.phy_street, phyCity: r.phy_city, phyZip: r.phy_zip,
+    // phone: r.phone, emailAddress: r.email_address,
+    // companyOfficer1: r.company_officer_1, companyOfficer2: r.company_officer_2,
     dotAddDate: r.dot_add_date,
     reviewDate: r.review_date,
     reviewType: r.review_type,
@@ -211,8 +209,10 @@ export async function fetchCarriersFromParquet(
       crash_measure, peer_group, crashes_per_million_miles, annual_mileage,
       unsafe_driving_violations_24mo, hos_violations_24mo,
       cargo_on_file_flag, cargo_required_flag,
-      physical_state, phy_street, phy_city, phy_zip,
-      phone, email_address, company_officer_1, company_officer_2,
+      physical_state,
+      -- Identity/contact columns omitted to keep the parquet under 100MB:
+      -- phy_street, phy_city, phy_zip, phone, email_address,
+      -- company_officer_1, company_officer_2
       dot_add_date, mcs150_date, review_date, review_type,
       prior_revoke_flag, prior_revoke_dot_number, recordable_crash_rate,
       fleet_size_flag, inspections_per_pu,
