@@ -280,6 +280,35 @@ export async function fetchIdentity(
 }
 
 /**
+ * Find all carriers in the identity layer sharing a phone number. Used by
+ * the email-check pipeline's chameleon-cluster evaluator to detect carriers
+ * with shared contact identity (a strong but not definitive signal of
+ * related-entity / re-incarnation patterns).
+ *
+ * Phone is normalized to digits-only before matching so "(800) 558-6767"
+ * and "8005586767" both match. Returns identities for ALL DOTs with the
+ * matching phone, including the queried carrier itself — caller is
+ * responsible for excluding the focal DOT if they only want "others."
+ */
+export async function findIdentityByPhone(
+  phone: string
+): Promise<CarrierIdentity[]> {
+  const normalized = phone.replace(/\D/g, "");
+  if (normalized.length < 7) return []; // skip obvious junk
+
+  // Match against parquet by normalizing both sides. The parquet stores
+  // phone as whatever FMCSA records show (typically digits, sometimes with
+  // dashes/parens). REGEXP_REPLACE strips non-digits on the parquet side.
+  const sql = `
+    SELECT *
+    FROM read_parquet('${PARQUET_PATH.replace(/'/g, "''")}')
+    WHERE REGEXP_REPLACE(phone, '[^0-9]', '', 'g') = ?
+  `;
+  const rows = await runQuery<ParquetRow>(sql, [normalized]);
+  return rows.map(rowToIdentity);
+}
+
+/**
  * Convenience helper: which cargo classes does this carrier handle? Returns
  * a list of human-readable labels for cargo capabilities that are true.
  * Useful for displaying "this carrier handles: refrigerated, hazmat, dry bulk"

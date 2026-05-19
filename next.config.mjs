@@ -26,9 +26,31 @@ const nextConfig = {
         "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/package.json",
         "./node_modules/.pnpm/@mapbox+node-pre-gyp@*/**/*",
       ],
+      "/api/email/check": [
+        // Email-check uses BOTH parquets: main (carrier resolve + analyze())
+        // and identity (chameleon-cluster phone lookup). Bundle is tight —
+        // 79 + 79 + 62 duckdb + ~5 next ≈ 225MB. Under Vercel's 250MB limit
+        // but worth watching if we add more bundled data later.
+        "./data/carrier_aggregates.parquet",
+        "./data/carrier_identity.parquet",
+        "./data/national_thresholds.json",
+        "./node_modules/duckdb/lib/**/*",
+        "./node_modules/duckdb/package.json",
+        "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/lib/**/*",
+        "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/package.json",
+        "./node_modules/.pnpm/@mapbox+node-pre-gyp@*/**/*",
+      ],
     },
     outputFileTracingExcludes: {
       "/api/analyze": [
+        "node_modules/duckdb/src/**",
+        "node_modules/duckdb/test/**",
+        "node_modules/duckdb/scripts/**",
+        "node_modules/.pnpm/duckdb@*/**/src/**",
+        "node_modules/.pnpm/duckdb@*/**/test/**",
+        "node_modules/.pnpm/duckdb@*/**/scripts/**",
+      ],
+      "/api/email/check": [
         "node_modules/duckdb/src/**",
         "node_modules/duckdb/test/**",
         "node_modules/duckdb/scripts/**",
