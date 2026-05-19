@@ -149,8 +149,15 @@ export function formatReply(verdict: Verdict, originalSubject: string): Formatte
 
   // Subject: keep the broker's thread together, prepend the tier.
   // Strip prior "Re: " prefixes to avoid the "Re: Re: Re:" cascade.
-  const baseSubject = originalSubject.replace(/^(Re:\s*)+/i, "").trim();
-  const subject = `Re: ${baseSubject} — ${verdict.tier}`;
+  // Fall back to a sensible default when the broker's original had no
+  // subject so we don't render "Re:  — High" with the awkward double space.
+  // Use the carrier's audit tier (5-scale: Clean/Elevated/High/Severe/
+  // Critical) over the verdict tier (4-scale) so the subject matches the
+  // pill in the body and the website.
+  const rawBase = originalSubject.replace(/^(Re:\s*)+/i, "").trim();
+  const baseSubject = rawBase || "Carrier safety check";
+  const tierForSubject = verdict.carrier?.audit.tier ?? verdict.tier;
+  const subject = `Re: ${baseSubject} — ${tierForSubject}`;
 
   return { subject, text: lines.join("\n"), html: buildReplyHtml(verdict) };
 }

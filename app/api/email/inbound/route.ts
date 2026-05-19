@@ -62,6 +62,16 @@ export async function POST(req: NextRequest) {
   const rawHeaders = (formData.get("headers") as string) ?? "";
   const inboundMessageId = extractMessageId(rawHeaders);
 
+  // Diagnostic: log whether Message-ID extraction succeeded. Threading
+  // depends on this — if it's null, our reply's In-Reply-To header won't
+  // be set and Gmail won't thread the reply with the broker's original.
+  logEvent("email_inbound_received", {
+    has_messageid: !!inboundMessageId,
+    headers_length: rawHeaders.length,
+    headers_preview: rawHeaders.slice(0, 200),
+    subject_present: !!subject && subject !== "(no subject)",
+  });
+
   // Recipient filter: only process mail addressed to safe@*. We MX'd the
   // augie.ai apex to SendGrid Inbound Parse, which means ALL @augie.ai mail
   // arrives here — including marketing@, hello@, anything anyone makes up.
