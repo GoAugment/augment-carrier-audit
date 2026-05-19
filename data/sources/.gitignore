@@ -1,0 +1,5 @@
+# Source CSVs are too large for git (~4 GB total). Don't commit them.
+# To rebuild the parquet locally, drop fresh files in here per README.md.
+*
+!.gitignore
+!README.md

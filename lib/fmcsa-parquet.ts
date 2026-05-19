@@ -33,6 +33,7 @@ interface ParquetRow {
   DBA_NAME: string | null;
   status_code: string | null;
   safety_rating: string | null;
+  safety_rating_date: string | null;
   power_units: number | bigint | null;
   drivers: number | bigint | null;
   driver_inspections_24mo: number | bigint | null;
@@ -48,12 +49,19 @@ interface ParquetRow {
   bipd_insurance_required: string | null;
   bipd_insurance_on_file: number | null;
   bipd_required_amount: number | null;
+  bipd_insurer_name: string | null;
+  bipd_policy_effective_date: string | null;
+  cargo_insurer_name: string | null;
   revocations_total: number | bigint | null;
   involuntary_revocations: number | bigint | null;
   most_recent_involuntary_date: string | null;
   enforcement_cases_count: number | bigint | null;
   enforcement_total_settled: number | bigint | null;
   enforcement_recent_date: string | null;
+  insurance_cancellations_24mo: number | bigint | null;
+  most_recent_cancel_date: string | null;
+  most_recent_cancel_reason: string | null;
+  rapid_replace_flag: boolean | null;
   crash_measure: number | null;
   peer_group: string | null;
   crashes_per_million_miles: number | null;
@@ -63,8 +71,33 @@ interface ParquetRow {
   cargo_on_file_flag: boolean | null;
   cargo_required_flag: boolean | null;
   physical_state: string | null;
+  phy_street: string | null;
+  phy_city: string | null;
+  phy_zip: string | null;
+  phone: string | null;
+  email_address: string | null;
+  company_officer_1: string | null;
+  company_officer_2: string | null;
   /** Parquet stores already-formatted YYYY-MM-DD string. */
   dot_add_date: string | null;
+  mcs150_date: string | null;
+  review_date: string | null;
+  review_type: string | null;
+  prior_revoke_flag: boolean | null;
+  prior_revoke_dot_number: number | bigint | null;
+  recordable_crash_rate: number | null;
+  fleet_size_flag: string | null;
+  inspections_per_pu: number | null;
+  unsafe_driving_measure: number | null;
+  hos_measure: number | null;
+  driver_fitness_measure: number | null;
+  controlled_substances_measure: number | null;
+  vehicle_maintenance_measure: number | null;
+  unsafe_driving_alert: string | null;
+  hos_alert: string | null;
+  driver_fitness_alert: string | null;
+  controlled_substances_alert: string | null;
+  vehicle_maintenance_alert: string | null;
 }
 
 function asInt(v: number | bigint | null | undefined): number {
@@ -84,6 +117,7 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
     allowedToOperate,
     statusCode: r.status_code,
     safetyRating: r.safety_rating,
+    safetyRatingDate: r.safety_rating_date,
     oosDate: null,
     totalDrivers: asInt(r.drivers),
     totalPowerUnits: asInt(r.power_units),
@@ -100,13 +134,21 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
     bipdInsuranceRequired: r.bipd_insurance_required,
     bipdInsuranceOnFile: asInt(r.bipd_insurance_on_file),
     bipdRequiredAmount: asInt(r.bipd_required_amount),
+    bipdInsurerName: r.bipd_insurer_name,
+    bipdPolicyEffectiveDate: r.bipd_policy_effective_date,
+    cargoInsurerName: r.cargo_insurer_name,
     mcs150Mileage: 0,
+    mcs150Date: r.mcs150_date,
     revocationsTotal: asInt(r.revocations_total),
     involuntaryRevocations: asInt(r.involuntary_revocations),
     mostRecentInvoluntaryDate: r.most_recent_involuntary_date,
     enforcementCasesCount: asInt(r.enforcement_cases_count),
     enforcementTotalSettled: asInt(r.enforcement_total_settled),
     enforcementRecentDate: r.enforcement_recent_date,
+    insuranceCancellations24mo: asInt(r.insurance_cancellations_24mo),
+    mostRecentCancelDate: r.most_recent_cancel_date,
+    mostRecentCancelReason: r.most_recent_cancel_reason,
+    rapidReplaceFlag: r.rapid_replace_flag === true,
     crashMeasure: r.crash_measure ?? 0,
     crashesPerMillionMiles: r.crashes_per_million_miles,
     annualMileage: asInt(r.annual_mileage),
@@ -116,7 +158,31 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
     cargoInsuranceOnFile: r.cargo_on_file_flag === true,
     cargoInsuranceRequired: r.cargo_required_flag === true,
     physicalState: r.physical_state,
+    phyStreet: r.phy_street,
+    phyCity: r.phy_city,
+    phyZip: r.phy_zip,
+    phone: r.phone,
+    emailAddress: r.email_address,
+    companyOfficer1: r.company_officer_1,
+    companyOfficer2: r.company_officer_2,
     dotAddDate: r.dot_add_date,
+    reviewDate: r.review_date,
+    reviewType: r.review_type,
+    priorRevokeFlag: r.prior_revoke_flag === true,
+    priorRevokeDotNumber: r.prior_revoke_dot_number == null ? null : asInt(r.prior_revoke_dot_number),
+    recordableCrashRate: r.recordable_crash_rate,
+    fleetSizeFlag: r.fleet_size_flag,
+    inspectionsPerPu: r.inspections_per_pu,
+    unsafeDrivingMeasure: r.unsafe_driving_measure,
+    hosMeasure: r.hos_measure,
+    driverFitnessMeasure: r.driver_fitness_measure,
+    controlledSubstancesMeasure: r.controlled_substances_measure,
+    vehicleMaintenanceMeasure: r.vehicle_maintenance_measure,
+    unsafeDrivingAlert: r.unsafe_driving_alert,
+    hosAlert: r.hos_alert,
+    driverFitnessAlert: r.driver_fitness_alert,
+    controlledSubstancesAlert: r.controlled_substances_alert,
+    vehicleMaintenanceAlert: r.vehicle_maintenance_alert,
   };
 }
 
@@ -130,18 +196,30 @@ export async function fetchCarriersFromParquet(
   const placeholders = unique.map(() => "?").join(",");
   const sql = `
     SELECT
-      DOT_NUMBER, LEGAL_NAME, DBA_NAME, status_code, safety_rating,
+      DOT_NUMBER, LEGAL_NAME, DBA_NAME, status_code, safety_rating, safety_rating_date,
       power_units, drivers,
       driver_inspections_24mo, driver_oos_24mo,
       vehicle_inspections_24mo, vehicle_oos_24mo,
       hazmat_inspections_24mo, hazmat_oos_24mo,
       crashes_24mo, fatal_crashes_24mo, injury_crashes_24mo, tow_crashes_24mo,
       bipd_insurance_required, bipd_insurance_on_file, bipd_required_amount,
+      bipd_insurer_name, bipd_policy_effective_date, cargo_insurer_name,
       revocations_total, involuntary_revocations, most_recent_involuntary_date,
       enforcement_cases_count, enforcement_total_settled, enforcement_recent_date,
+      insurance_cancellations_24mo, most_recent_cancel_date, most_recent_cancel_reason,
+      rapid_replace_flag,
       crash_measure, peer_group, crashes_per_million_miles, annual_mileage,
       unsafe_driving_violations_24mo, hos_violations_24mo,
-      cargo_on_file_flag, cargo_required_flag, physical_state, dot_add_date
+      cargo_on_file_flag, cargo_required_flag,
+      physical_state, phy_street, phy_city, phy_zip,
+      phone, email_address, company_officer_1, company_officer_2,
+      dot_add_date, mcs150_date, review_date, review_type,
+      prior_revoke_flag, prior_revoke_dot_number, recordable_crash_rate,
+      fleet_size_flag, inspections_per_pu,
+      unsafe_driving_measure, hos_measure, driver_fitness_measure,
+      controlled_substances_measure, vehicle_maintenance_measure,
+      unsafe_driving_alert, hos_alert, driver_fitness_alert,
+      controlled_substances_alert, vehicle_maintenance_alert
     FROM read_parquet('${PARQUET_PATH.replace(/'/g, "''")}')
     WHERE DOT_NUMBER IN (${placeholders})
   `;

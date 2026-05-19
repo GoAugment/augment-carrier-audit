@@ -47,13 +47,13 @@ function ReadingNote() {
   return (
     <div className="mb-3 text-xs text-ink-600">
       <p>
-        Cell color = how the carrier compares to similarly-sized fleets:{" "}
+        Cell color = the carrier&apos;s risk on this axis:{" "}
         <span className="rounded bg-augment-50 px-1 text-augment-800">clean</span>{" "}
-        <span className="rounded bg-amber-100 px-1 text-amber-900">≥P85</span>{" "}
-        <span className="rounded bg-orange-100 px-1 text-orange-900">≥P90</span>{" "}
-        <span className="rounded bg-red-100 px-1 text-red-900">≥P95</span>{" "}
+        <span className="rounded bg-amber-100 px-1 text-amber-900">info</span>{" "}
+        <span className="rounded bg-orange-100 px-1 text-orange-900">elevated</span>{" "}
+        <span className="rounded bg-red-100 px-1 text-red-900">severe (≥P95 vs peers)</span>{" "}
         <span className="rounded bg-red-200 px-1 text-red-950 font-semibold">critical</span>
-        . Hover any cell for the exact peer cutoff.{" "}
+        . We flag carriers only on the last 24 months of activity. Hover any cell for details.{" "}
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -63,12 +63,27 @@ function ReadingNote() {
         </button>
       </p>
       {open && (
-        <p className="mt-2 text-ink-500">
-          OOS and violation rates = <span className="font-mono">violations ÷ inspections of that type</span> over
-          24 months. Crash rate = raw crashes ÷ million miles driven. Revocations shows FMCSA
-          revocation history; Authority and Insurance are binary checks against FMCSA&apos;s
-          current registration record.
-        </p>
+        <div className="mt-2 space-y-2 text-ink-500">
+          <p>
+            <span className="font-semibold text-ink-700">Statistical axes</span> (Unsafe Driving,
+            HOS, Driver OOS, Vehicle OOS, Hazmat OOS) fire <span className="rounded bg-red-100 px-1 text-red-900">severe</span>{" "}
+            only when the carrier&apos;s rate is at or above the 95th percentile of their peer
+            group (≈1-in-20 outlier). Crash rate uses crashes per million miles, peer-group P95.
+          </p>
+          <p>
+            <span className="font-semibold text-ink-700">Hard signals</span> can also flag:
+            recent involuntary revocations (≤24mo), FMCSA chameleon flag against a different
+            predecessor DOT (Critical), insurance lapsed below FMCSA-required (Critical),
+            insurance cancel+replace within 30 days with ≥3 true cancellations (Critical), and
+            ≥7 true insurance cancellations in 24mo (Severe).
+          </p>
+          <p>
+            <span className="font-semibold text-ink-700">Info-only context</span> doesn&apos;t flag —
+            old Satisfactory ratings (&gt;10y), historical revocations with no recent activity,
+            and BIPD insurance below the $1M industry floor but at FMCSA-required levels are
+            surfaced in the tooltip but do not contribute to the carrier&apos;s tier.
+          </p>
+        </div>
       )}
     </div>
   );

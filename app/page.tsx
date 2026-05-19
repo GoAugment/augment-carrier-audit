@@ -6,11 +6,11 @@ import { Logo } from "@/components/Logo";
 import { Scorecard } from "@/components/Scorecard";
 
 /**
- * Sample peer-group cutoffs — the actual table is huge (5 peer groups × 4 axes
- * × 3 percentiles). We show one row per axis using the Small (2-50) bucket
- * since that's where most freight tendering happens. The real cutoffs vary by
- * fleet size (Mega Driver OOS P85 = 4%; Mega Vehicle OOS P85 = 23%; etc.).
- * Hover any cell in the result table to see the carrier's actual peer cutoff.
+ * Sample peer-group cutoffs — statistical axes flag Severe at the 95th
+ * percentile of the carrier's peer group. We show one row per axis using
+ * the Small (2-50) bucket since that's where most freight tendering happens.
+ * The real cutoffs vary by fleet size. Hover any cell in the result table
+ * to see the carrier's actual peer cutoff.
  */
 const sampleSmallFleetCutoffs = [
   {
@@ -357,9 +357,11 @@ export default function Home() {
                 <strong>Hazmat OOS rate</strong> — same, hazmat-placarded inspections only.
               </li>
               <li>
-                <strong>Revocations</strong> — recent involuntary (≤24 mo), chronic (≥3
-                historical involuntary), or older context. Voluntary revocations are surfaced
-                but never trigger a flag.
+                <strong>Revocations</strong> — flags only an involuntary revocation in the
+                last 24 months. Older history is surfaced in the tooltip as context but does
+                not contribute to the tier (a carrier whose authority was pulled in 2006
+                and has been clean since is not a current risk). Voluntary revocations never
+                trigger a flag.
               </li>
               <li>
                 <strong>Operating authority</strong> — binary: Active vs. not.
@@ -474,26 +476,23 @@ export default function Home() {
               Sample cutoffs — Small fleet (2-50 PU)
             </p>
             <p className="mt-2 text-sm text-ink-700">
-              Below are the cutoffs that apply to a typical Small fleet. The actual cutoff
-              used in scoring depends on the carrier&apos;s peer group — hover any cell in the
-              result table to see the exact cutoff applied to that carrier.
+              Statistical axes flag <span className="font-semibold">Severe</span> only at the
+              95th percentile of the carrier&apos;s peer group — a ≈1-in-20 outlier. Below are
+              the P95 cutoffs for a Small fleet. The actual cutoff depends on the carrier&apos;s
+              peer group; hover any cell in the result table to see the exact value used.
             </p>
             <div className="mt-3 overflow-x-auto rounded-lg border border-ink-200 bg-white">
               <table className="w-full text-left text-sm">
                 <thead className="bg-ink-50 text-xs uppercase tracking-wide text-ink-600">
                   <tr>
                     <th className="px-3 py-2">Signal</th>
-                    <th className="px-3 py-2">Elevated (P85)</th>
-                    <th className="px-3 py-2">High (P90)</th>
-                    <th className="px-3 py-2">Severe (P95)</th>
+                    <th className="px-3 py-2">Severe cutoff (P95)</th>
                   </tr>
                 </thead>
                 <tbody className="text-ink-700">
                   {sampleSmallFleetCutoffs.map((t) => (
                     <tr key={t.signal} className="border-t border-ink-100">
                       <td className="px-3 py-2">{t.signal}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{t.elevated}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{t.high}</td>
                       <td className="px-3 py-2 font-mono text-xs">{t.severe}</td>
                     </tr>
                   ))}
@@ -501,9 +500,8 @@ export default function Home() {
               </table>
             </div>
             <p className="mt-3 text-xs text-ink-500">
-              For comparison, the same axes for Mega fleets (1000+ PU): Driver OOS P85 = 4%,
-              Vehicle OOS P85 = 23%, Crashes/M mi P85 = 0.80. Large fleets compete on tighter
-              cutoffs because of scale.
+              For comparison: Mega fleets (1000+ PU) face tighter cutoffs because of scale —
+              Driver OOS P95 ≈ 7%, Vehicle OOS P95 ≈ 35%, Crashes/M mi P95 ≈ 1.8.
             </p>
           </div>
 

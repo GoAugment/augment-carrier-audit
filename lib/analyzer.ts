@@ -59,6 +59,22 @@ const RECENT_REVOCATION_WINDOW_DAYS = 730;
 const CHRONIC_REVOCATION_THRESHOLD = 3;
 const RECENT_ENFORCEMENT_WINDOW_DAYS = 730;
 const ENFORCEMENT_LARGE_SETTLEMENT = 25_000;
+// MCS-150 freshness affects cpm reliability — denominator gets stale fast.
+const MCS150_STALE_DAYS = 730; // 24 months
+// Safety rating ages out — Hunt's 1992 Satisfactory shouldn't be treated as
+// equivalent to a 2024 Satisfactory.
+const RATING_AGE_OUT_YEARS = 10;
+// National percentile cutoffs for FMCSA BASIC measures (P85/P95/P99) — used
+// only to label measure values in detail strings; not for tier decisions.
+// Derived from the May 2026 parquet population, ≥5 driver inspections.
+const FMCSA_MEASURE_CUTOFFS = {
+  unsafeDriving:        { p85: 10.0, p95: 19.7, p99: 40.0 },
+  hos:                  { p85: 2.73, p95: 4.79, p99: 7.60 },
+  driverFitness:        { p85: 2.00, p95: 3.45, p99: 6.16 },
+  controlledSubstances: { p85: 0.75, p95: 1.50, p99: 3.00 },
+  vehicleMaintenance:   { p85: 10.75, p95: 15.63, p99: 21.75 },
+} as const;
+const CHAMELEON_CLUSTER_THRESHOLD = 2;
 
 export interface LoadInput {
   dot: number;
@@ -141,9 +157,11 @@ function daysAgo(isoDate: string | null): number | null {
 }
 
 function statTier(value: number, cuts: TierCutoffs): AxisStatus {
+  // Tightened from the original P85/P90/P95 ladder to flag only P95+ — the
+  // P85/P90 tiers produced too many marginal small-fleet false positives
+  // (carriers a few violations above their peer-group middle). P95 remains
+  // Severe because the cutoff is "1-in-20" — those are real outliers.
   if (value >= cuts.p95) return "severe";
-  if (value >= cuts.p90) return "high";
-  if (value >= cuts.p85) return "elevated";
   return "clean";
 }
 
@@ -195,6 +213,54 @@ function cutoffForStatus(cuts: TierCutoffs, s: AxisStatus): number {
   return cuts.p85;
 }
 
+/**
+ * Format an FMCSA BASIC measure value as a P-rank label.
+ *   formatFmcsaMeasure(19.7, "unsafeDriving") → "19.7 (≈P95)"
+ * Returns null when measure is null/zero so we don't pollute the tooltip
+ * with "0 (below P50)" lines for clean carriers.
+ */
+function formatFmcsaMeasure(
+  measure: number | null | undefined,
+  basic: keyof typeof FMCSA_MEASURE_CUTOFFS
+): string | null {
+  if (measure == null || measure === 0) return null;
+  const cuts = FMCSA_MEASURE_CUTOFFS[basic];
+  let label: string;
+  if (measure >= cuts.p99) label = "≥P99 — top 1% nationally";
+  else if (measure >= cuts.p95) label = "≈P95 — top 5%";
+  else if (measure >= cuts.p85) label = "≈P85 — top 15%";
+  else label = "below P85";
+  return `${measure.toFixed(2)} (${label})`;
+}
+
+/**
+ * Append FMCSA measure + alert evidence to a cell's detail tooltip, after our
+ * own peer-group scoring has already produced the status. Display-only — does
+ * not change the cell's tier.
+ */
+function enrichAxisDetailWithFmcsa(
+  cell: AxisCell,
+  measure: number | null | undefined,
+  alert: string | null | undefined,
+  basic: keyof typeof FMCSA_MEASURE_CUTOFFS
+): void {
+  const measureLine = formatFmcsaMeasure(measure, basic);
+  if (measureLine == null && alert !== "Y") return;
+  const parts: string[] = [];
+  if (measureLine) parts.push(`FMCSA measure: ${measureLine}`);
+  if (alert === "Y") parts.push("FMCSA Alert: ⚠ Yes");
+  cell.detail = cell.detail ? `${cell.detail}\n${parts.join(". ")}.` : parts.join(". ");
+}
+
+/** Years between two ISO dates, null if either is missing/invalid. */
+function yearsBetween(fromIso: string | null, toIso: string | null): number | null {
+  if (!fromIso || !toIso) return null;
+  const a = Date.parse(fromIso);
+  const b = Date.parse(toIso);
+  if (Number.isNaN(a) || Number.isNaN(b)) return null;
+  return Math.abs(b - a) / (1000 * 60 * 60 * 24 * 365.25);
+}
+
 // ---------- per-axis classifiers ----------
 
 function classifyOos(
@@ -232,11 +298,20 @@ function classifyOos(
     }`,
   };
   if (status === "clean" || status === "na") return { cell, reason: null };
+  const cutoff = cutoffForStatus(cuts, status);
+  const magnitude = cutoff > 0 ? rate / cutoff : 1;
+  // Tag the magnitude with a brief outlier label so brokers can distinguish
+  // "barely over the P95 line" from "way beyond." No new tier — just text.
+  const magLabel =
+    magnitude >= 3 ? "extreme outlier"
+    : magnitude >= 2 ? "deep outlier"
+    : magnitude >= 1.5 ? "well above cutoff"
+    : "just over cutoff";
   return {
     cell,
     reason: {
       label: axisLabel,
-      detail: `${pctStr} — ${oosCount} of ${inspections} inspections. Above ${bandLabel(status)} cutoff for ${peerGroupLabel[peer]} fleets (${(cutoffForStatus(cuts, status) * 100).toFixed(0)}%).`,
+      detail: `${pctStr} — ${oosCount} of ${inspections} inspections. Above ${bandLabel(status)} cutoff for ${peerGroupLabel[peer]} fleets (${(cutoff * 100).toFixed(0)}%). ${magnitude.toFixed(2)}× over cutoff (${magLabel}).`,
     },
   };
 }
@@ -298,11 +373,18 @@ function classifyCrash(
   }`;
   const cell: AxisCell = { status, display: cpm.toFixed(2), detail };
   if (status === "clean") return { cell, reason: null };
+  const crashCutoff = cutoffForStatus(cuts, status);
+  const crashMag = crashCutoff > 0 ? cpm / crashCutoff : 1;
+  const crashMagLabel =
+    crashMag >= 3 ? "extreme outlier"
+    : crashMag >= 2 ? "deep outlier"
+    : crashMag >= 1.5 ? "well above cutoff"
+    : "just over cutoff";
   return {
     cell,
     reason: {
       label: "Crashes",
-      detail: `${cpm.toFixed(2)} per million miles (${c.crashTotal} crashes on ${c.totalPowerUnits} PU${sevStr}). Above ${bandLabel(status)} cutoff for ${peerGroupLabel[peer]} fleets (${cutoffForStatus(cuts, status).toFixed(2)})${floorApplied ? "; absolute floor applied" : ""}.`,
+      detail: `${cpm.toFixed(2)} per million miles (${c.crashTotal} crashes on ${c.totalPowerUnits} PU${sevStr}). Above ${bandLabel(status)} cutoff for ${peerGroupLabel[peer]} fleets (${crashCutoff.toFixed(2)})${floorApplied ? "; absolute floor applied" : ""}. ${crashMag.toFixed(2)}× over cutoff (${crashMagLabel}).`,
     },
   };
 }
@@ -311,20 +393,18 @@ function classifyRevocation(c: FmcsaCarrier): {
   cell: AxisCell;
   reasons: Reason[];
   recent: boolean;
-  chronic: boolean;
 } {
   const reasons: Reason[] = [];
   const sinceLastInvol = daysAgo(c.mostRecentInvoluntaryDate);
   const recent =
     sinceLastInvol !== null && sinceLastInvol <= RECENT_REVOCATION_WINDOW_DAYS;
-  const chronic = c.involuntaryRevocations >= CHRONIC_REVOCATION_THRESHOLD;
 
   let status: AxisStatus = "clean";
   let display = "—";
   const detailParts: string[] = [];
 
   if (recent) {
-    status = "high"; // recent alone = High; combine logic upgrades if needed
+    status = "high";
     display = c.mostRecentInvoluntaryDate ?? "Recent";
     detailParts.push(
       `Most recent involuntary revocation: ${c.mostRecentInvoluntaryDate}.`
@@ -333,27 +413,19 @@ function classifyRevocation(c: FmcsaCarrier): {
       label: "🚨 Recent revocation",
       detail: `${c.mostRecentInvoluntaryDate} — FMCSA pulled authority within the last 24 months.`,
     });
-  }
-  if (chronic) {
-    // chronic alone is also High; if also recent, escalate to Severe below
-    if (statusRank(status) < statusRank("high")) status = "high";
-    if (recent) status = "severe";
-    if (!recent) display = `${c.involuntaryRevocations}× involuntary`;
-    detailParts.push(
-      `${c.involuntaryRevocations} involuntary revocations on record (total ${c.revocationsTotal}).`
-    );
-    reasons.push({
-      label: "⚠ Chronic revocations",
-      detail: `${c.involuntaryRevocations} involuntary revocations on record (total ${c.revocationsTotal}).`,
-    });
-  }
-  if (!recent && !chronic && c.revocationsTotal > 0) {
-    // Historical revocations only — surface as context (amber) without
-    // contributing to the carrier's overall risk tier.
+  } else if (c.revocationsTotal > 0) {
+    // Historical revocations only — surface as context (amber/info) without
+    // contributing to the carrier's overall risk tier. The "chronic" lifetime
+    // check that used to bump these to High has been dropped: a carrier with
+    // 6 involuntary revocations from 20 years ago who's been clean since is
+    // not a current risk. Brokers see the history in the tooltip.
     status = "info";
-    display = `${c.revocationsTotal} historical`;
+    display =
+      c.involuntaryRevocations > 0
+        ? `${c.involuntaryRevocations}× hist.`
+        : `${c.revocationsTotal} hist.`;
     detailParts.push(
-      `${c.revocationsTotal} revocations on record, none recent (≤24mo) or chronic (≥3). Surfaced as context — not a flag.`
+      `${c.involuntaryRevocations} involuntary, ${c.revocationsTotal} total revocations on record — none in last 24 months. Surfaced as context, not a flag.`
     );
   }
 
@@ -365,7 +437,6 @@ function classifyRevocation(c: FmcsaCarrier): {
     },
     reasons,
     recent,
-    chronic,
   };
 }
 
@@ -419,7 +490,17 @@ function classifyAuthority(c: FmcsaCarrier): {
       detail: "FMCSA safety rating: Conditional (industry standard is to refuse).",
     });
   } else if (rating === "S" || rating === "SATISFACTORY") {
-    parts.push("Sat");
+    // Old "Satisfactory" ratings (>10y, FMCSA's de-facto stale window) aren't
+    // a current-state signal — drop from the at-a-glance display so brokers
+    // don't read "Sat" as a positive when the rating predates the operator's
+    // current safety performance. The full history is still in the tooltip.
+    const ratingYears = yearsBetween(
+      c.safetyRatingDate,
+      new Date().toISOString().slice(0, 10)
+    );
+    if (ratingYears == null || ratingYears < RATING_AGE_OUT_YEARS) {
+      parts.push("Sat");
+    }
   }
   // No rating on file → omit from display; common, not a flag
 
@@ -757,6 +838,142 @@ function scoreCarrier(
   const insurance = classifyInsurance(c, hasHazmatLoad);
   const enforcement = classifyEnforcement(c);
 
+  // ---- Post-classification enrichments (display-only) ----
+  // FMCSA's own BASIC measure + alert flag, alongside our peer-group call.
+  // When FMCSA agrees, the tooltip says so — when they disagree we still flag
+  // (we're more sensitive than FMCSA's intervention threshold by design), but
+  // the broker can see both perspectives.
+  enrichAxisDetailWithFmcsa(unsafeDriving.cell, c.unsafeDrivingMeasure, c.unsafeDrivingAlert, "unsafeDriving");
+  enrichAxisDetailWithFmcsa(hos.cell, c.hosMeasure, c.hosAlert, "hos");
+  enrichAxisDetailWithFmcsa(vehicle.cell, c.vehicleMaintenanceMeasure, c.vehicleMaintenanceAlert, "vehicleMaintenance");
+  // Driver OOS and Driver Fitness aren't 1:1 mapped, but our driverOos axis is
+  // the closest broker-facing analog of FMCSA's Driver Fitness BASIC, so we
+  // surface that measure here as the most-relevant FMCSA cross-reference.
+  enrichAxisDetailWithFmcsa(driver.cell, c.driverFitnessMeasure, c.driverFitnessAlert, "driverFitness");
+
+  // MCS-150 staleness — if the form is >24mo old, our crashes-per-million-miles
+  // denominator is built from a stale mileage report. Surface in the crash
+  // cell so the broker knows when cpm is unreliable.
+  const mcs150AgeDays = c.mcs150Date == null ? null : daysAgo(c.mcs150Date);
+  if (mcs150AgeDays != null && mcs150AgeDays > MCS150_STALE_DAYS && crash.cell.status !== "na") {
+    const months = Math.round(mcs150AgeDays / 30);
+    crash.cell.detail = `${crash.cell.detail ?? ""}\nMCS-150 filed ${months} months ago — cpm denominator is stale, treat with caution.`;
+  }
+  // FMCSA's own recordable crash rate, when published (~1% of carriers).
+  if (c.recordableCrashRate != null && c.recordableCrashRate > 0 && crash.cell.status !== "na") {
+    crash.cell.detail = `${crash.cell.detail ?? ""}\nFMCSA recordable crash rate: ${c.recordableCrashRate.toFixed(2)}.`;
+  }
+
+  // Old satisfactory rating age-out — surface as info-tier context. Doesn't
+  // downgrade an already-flagged Conditional/Unsat status.
+  const ratingYears = yearsBetween(c.safetyRatingDate, new Date().toISOString().slice(0, 10));
+  if (
+    ratingYears != null &&
+    ratingYears >= RATING_AGE_OUT_YEARS &&
+    (c.safetyRating === "S" || c.safetyRating === "SATISFACTORY") &&
+    authority.cell.status === "clean"
+  ) {
+    authority.cell.status = "info";
+    authority.cell.detail = `${authority.cell.detail ?? ""}\nSatisfactory rating is ${ratingYears.toFixed(0)} years old (${c.safetyRatingDate}) — not a current-state signal.`;
+  }
+  // Review date (note: this is the rating-context review, not most-recent).
+  if (c.reviewDate && c.reviewType) {
+    authority.cell.detail = `${authority.cell.detail ?? ""}\nRating-context review: ${c.reviewDate} (type=${c.reviewType}).`;
+  }
+  // Fleet-size plausibility heuristic from add_plausibility.py.
+  if (c.fleetSizeFlag === "low-activity") {
+    authority.cell.detail = `${authority.cell.detail ?? ""}\nFleet plausibility: low-activity (${c.inspectionsPerPu?.toFixed(2) ?? "?"} inspections per PU over 24mo — reported power-units may be inflated).`;
+  }
+
+  // Insurance enrichments: insurer identity + policy lifecycle + cancellation
+  // history (chameleon signal). Detail-only — escalation handled below.
+  if (c.bipdInsurerName) {
+    insurance.cell.detail = `${insurance.cell.detail ?? ""}\nBIPD insurer: ${c.bipdInsurerName}${c.bipdPolicyEffectiveDate ? ` (effective ${c.bipdPolicyEffectiveDate})` : ""}.`;
+  }
+  if (c.cargoInsurerName) {
+    insurance.cell.detail = `${insurance.cell.detail ?? ""}\nCargo insurer: ${c.cargoInsurerName}.`;
+  }
+  if (c.insuranceCancellations24mo > 0) {
+    insurance.cell.detail = `${insurance.cell.detail ?? ""}\n${c.insuranceCancellations24mo} insurance cancellation(s) in last 24mo${c.mostRecentCancelDate ? ` (most recent policy event ${c.mostRecentCancelDate}, ${c.mostRecentCancelReason ?? "unspecified"})` : ""}.`;
+  }
+
+  // ---- Post-classification escalations (status overrides) ----
+
+  // A1. FMCSA's prior-revoke flag.
+  //
+  // Self-revoke (prior_revoke_dot_number === this DOT) is dropped entirely
+  // — the analyzer focuses on the last 24 months, and a self-revoke without
+  // corroborating data in the current Revocation file is by definition an
+  // aged-out event (could be 10+ years old). Carriers with current revocation
+  // activity are handled by the existing classifyRevocation logic.
+  //
+  // True chameleon (prior_revoke_dot_number !== this DOT) stays Critical —
+  // successor relationships are identity-based and don't expire. Even an
+  // old successor relationship is a signal that this DOT was re-incorporated
+  // to escape a prior carrier's safety history.
+  if (
+    c.priorRevokeFlag &&
+    c.priorRevokeDotNumber != null &&
+    c.priorRevokeDotNumber !== c.dotNumber
+  ) {
+    revocation.cell.status = "critical";
+    const detail = `FMCSA flags this DOT as a re-incarnation of a previously-revoked predecessor (prior DOT: ${c.priorRevokeDotNumber}).`;
+    revocation.cell.detail = revocation.cell.detail
+      ? `${revocation.cell.detail}\n${detail}`
+      : detail;
+    revocation.reasons.push({ label: "🛑 FMCSA prior-revoke flag (chameleon)", detail });
+  }
+
+  // A2. Rapid cancel+replace insurance pattern is a chameleon signal ONLY
+  // when paired with ≥3 true cancellations in 24 months. A single cancel +
+  // replace within 30 days is the normal pattern for routine insurer
+  // renewals — flagging on that alone produces too many false positives
+  // (verified against production carriers). The combined pattern (rapid
+  // replace AND repeated cancellations) is the actual re-incarnation move.
+  if (c.rapidReplaceFlag && c.insuranceCancellations24mo >= 3) {
+    insurance.cell.status = "critical";
+    const detail = `Insurance policy cancelled and replaced within ~30 days, alongside ${c.insuranceCancellations24mo} true cancellations in 24 months — re-incarnation pattern.`;
+    insurance.cell.detail = insurance.cell.detail ? `${insurance.cell.detail}\n${detail}` : detail;
+    insurance.reason = { label: "🛑 Rapid replace + cancellation history", detail };
+  } else if (c.rapidReplaceFlag) {
+    // Surface as info-only context — broker can see "they swapped insurers
+    // recently" without it driving the tier.
+    if (insurance.cell.status === "clean") {
+      insurance.cell.status = "info";
+    }
+    const detail =
+      "Insurance cancelled and replaced within ~30 days — likely a routine broker switch, surfaced for context.";
+    insurance.cell.detail = insurance.cell.detail ? `${insurance.cell.detail}\n${detail}` : detail;
+  }
+  // A3. Insurance cancellation churn, graduated by national-population rarity:
+  //   ≥7 cancellations in 24mo (P99 — top 1%) → Severe
+  //   ≥3 cancellations in 24mo (P95 — top 5%) → Elevated
+  // Skipped when rapid_replace_flag already fired (A2 sets a stronger tier
+  // with the same evidence).
+  if (!c.rapidReplaceFlag) {
+    if (c.insuranceCancellations24mo >= 7) {
+      if (statusRank(insurance.cell.status) < statusRank("severe")) {
+        insurance.cell.status = "severe";
+      }
+      if (!insurance.reason) {
+        insurance.reason = {
+          label: "🛑 Severe insurance churn",
+          detail: `${c.insuranceCancellations24mo} true insurance cancellations in last 24 months — top 1% of carriers nationally. Carrier is on the edge of insurer dropout.`,
+        };
+      }
+    } else if (c.insuranceCancellations24mo >= 3) {
+      if (statusRank(insurance.cell.status) < statusRank("elevated")) {
+        insurance.cell.status = "elevated";
+      }
+      if (!insurance.reason) {
+        insurance.reason = {
+          label: "⚠ Insurance churn",
+          detail: `${c.insuranceCancellations24mo} true insurance cancellations in last 24 months — top 5% nationally. Verify carrier is on a stable policy before tendering.`,
+        };
+      }
+    }
+  }
+
   // Collect reasons (for tooltip/expand)
   const reasons: Reason[] = [];
   if (insurance.reason) reasons.push(insurance.reason);
@@ -801,8 +1018,45 @@ function scoreCarrier(
     // Recent revocation + any statistical signal → Severe
     if (level !== "Critical") level = "Severe";
   }
-  if (revocation.chronic && level !== "Critical") {
-    level = bumpUp(level);
+  // (Chronic lifetime-count bump removed — see classifyRevocation. Carriers
+  // are flagged only on actual activity in the last 24 months.)
+
+  // D10. Chameleon-pattern cluster — if 2+ independent chameleon signals fire,
+  // escalate row tier to Severe minimum. Any single signal on its own is
+  // already handled by its axis cell (prior_revoke → critical revocation,
+  // rapid_replace → critical insurance, etc.) — this is the *combined* signal.
+  const chameleonSignals: string[] = [];
+  // Only count prior-revoke as a chameleon signal when it points to a
+  // DIFFERENT DOT (true successor relationship). Self-revoke is a separate
+  // pattern (carrier had its own authority pulled then reinstated).
+  if (
+    c.priorRevokeFlag &&
+    c.priorRevokeDotNumber != null &&
+    c.priorRevokeDotNumber !== c.dotNumber
+  ) {
+    chameleonSignals.push(`FMCSA prior-revoke flag (prior DOT ${c.priorRevokeDotNumber})`);
+  }
+  if (c.rapidReplaceFlag) {
+    chameleonSignals.push("Insurance cancel+replace within 30 days");
+  }
+  if (c.insuranceCancellations24mo >= 2) {
+    chameleonSignals.push(`${c.insuranceCancellations24mo} insurance cancellations in 24mo`);
+  }
+  const authAgeDays = daysSinceAuthorityIssued(c.dotAddDate);
+  const isNewAuth = authAgeDays != null && authAgeDays < MIN_AUTHORITY_AGE_DAYS;
+  const lowActivity = c.fleetSizeFlag === "low-activity" || c.fleetSizeFlag === "tiny";
+  if (isNewAuth && lowActivity) {
+    chameleonSignals.push(`New authority (${authAgeDays}d) + ${c.fleetSizeFlag} fleet`);
+  }
+  if (chameleonSignals.length >= CHAMELEON_CLUSTER_THRESHOLD) {
+    // Escalate to Severe minimum (preserve Critical if already there).
+    if (level !== "Critical" && level !== "Severe") {
+      level = "Severe";
+    }
+    reasons.push({
+      label: "🚨 Chameleon-pattern cluster",
+      detail: `${chameleonSignals.length} independent re-incarnation signals: ${chameleonSignals.join("; ")}.`,
+    });
   }
   if (enforcement.hit) {
     if (enforcement.large) {
