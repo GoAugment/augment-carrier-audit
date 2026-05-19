@@ -31,6 +31,16 @@ interface ParquetRow {
   DOT_NUMBER: number | bigint;
   LEGAL_NAME: string | null;
   DBA_NAME: string | null;
+  mc_number: string | null;
+  additional_dockets: string | null;
+  operation_classification: string | null;
+  business_org_type: string | null;
+  has_property_authority: boolean | null;
+  has_passenger_authority: boolean | null;
+  has_hhg_authority: boolean | null;
+  has_private_authority: boolean | null;
+  has_enterprise_authority: boolean | null;
+  has_broker_authority: boolean | null;
   status_code: string | null;
   safety_rating: string | null;
   safety_rating_date: string | null;
@@ -115,6 +125,16 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
     dotNumber: asInt(r.DOT_NUMBER),
     legalName: r.LEGAL_NAME,
     dbaName: r.DBA_NAME,
+    mcNumber: r.mc_number,
+    additionalDockets: r.additional_dockets,
+    operationClassification: r.operation_classification,
+    businessOrgType: r.business_org_type,
+    hasPropertyAuthority: r.has_property_authority === true,
+    hasPassengerAuthority: r.has_passenger_authority === true,
+    hasHhgAuthority: r.has_hhg_authority === true,
+    hasPrivateAuthority: r.has_private_authority === true,
+    hasEnterpriseAuthority: r.has_enterprise_authority === true,
+    hasBrokerAuthority: r.has_broker_authority === true,
     allowedToOperate,
     statusCode: r.status_code,
     safetyRating: r.safety_rating,
@@ -194,7 +214,11 @@ export async function fetchCarriersFromParquet(
   const placeholders = unique.map(() => "?").join(",");
   const sql = `
     SELECT
-      DOT_NUMBER, LEGAL_NAME, DBA_NAME, status_code, safety_rating, safety_rating_date,
+      DOT_NUMBER, LEGAL_NAME, DBA_NAME,
+      mc_number, additional_dockets, operation_classification, business_org_type,
+      has_property_authority, has_passenger_authority, has_hhg_authority,
+      has_private_authority, has_enterprise_authority, has_broker_authority,
+      status_code, safety_rating, safety_rating_date,
       power_units, drivers,
       driver_inspections_24mo, driver_oos_24mo,
       vehicle_inspections_24mo, vehicle_oos_24mo,

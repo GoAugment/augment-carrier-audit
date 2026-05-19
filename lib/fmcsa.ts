@@ -19,6 +19,30 @@ export interface FmcsaCarrier {
   dotNumber: number | null;
   legalName: string | null;
   dbaName: string | null;
+  /**
+   * Primary MC/MX/FF docket — e.g. "MC-133655", "FF-51075". Brokers reference
+   * this alongside the DOT number on every load contract. Null for carriers
+   * without a published docket (intrastate-only, registration-only, etc.).
+   */
+  mcNumber: string | null;
+  /** Secondary docket(s), pipe-separated. Null when carrier has only one. */
+  additionalDockets: string | null;
+  /**
+   * FMCSA operation classification — semicolon-separated descriptions like
+   * "AUTHORIZED FOR HIRE", "AUTHORIZED FOR HIRE;U. S. MAIL;OTHER-IEP",
+   * or "PRIVATE PROPERTY (BUSINESS)". Raw value from Census CLASSDEF.
+   */
+  operationClassification: string | null;
+  /** Census BUSINESS_ORG_DESC — e.g. "CORPORATION", "LIMITED LIABILITY". */
+  businessOrgType: string | null;
+  // Authority-type flags from Carrier_All_With_History. Y → carrier holds
+  // that type of operating authority on at least one of their dockets.
+  hasPropertyAuthority: boolean;
+  hasPassengerAuthority: boolean;
+  hasHhgAuthority: boolean;
+  hasPrivateAuthority: boolean;
+  hasEnterpriseAuthority: boolean;
+  hasBrokerAuthority: boolean;
   allowedToOperate: string | null;
   statusCode: string | null;
   safetyRating: string | null;

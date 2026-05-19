@@ -43,6 +43,19 @@ async function fetchOne(
     dotNumber: typeof carrier.dotNumber === "number" ? carrier.dotNumber : null,
     legalName: (carrier.legalName as string) ?? null,
     dbaName: (carrier.dbaName as string) ?? null,
+    // QCMobile API doesn't expose dockets / authority-type flags directly.
+    // The parquet path has these; API path leaves them null/false so the
+    // FmcsaCarrier shape stays consistent.
+    mcNumber: null,
+    additionalDockets: null,
+    operationClassification: null,
+    businessOrgType: null,
+    hasPropertyAuthority: false,
+    hasPassengerAuthority: false,
+    hasHhgAuthority: false,
+    hasPrivateAuthority: false,
+    hasEnterpriseAuthority: false,
+    hasBrokerAuthority: false,
     allowedToOperate: (carrier.allowedToOperate as string) ?? null,
     statusCode: (carrier.statusCode as string) ?? null,
     safetyRating: (carrier.safetyRating as string) ?? null,
