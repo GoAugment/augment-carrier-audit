@@ -61,8 +61,12 @@ const AUDIT_TIER_STYLES: Record<string, TierStyle> = {
   Severe:   { bg: "#fca5a5", ink: "#7f1d1d", headline: "Verify carefully before tendering" },
   Critical: { bg: "#dc2626", ink: "#ffffff", headline: "Do not engage without verification" },
 };
+// Default style used when no carrier was resolved (no DOT/MC in the email,
+// or claimed DOT not in FMCSA snapshot). Headline tells the broker what to
+// do — ask for the carrier's DOT/MC — instead of the misleading "verify
+// identity" (there's nothing to verify yet).
 const DEFAULT_TIER_STYLE: TierStyle = {
-  bg: "#fef3c7", ink: "#78350f", headline: "Verify identity before tendering",
+  bg: "#fef3c7", ink: "#78350f", headline: "Carrier identity required",
 };
 
 // Order matters. BlinkMacSystemFont is the historical workaround for Chrome
@@ -947,6 +951,21 @@ export function buildReplyHtml(verdict: Verdict): string {
       <div style="font-size:15px;color:${C.inkMuted};line-height:1.5;">${esc(verdict.summary)}</div>
     </td></tr>
 
+    ${!c ? `
+    <!-- No-carrier hint — when the email didn't include a DOT/MC (or the
+         DOT couldn't be resolved), the counter and safety checks aren't
+         meaningful. Instead, tell the broker exactly what to forward next
+         so they can get a real verdict. -->
+    <tr><td style="padding:0 32px 28px 32px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${C.pageBg};border-radius:4px;">
+        <tr><td style="padding:18px 20px;">
+          <div style="font-size:14px;color:${C.ink};font-weight:600;margin-bottom:6px;">What we need to run a full check:</div>
+          <div style="font-size:13px;color:${C.inkMuted};line-height:1.6;">
+            Forward the carrier's original email <em>as an attachment</em> (Gmail: ⋮ → Forward as attachment; Outlook: Home → More → Forward as Attachment) so we can read their signature, DOT/MC, and original headers. Or reply asking them to confirm <strong>USDOT number</strong> and <strong>MC number</strong> in their next message.
+          </div>
+        </td></tr>
+      </table>
+    </td></tr>` : `
     <!-- Counter row — passed / failed / skipped. Failed only renders when >0
          so a Clean verdict shows the standard two-column layout. -->
     <tr><td style="padding:0 32px 28px 32px;">
@@ -967,7 +986,7 @@ export function buildReplyHtml(verdict: Verdict): string {
         </td>
       </tr>
       </table>
-    </td></tr>
+    </td></tr>`}
 
     ${c ? `
     <!-- Carrier identity -->

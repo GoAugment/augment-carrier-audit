@@ -996,15 +996,15 @@ const ZERO_COVERAGE: VerdictCoverage = {
 function verdictNoDot(e: ExtractedEmail): Verdict {
   return {
     tier: "Caution",
-    summary: "Email doesn't claim a DOT number — can't verify carrier identity.",
+    summary: "Forward the carrier's full outreach (with signature and DOT or MC number) and we'll run the full safety check. Carriers without a clear DOT/MC are unverifiable — never tender without one.",
     carrier: null,
     signals: [
       {
         category: "identity_coherence",
         tier: "caution",
-        label: "No DOT number in email",
+        label: "No DOT or MC number in email",
         detail:
-          "The email doesn't include a DOT number, so we can't cross-check the sender against FMCSA. Ask the carrier for their DOT before tendering.",
+          "The email doesn't include a DOT or MC number, so we can't cross-check the sender against FMCSA. Reply asking the carrier to confirm their USDOT or MC number before tendering.",
       },
     ],
     coverage: { ...ZERO_COVERAGE, email_auth_checked: true },
@@ -1015,14 +1015,14 @@ function verdictNoDot(e: ExtractedEmail): Verdict {
 function verdictDotNotFound(dot: number, _e: ExtractedEmail): Verdict {
   return {
     tier: "Critical",
-    summary: `DOT ${dot} is not in our FMCSA snapshot — carrier may be dormant, unregistered, or the number is fabricated.`,
+    summary: `DOT ${dot} is not in our FMCSA snapshot — likely fabricated or fully deregistered. Do not tender; confirm a valid DOT via FMCSA SAFER before any further engagement.`,
     carrier: null,
     signals: [
       {
         category: "identity_coherence",
         tier: "critical",
-        label: "DOT not found in FMCSA snapshot",
-        detail: `DOT ${dot} is not present in the active-carrier universe. Possibilities: the carrier is fully dormant (no current authority, no recent inspections), the DOT was deregistered, or the number was fabricated.`,
+        label: "DOT not found in FMCSA",
+        detail: `DOT ${dot} isn't in the active-carrier universe. Possibilities: the number was fabricated (most concerning), the DOT was fully deregistered, or the carrier has been dormant long enough to fall out of the active dataset. Verify the claimed DOT on FMCSA SAFER (safer.fmcsa.dot.gov) before any further engagement.`,
       },
     ],
     coverage: { ...ZERO_COVERAGE, email_auth_checked: true },
