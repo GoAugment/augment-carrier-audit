@@ -55,8 +55,11 @@ const AUDIT_TIER_STYLES: Record<string, TierStyle> = {
   Clean:    { bg: "#dcfce7", ink: "#14532d", headline: "Looks legitimate" },
   Elevated: { bg: "#fffbeb", ink: "#78350f", headline: "Worth a closer look" },
   High:     { bg: "#ffedd5", ink: "#7c2d12", headline: "Verify before tendering" },
-  Severe:   { bg: "#fee2e2", ink: "#7f1d1d", headline: "Significant safety concerns" },
-  Critical: { bg: "#fecaca", ink: "#450a0a", headline: "Do not engage without verification" },
+  // Severe should read as "almost Critical" — the previous #fee2e2 was too
+  // close to Caution. Use the same red family as Critical but with a lighter
+  // pink so there's still a step between the two.
+  Severe:   { bg: "#fca5a5", ink: "#7f1d1d", headline: "Verify carefully before tendering" },
+  Critical: { bg: "#dc2626", ink: "#ffffff", headline: "Do not engage without verification" },
 };
 const DEFAULT_TIER_STYLE: TierStyle = {
   bg: "#fef3c7", ink: "#78350f", headline: "Verify identity before tendering",
@@ -938,7 +941,7 @@ export function buildReplyHtml(verdict: Verdict): string {
     <!-- Tier headline -->
     <tr><td style="padding:32px 32px 24px 32px;">
       <div style="margin-bottom:18px;">${pill(tierLabel, tier.bg, tier.ink, { large: false })}</div>
-      <div style="${FONT_DECL}font-size:34px;font-weight:700;color:${C.ink};line-height:1.15;letter-spacing:-0.02em;margin-bottom:12px;">
+      <div style="${FONT_DECL}font-size:42px;font-weight:700;color:${C.ink};line-height:1.1;letter-spacing:-0.025em;margin-bottom:14px;">
         ${esc(tier.headline)}
       </div>
       <div style="font-size:15px;color:${C.inkMuted};line-height:1.5;">${esc(verdict.summary)}</div>
