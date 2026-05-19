@@ -4,7 +4,7 @@
     "app/api/analyze/route.ts": {
       "includeFiles": "{data/carrier_aggregates.parquet,data/national_thresholds.json,node_modules/duckdb/lib/**,node_modules/duckdb/package.json,node_modules/@mapbox/node-pre-gyp/**}"
     },
-    "app/api/email/check/route.ts": {
+    "app/api/email/inbound/route.ts": {
       "includeFiles": "{data/carrier_aggregates.parquet,data/carrier_identity.parquet,data/national_thresholds.json,node_modules/duckdb/lib/**,node_modules/duckdb/package.json,node_modules/@mapbox/node-pre-gyp/**}"
     }
   }

@@ -26,11 +26,15 @@ const nextConfig = {
         "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/package.json",
         "./node_modules/.pnpm/@mapbox+node-pre-gyp@*/**/*",
       ],
-      "/api/email/check": [
-        // Email-check uses BOTH parquets: main (carrier resolve + analyze())
-        // and identity (chameleon-cluster phone lookup). Bundle is tight —
-        // 79 + 79 + 62 duckdb + ~5 next ≈ 225MB. Under Vercel's 250MB limit
-        // but worth watching if we add more bundled data later.
+      "/api/email/inbound": [
+        // Email pipeline is a single Vercel function: receives SendGrid
+        // Inbound Parse webhook, calls Anthropic Claude for Stage 1
+        // extraction, runs the deterministic verdict (imports
+        // checkCarrierEmail from lib/email/check.ts → needs both parquets),
+        // then sends a SendGrid outbound reply.
+        // Bundle: ~158MB parquets + 62MB duckdb/lib + ~13MB SDKs ≈ 238MB.
+        // Tight under Vercel's 250MB limit. If we add more data later,
+        // consider splitting LLM-extraction into its own function.
         "./data/carrier_aggregates.parquet",
         "./data/carrier_identity.parquet",
         "./data/national_thresholds.json",
@@ -50,7 +54,7 @@ const nextConfig = {
         "node_modules/.pnpm/duckdb@*/**/test/**",
         "node_modules/.pnpm/duckdb@*/**/scripts/**",
       ],
-      "/api/email/check": [
+      "/api/email/inbound": [
         "node_modules/duckdb/src/**",
         "node_modules/duckdb/test/**",
         "node_modules/duckdb/scripts/**",
