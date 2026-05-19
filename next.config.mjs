@@ -10,12 +10,31 @@ const nextConfig = {
     // symlinks node_modules/duckdb → .pnpm/duckdb@*/...; Next's file tracer
     // sometimes loses the .node binary across the symlink without an explicit
     // include here.
+    //
+    // CRITICAL: do NOT include `node_modules/duckdb/**` — that drags in the
+    // 67MB of C++ source under `src/` and pushes the function past Vercel's
+    // 250MB unzipped limit. We only need `lib/` (the prebuilt binary + JS)
+    // and `package.json` (for module resolution). Belt-and-suspenders excludes
+    // below catch anything the tracer might still pull in.
     outputFileTracingIncludes: {
       "/api/analyze": [
-        "./data/**/*",
-        "./node_modules/duckdb/**/*",
-        "./node_modules/.pnpm/duckdb@*/**/*",
+        "./data/carrier_aggregates.parquet",
+        "./data/national_thresholds.json",
+        "./node_modules/duckdb/lib/**/*",
+        "./node_modules/duckdb/package.json",
+        "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/lib/**/*",
+        "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/package.json",
         "./node_modules/.pnpm/@mapbox+node-pre-gyp@*/**/*",
+      ],
+    },
+    outputFileTracingExcludes: {
+      "/api/analyze": [
+        "node_modules/duckdb/src/**",
+        "node_modules/duckdb/test/**",
+        "node_modules/duckdb/scripts/**",
+        "node_modules/.pnpm/duckdb@*/**/src/**",
+        "node_modules/.pnpm/duckdb@*/**/test/**",
+        "node_modules/.pnpm/duckdb@*/**/scripts/**",
       ],
     },
   },
