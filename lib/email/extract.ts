@@ -57,40 +57,50 @@ export interface RawEmail {
 export async function extractEmail(raw: RawEmail): Promise<ExtractedEmail> {
   const userMessage = buildUserMessage(raw);
 
-  const response = await client().models.generateContent({
-    model: MODEL,
-    contents: [{ role: "user", parts: [{ text: userMessage }] }],
-    config: {
-      systemInstruction: STAGE1_SYSTEM_PROMPT,
-      // Native JSON mode — model is constrained to emit valid JSON. The
-      // Stage 1 prompt already documents the expected shape inline, so we
-      // don't (yet) pass a strict responseSchema. If we ever see schema
-      // drift in production, add `responseSchema` referencing the
-      // ExtractedEmail structure to lock it down.
-      responseMimeType: "application/json",
-      temperature: 0,
-      // Bumped from 2000 — extracted_text can be long when the carrier
-      // forwarded a verbose email; plus the JSON envelope adds overhead.
-      // At ~250 tokens for a typical email body and 30-ish fields in
-      // ExtractedEmail, 8000 gives us comfortable headroom.
-      maxOutputTokens: 8000,
-    },
-  });
-
-  const text = response.text?.trim() ?? "";
-  if (!text) {
-    throw new Error("Gemini returned empty response");
+  // Retry on transient Gemini errors (503 UNAVAILABLE / 429 RESOURCE_EXHAUSTED).
+  // These fire during demand spikes and are usually resolved within a few
+  // seconds. Without retry, a single transient blip drops the entire
+  // verdict path — broker gets no reply, we log extraction_error.
+  const MAX_ATTEMPTS = 3;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await client().models.generateContent({
+        model: MODEL,
+        contents: [{ role: "user", parts: [{ text: userMessage }] }],
+        config: {
+          systemInstruction: STAGE1_SYSTEM_PROMPT,
+          responseMimeType: "application/json",
+          temperature: 0,
+          // Bumped from 2000 — extracted_text can be long when the carrier
+          // forwarded a verbose email; plus the JSON envelope adds overhead.
+          maxOutputTokens: 8000,
+        },
+      });
+      const text = response.text?.trim() ?? "";
+      if (!text) {
+        throw new Error("Gemini returned empty response");
+      }
+      try {
+        return JSON.parse(text) as ExtractedEmail;
+      } catch (err) {
+        // JSON parse errors are NOT retried — re-running the prompt won't
+        // suddenly produce valid JSON. Surface immediately.
+        throw new Error(
+          `Stage 1 LLM returned non-JSON output. Parse error: ${err instanceof Error ? err.message : String(err)}. Response (${text.length} chars): ${text}`
+        );
+      }
+    } catch (err) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      const transient = /\b(503|429|UNAVAILABLE|RESOURCE_EXHAUSTED|deadline|timeout)\b/i.test(msg);
+      if (!transient || attempt === MAX_ATTEMPTS) throw err;
+      // Backoff: 1s, then 3s. Total worst-case ~4s added before giving up.
+      await new Promise((r) => setTimeout(r, attempt * 1000 + 1000));
+    }
   }
-
-  try {
-    return JSON.parse(text) as ExtractedEmail;
-  } catch (err) {
-    // Include the FULL text in the error so we can see what's happening.
-    // Truncating to 200 chars hid the actual parse-failure location.
-    throw new Error(
-      `Stage 1 LLM returned non-JSON output. Parse error: ${err instanceof Error ? err.message : String(err)}. Response (${text.length} chars): ${text}`
-    );
-  }
+  // Unreachable in practice — loop either returns or throws — but TS needs it.
+  throw lastErr ?? new Error("extractEmail: unreachable");
 }
 
 function buildUserMessage(raw: RawEmail): string {

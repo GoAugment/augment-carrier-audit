@@ -217,7 +217,7 @@ function evalIdentityCoherence(
   // address because "matches gmail.com" tells us nothing — every Gmail user
   // matches. The local-part is what identifies the sender.
   const senderEmail = e.sender_metadata.sender_email?.toLowerCase() ?? "";
-  const senderDomain = e.sender_metadata.sender_email_domain.toLowerCase();
+  const senderDomain = (e.sender_metadata.sender_email_domain ?? "").toLowerCase();
   if (identity?.email) {
     const fmcsaEmail = identity.email.toLowerCase();
     const fmcsaDomain = identity.emailDomain?.toLowerCase() ?? "";
@@ -553,7 +553,7 @@ async function evalEmailAuthenticity(
   // --- Hard signal: Reply-To domain mismatch ---
   if (
     sm.reply_to_domain &&
-    sm.reply_to_domain.toLowerCase() !== sm.sender_email_domain.toLowerCase()
+    sm.reply_to_domain.toLowerCase() !== (sm.sender_email_domain ?? "").toLowerCase()
   ) {
     signals.push({
       category: "email_authenticity",
@@ -595,7 +595,7 @@ async function evalEmailAuthenticity(
   // For business domains, surface domain match. For free-mail, surface full
   // address match (when we have FMCSA's email on file). The mismatch cases
   // fire under identity_coherence.
-  const senderDomainLc = sm.sender_email_domain.toLowerCase();
+  const senderDomainLc = (sm.sender_email_domain ?? "").toLowerCase();
   const senderEmailLc = sm.sender_email?.toLowerCase() ?? "";
   if (
     identity?.email &&
@@ -626,7 +626,7 @@ async function evalEmailAuthenticity(
   // domain isn't owned by the sender anyway) and skip when the domain matches
   // FMCSA's registration (the carrier's history with FMCSA is stronger
   // evidence than these external lookups).
-  const senderDomain = sm.sender_email_domain.toLowerCase();
+  const senderDomain = (sm.sender_email_domain ?? "").toLowerCase();
   const skipDomainLookups =
     FREE_EMAIL_DOMAINS.has(senderDomain) ||
     identity?.emailDomain?.toLowerCase() === senderDomain;
