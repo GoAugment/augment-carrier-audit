@@ -35,6 +35,10 @@ export const RULES: Rule[] = [
     thresholds: {
       critical: "FMCSA status_code is anything other than 'A' (Active).",
     },
+    fixtures: {
+      critical: { dot: 4571505, reason: "GRANT GORDON: status_code=I (May 2026 snapshot)." },
+      none: { dot: 53467, reason: "Werner Enterprises: status_code=A." },
+    },
   },
   {
     id: "new-authority",
@@ -44,6 +48,14 @@ export const RULES: Rule[] = [
       "FMCSA issued the DOT less than the industry's 90-day chameleon-prevention tenure floor. Brand-new authorities have no operating history and are statistically over-represented in re-incarnation patterns: the typical chameleon registers a new DOT shortly after their old one was revoked, and the new authority is often paired with a low-activity / tiny fleet.",
     thresholds: {
       critical: "DOT issued less than 90 days ago.",
+    },
+    fixtures: {
+      // Note: fixtures for this rule are inherently volatile — the DOT
+      // crosses the 90-day threshold ~3 months after registration and
+      // stops triggering. Refresh by re-running the find_rule_fixtures.py
+      // query against the latest parquet snapshot.
+      critical: { dot: 4572009, reason: "VFV TRANSPORT LLC: dot_add_date 2026-04-24, < 90 days at snapshot." },
+      none: { dot: 53467, reason: "Werner: established carrier, > 30 years old." },
     },
   },
 
@@ -59,6 +71,10 @@ export const RULES: Rule[] = [
     thresholds: {
       critical: "Safety rating = Unsatisfactory.",
     },
+    fixtures: {
+      critical: { dot: 4004854, reason: "BLACK HILLS TRENCHING & BORING LLC: Unsatisfactory rated 2026-04-20." },
+      none: { dot: 53467, reason: "Werner: Satisfactory." },
+    },
   },
   {
     id: "safety-rating-conditional",
@@ -68,6 +84,10 @@ export const RULES: Rule[] = [
       "FMCSA's most recent compliance review rated this carrier Conditional. A Conditional rating means the carrier's safety management practices have specific deficiencies; FMCSA continues to monitor and the rating may downgrade to Unsatisfactory. The industry standard is to refuse loads from Conditional carriers.",
     thresholds: {
       critical: "Safety rating = Conditional.",
+    },
+    fixtures: {
+      critical: { dot: 305573, reason: "R & R TRANSPORTATION INC: Conditional rated 2026-04-21." },
+      none: { dot: 53467, reason: "Werner: Satisfactory." },
     },
   },
 
@@ -83,17 +103,18 @@ export const RULES: Rule[] = [
     thresholds: {
       critical: "$0 BIPD on file when FMCSA requires it, or on-file amount below FMCSA minimum.",
     },
-  },
-  {
-    id: "cargo-insurance-not-on-file",
-    category: "insurance",
-    label: "Cargo insurance not on file",
-    definition:
-      "FMCSA flags cargo insurance as required for this carrier, but no active cargo policy is on file. Cargo insurance pays the broker when freight is damaged in transit. Some large carriers legitimately self-insure cargo, so this is not a hard refusal — verify a current cargo COI directly before tendering.",
-    thresholds: {
-      high: "FMCSA cargo required, no policy on file.",
+    fixtures: {
+      critical: { dot: 3670294, reason: "ROAD EXPERTS LLC: $0 BIPD on file, BIPD required (used in snapshot baseline)." },
+      none: { dot: 53467, reason: "Werner: $5M BIPD on file." },
     },
   },
+  // Note: cargo-insurance-not-on-file was previously documented here but its
+  // analyzer function (classifyCargoInsurance) was never wired into the
+  // main analyze() flow — see lib/analyzer.ts:836-838 comment. The FMCSA
+  // bulk-file cargo-on-file flag has too many false positives (large
+  // carriers self-insure cargo and don't file with FMCSA; brokers verify
+  // cargo COI direct with the carrier). Rule + dead function removed
+  // until a more reliable cargo signal is available.
   {
     id: "insurance-rapid-replace",
     category: "insurance",
@@ -102,6 +123,10 @@ export const RULES: Rule[] = [
       "Insurance policy was cancelled and replaced within roughly 30 days, paired with three or more prior cancellations in the last 24 months. Quick policy swap by itself is a routine renewal pattern, but combined with repeated prior cancellations it's a re-incarnation move: a carrier with a damaged insurance history cycles policies to maintain on-file appearance.",
     thresholds: {
       critical: "Rapid-replace flag AND ≥3 true cancellations in 24 months.",
+    },
+    fixtures: {
+      critical: { dot: 4223713, reason: "DJI EXPRESS LLC: rapid replace + cancellations (used in snapshot baseline)." },
+      none: { dot: 53467, reason: "Werner: stable insurance, no rapid replace." },
     },
   },
   {
@@ -113,6 +138,10 @@ export const RULES: Rule[] = [
     thresholds: {
       critical: "≥5 true insurance cancellations in 24 months.",
     },
+    fixtures: {
+      critical: { dot: 3461031, reason: "FRESNO LOGISTICS LLC: 25 insurance cancellations in 24mo." },
+      none: { dot: 53467, reason: "Werner: 0 cancellations in 24mo." },
+    },
   },
   {
     id: "insurance-churn",
@@ -122,6 +151,10 @@ export const RULES: Rule[] = [
       "Three to four true insurance cancellations in the last 24 months — top 5% nationally. Frequent insurer changes suggest the carrier is being shopped between insurers, often due to claim history or premium nonpayment. Worth confirming the current policy is stable before tendering.",
     thresholds: {
       caution: "3 or 4 true insurance cancellations in 24 months.",
+    },
+    fixtures: {
+      caution: { dot: 3016491, reason: "JDS TRUCKING OF NC LLC: 4 cancellations in 24mo, no rapid replace." },
+      none: { dot: 53467, reason: "Werner: 0 cancellations." },
     },
   },
 
@@ -137,6 +170,10 @@ export const RULES: Rule[] = [
     thresholds: {
       critical: "≥1 involuntary revocation in the last 24 months.",
     },
+    fixtures: {
+      critical: { dot: 2564360, reason: "TIMEKEEPER TRUCKING INC: recent involuntary revocation (used in snapshot baseline)." },
+      none: { dot: 53467, reason: "Werner: no revocations." },
+    },
   },
   {
     id: "recent-enforcement",
@@ -146,6 +183,10 @@ export const RULES: Rule[] = [
       "FMCSA closed at least one civil-penalty enforcement case against this carrier in recent history. Enforcement cases follow compliance reviews and indicate FMCSA found violations serious enough to fine. Large settlements ($75k+) often correlate with safety patterns the carrier has not corrected.",
     thresholds: {
       high: "≥1 closed enforcement case (large = settlement ≥ $75,000).",
+    },
+    fixtures: {
+      high: { dot: 3122364, reason: "MARIC TRANSPORTATION CORP: $48k settled, 1 closed case." },
+      none: { dot: 53467, reason: "Werner: no enforcement cases." },
     },
   },
 
@@ -161,6 +202,10 @@ export const RULES: Rule[] = [
     thresholds: {
       critical: "FMCSA PRIOR_REVOKE_FLAG = Y AND PRIOR_REVOKE_DOT_NUMBER points to a different DOT.",
     },
+    fixtures: {
+      critical: { dot: 1906024, reason: "ARIZONA SPORTSHIRTS INC: prior_revoke_flag=Y (used in snapshot baseline)." },
+      none: { dot: 53467, reason: "Werner: no prior-revoke flag." },
+    },
   },
   {
     id: "chameleon-cluster",
@@ -170,6 +215,13 @@ export const RULES: Rule[] = [
       "Two or more independent chameleon signals fire on the same carrier — combinations like prior-revoke flag + insurance rapid-replace + new authority + low activity. Any single signal is already flagged by its own rule; this is the combined-signal escalator that pushes the carrier to Severe minimum because multiple unrelated indicators agree.",
     thresholds: {
       high: "≥2 of {prior-revoke flag, rapid replace, ≥2 cancellations, new authority + low activity, ≥3 OOS DOTs at same address} fire together.",
+    },
+    fixtures: {
+      // Same DOTs that fire insurance-rapid-replace also tend to fire
+      // chameleon-cluster because rapid-replace + repeated cancellations
+      // satisfy the multi-signal threshold.
+      high: { dot: 4223713, reason: "DJI EXPRESS LLC: rapid replace + ≥3 cancellations fires chameleon-cluster (snapshot baseline)." },
+      none: { dot: 53467, reason: "Werner: no chameleon signals." },
     },
   },
 
@@ -494,6 +546,13 @@ export const RULES: Rule[] = [
       high:     "Crashes per million miles between P90 and P95 for peer group.",
       caution:  "Crashes per million miles between P85 and P90 for peer group.",
     },
+    fixtures: {
+      // Any crash-rate fixture is a function of (crashes_24mo, annual_mileage)
+      // — both change quickly. Picked a small-fleet carrier with persistent
+      // high crash count to maximize stability.
+      critical: { dot: 1162977, reason: "UNIVERSAL INTERMODAL SERVICES: ~18 crashes per million miles on 1.25M mileage, 45 crashes / 124 PU." },
+      none: { dot: 53467, reason: "Werner: industry-leading low crash rate." },
+    },
   },
   {
     id: "unsafe-driving-rate",
@@ -505,6 +564,10 @@ export const RULES: Rule[] = [
       critical: "Unsafe Driving violation rate at or above P95 for peer group.",
       high:     "Between P90 and P95 for peer group.",
       caution:  "Between P85 and P90 for peer group.",
+    },
+    fixtures: {
+      critical: { dot: 1135439, reason: "GIDDENS TRUCKING LLC: 100% unsafe driving rate on 13 inspections." },
+      none: { dot: 53467, reason: "Werner: clean Unsafe Driving record." },
     },
   },
   {
@@ -518,6 +581,10 @@ export const RULES: Rule[] = [
       high:     "Between P90 and P95 for peer group.",
       caution:  "Between P85 and P90 for peer group.",
     },
+    fixtures: {
+      critical: { dot: 4409190, reason: "LCR FORD TRUCKING LLC: 100% HOS violation rate on 12 inspections." },
+      none: { dot: 53467, reason: "Werner: clean HOS record." },
+    },
   },
   {
     id: "driver-oos-rate",
@@ -529,6 +596,10 @@ export const RULES: Rule[] = [
       critical: "Driver OOS rate at or above P95 for peer group.",
       high:     "Between P90 and P95 for peer group.",
       caution:  "Between P85 and P90 for peer group.",
+    },
+    fixtures: {
+      critical: { dot: 4222671, reason: "AYK TRUCKING LLC: 100% driver OOS rate on 12 inspections." },
+      none: { dot: 53467, reason: "Werner: clean Driver OOS rate." },
     },
   },
   {
@@ -542,6 +613,10 @@ export const RULES: Rule[] = [
       high:     "Between P90 and P95 for peer group.",
       caution:  "Between P85 and P90 for peer group.",
     },
+    fixtures: {
+      critical: { dot: 4307204, reason: "NKB TRUCKING LLC: 100% vehicle OOS rate on 13 inspections." },
+      none: { dot: 53467, reason: "Werner: clean Vehicle OOS rate." },
+    },
   },
   {
     id: "hazmat-oos-rate",
@@ -553,6 +628,10 @@ export const RULES: Rule[] = [
       critical: "Hazmat OOS rate at or above P95 for peer group.",
       high:     "Between P90 and P95 for peer group.",
       caution:  "Between P85 and P90 for peer group.",
+    },
+    fixtures: {
+      critical: { dot: 4418657, reason: "JOSE SANTOS CUELLAR HERRERA: 100% hazmat OOS rate on 9 inspections." },
+      none: { dot: 53467, reason: "Werner: clean hazmat record (when hazmat inspections present)." },
     },
   },
 

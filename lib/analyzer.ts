@@ -636,49 +636,12 @@ function classifyInsurance(
   };
 }
 
-function classifyCargoInsurance(c: FmcsaCarrier): {
-  cell: AxisCell;
-  reason: Reason | null;
-} {
-  // FMCSA's Carrier-AllWithHistory bulk file only exposes a Y/N flag for cargo
-  // (not the actual amount). So this axis can only answer "is cargo on file
-  // with FMCSA?" — useful for compliance check but not for amount-vs-floor.
-  if (!c.cargoInsuranceRequired && !c.cargoInsuranceOnFile) {
-    return {
-      cell: {
-        status: "na",
-        display: "—",
-        detail: "Cargo insurance not flagged as required for this carrier.",
-      },
-      reason: null,
-    };
-  }
-  if (c.cargoInsuranceRequired && !c.cargoInsuranceOnFile) {
-    return {
-      cell: {
-        status: "elevated",
-        display: "Missing",
-        detail:
-          "FMCSA flags cargo insurance as required for this carrier, but no cargo policy is on file. Many large carriers legitimately self-insure cargo — verify a current COI directly before tendering.",
-      },
-      reason: {
-        label: getRule("cargo-insurance-not-on-file").label,
-        detail:
-          "FMCSA marks cargo as required but no policy on file. Many large carriers self-insure cargo — verify via direct COI before tender.",
-      },
-    };
-  }
-  return {
-    cell: {
-      status: "clean",
-      display: "On file",
-      detail: c.cargoInsuranceRequired
-        ? "Cargo insurance is required by FMCSA and on file."
-        : "Cargo insurance is on file (not required by FMCSA).",
-    },
-    reason: null,
-  };
-}
+// classifyCargoInsurance used to live here. It was never wired into
+// analyze() because FMCSA's bulk-file cargo-on-file flag has too many
+// false positives — large carriers commonly self-insure cargo and file
+// COIs direct with brokers, not with FMCSA. Removed during the fixture
+// pass when the orphaned rule failed its regression test. Bring it back
+// when there's a cleaner cargo signal available.
 
 /** Compute days since DOT was issued. Null if no add date or future date. */
 function daysSinceAuthorityIssued(addDateIso: string | null): number | null {
