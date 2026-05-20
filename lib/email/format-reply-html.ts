@@ -170,6 +170,17 @@ const FIELD_STATUS_COLORS: Record<FieldStatus, { dot: string; border: string }> 
   neutral:  { dot: "#d97706", border: "#fcd34d" },
 };
 
+/** Break URL-detector patterns in a value so Gmail / Apple Mail / Outlook
+ *  don't auto-link it. Inserts a zero-width space (U+200B) before any dot,
+ *  which is invisible to the reader but breaks `[a-z]+\.(com|net|...)` URL
+ *  detection. Without this, "gmail.com" rendered as plain text becomes a
+ *  blue underlined `<a href="https://gmail.com">` in the recipient's
+ *  client, which looks like a phishing-vector hyperlink even though it's
+ *  just a domain we extracted from the email. */
+function breakUrlPattern(s: string): string {
+  return s.replace(/\./g, "​.");
+}
+
 function renderFieldPill(label: string, value: string, status: FieldStatus): string {
   const { dot, border } = FIELD_STATUS_COLORS[status];
   return (
@@ -178,7 +189,12 @@ function renderFieldPill(label: string, value: string, status: FieldStatus): str
     `font-size:13px;line-height:1.3;white-space:nowrap;">` +
       `<span style="color:${dot};font-size:14px;line-height:1;vertical-align:-1px;">&bull;</span>` +
       `&nbsp;<span style="color:${C.inkLabel};">${esc(label)}</span>` +
-      `&nbsp;<span style="color:${C.ink};font-weight:600;">${esc(value)}</span>` +
+      // Defeat email-client URL auto-detection on the value text. We also
+      // force the inline color via the outer span (in case the client wraps
+      // an <a> anyway, the override loses to the client's <a> color in
+      // some clients but the ZWSP injection prevents that wrap to begin
+      // with).
+      `&nbsp;<span style="color:${C.ink};font-weight:600;text-decoration:none;">${esc(breakUrlPattern(value))}</span>` +
     `</span>`
   );
 }
@@ -244,7 +260,7 @@ function renderFromTheEmailBlock(
   // DOT but lookup came up empty.
   if (claims.dot_number) {
     const status: FieldStatus = verdict.carrier ? "match" : "mismatch";
-    pills.push(renderFieldPill("DOT", `DOT ${claims.dot_number}`, status));
+    pills.push(renderFieldPill("DOT", String(claims.dot_number), status));
   }
 
   // Email domain (sender). Match when sender domain aligns with FMCSA email;

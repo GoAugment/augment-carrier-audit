@@ -586,8 +586,15 @@ export const RULES: Rule[] = [
         expectMatch: /out-of-service DOTs? share/i,
       },
       caution: {
-        dot: 4177120,
-        reason: "Active LLC with 3 OOS DOTs at the same address (May 2026 snapshot).",
+        // Picked specifically for a "pure caution" profile: 4 OOS siblings
+        // triggers chameleon-address-cluster at caution, but the carrier is
+        // otherwise clean (active interstate authority, $750k BIPD on file,
+        // no revocations, no OOS rate issues) — so the overall riskLevel
+        // settles at Elevated. Avoids the conflation that happens when a
+        // chameleon-caution DOT also has Insurance lapsed, where the
+        // carrier's overall tier gets dominated by the harder finding.
+        dot: 951745,
+        reason: "LAWRENCE S BRAWLEY: 4 OOS DOTs at same address, otherwise clean (May 2026 snapshot).",
         expectMatch: /out-of-service DOTs? share/i,
       },
       none: {
