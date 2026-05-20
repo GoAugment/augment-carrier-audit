@@ -1,0 +1,18 @@
+{
+  "dot": 3409034,
+  "reasonNote": "HIGH: Unsafe Driving alert",
+  "carrierName": "BOZ TRUCKING LLC",
+  "riskLevel": "Clean",
+  "reasonLabels": [],
+  "axes": {
+    "crash": "clean",
+    "unsafeDriving": "clean",
+    "hos": "clean",
+    "driverOos": "clean",
+    "vehicleOos": "clean",
+    "hazmatOos": "na",
+    "revocations": "clean",
+    "authority": "clean",
+    "insurance": "info"
+  }
+}

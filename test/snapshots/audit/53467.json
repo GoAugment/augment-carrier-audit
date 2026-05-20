@@ -1,0 +1,18 @@
+{
+  "dot": 53467,
+  "reasonNote": "CLEAN-BIG: Werner Enterprises",
+  "carrierName": "WERNER ENTERPRISES INC",
+  "riskLevel": "Clean",
+  "reasonLabels": [],
+  "axes": {
+    "crash": "clean",
+    "unsafeDriving": "clean",
+    "hos": "clean",
+    "driverOos": "clean",
+    "vehicleOos": "clean",
+    "hazmatOos": "clean",
+    "revocations": "clean",
+    "authority": "info",
+    "insurance": "clean"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "dot": 4223883,
+  "reasonNote": "HIGH: HOS alert",
+  "carrierName": "LBLMX LOGISTICS LLC",
+  "riskLevel": "Critical",
+  "reasonLabels": [
+    "🛑 Safety rating",
+    "⚖ Recent enforcement"
+  ],
+  "axes": {
+    "crash": "na",
+    "unsafeDriving": "clean",
+    "hos": "clean",
+    "driverOos": "clean",
+    "vehicleOos": "clean",
+    "hazmatOos": "na",
+    "revocations": "clean",
+    "authority": "critical",
+    "insurance": "info"
+  }
+}

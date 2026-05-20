@@ -1,0 +1,20 @@
+{
+  "dot": 3670294,
+  "reasonNote": "CRITICAL: $0 BIPD",
+  "carrierName": "ROAD EXPERTS LLC",
+  "riskLevel": "Critical",
+  "reasonLabels": [
+    "🛑 Insurance lapsed"
+  ],
+  "axes": {
+    "crash": "na",
+    "unsafeDriving": "na",
+    "hos": "na",
+    "driverOos": "na",
+    "vehicleOos": "na",
+    "hazmatOos": "na",
+    "revocations": "info",
+    "authority": "clean",
+    "insurance": "critical"
+  }
+}

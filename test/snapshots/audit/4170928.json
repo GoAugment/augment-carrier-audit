@@ -1,0 +1,21 @@
+{
+  "dot": 4170928,
+  "reasonNote": "CRITICAL: rapid replace + ≥3 cancellations",
+  "carrierName": "ELEVATE TRANSPORT INC",
+  "riskLevel": "Critical",
+  "reasonLabels": [
+    "🛑 Rapid replace + cancellation history",
+    "🚨 Chameleon-pattern cluster"
+  ],
+  "axes": {
+    "crash": "clean",
+    "unsafeDriving": "na",
+    "hos": "na",
+    "driverOos": "na",
+    "vehicleOos": "na",
+    "hazmatOos": "na",
+    "revocations": "clean",
+    "authority": "clean",
+    "insurance": "critical"
+  }
+}

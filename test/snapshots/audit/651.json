@@ -1,0 +1,20 @@
+{
+  "dot": 651,
+  "reasonNote": "CLEAN: active interstate, no flags",
+  "carrierName": "CHRISTENSEN TRUCKING INC",
+  "riskLevel": "Critical",
+  "reasonLabels": [
+    "🛑 Safety rating"
+  ],
+  "axes": {
+    "crash": "clean",
+    "unsafeDriving": "clean",
+    "hos": "clean",
+    "driverOos": "clean",
+    "vehicleOos": "na",
+    "hazmatOos": "na",
+    "revocations": "clean",
+    "authority": "critical",
+    "insurance": "info"
+  }
+}

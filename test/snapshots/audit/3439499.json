@@ -1,0 +1,21 @@
+{
+  "dot": 3439499,
+  "reasonNote": "ENFORCEMENT: closed enforcement case",
+  "carrierName": "ONE STOP USA LLC",
+  "riskLevel": "High",
+  "reasonLabels": [
+    "⚠ Insurance churn",
+    "⚖ Recent enforcement"
+  ],
+  "axes": {
+    "crash": "clean",
+    "unsafeDriving": "clean",
+    "hos": "clean",
+    "driverOos": "clean",
+    "vehicleOos": "clean",
+    "hazmatOos": "na",
+    "revocations": "clean",
+    "authority": "clean",
+    "insurance": "elevated"
+  }
+}

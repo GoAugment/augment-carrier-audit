@@ -1,0 +1,20 @@
+{
+  "dot": 572610,
+  "reasonNote": "HIGH: crashes per million miles",
+  "carrierName": "TARA WRECKER INC",
+  "riskLevel": "Severe",
+  "reasonLabels": [
+    "Crashes"
+  ],
+  "axes": {
+    "crash": "severe",
+    "unsafeDriving": "clean",
+    "hos": "clean",
+    "driverOos": "clean",
+    "vehicleOos": "na",
+    "hazmatOos": "na",
+    "revocations": "info",
+    "authority": "clean",
+    "insurance": "clean"
+  }
+}

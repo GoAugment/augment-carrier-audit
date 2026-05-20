@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test:rules": "tsx --env-file=.env.local scripts/test_rules.ts"
+    "test:rules": "tsx --env-file=.env.local scripts/test_rules.ts",
+    "test:snapshots": "tsx --env-file=.env.local scripts/snapshot_audit.ts",
+    "test": "pnpm test:rules && pnpm test:snapshots"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

@@ -1,0 +1,21 @@
+{
+  "dot": 4546639,
+  "reasonNote": "CRITICAL: $0 BIPD",
+  "carrierName": "HOSELTON IMPORTS INC",
+  "riskLevel": "Critical",
+  "reasonLabels": [
+    "🛑 Insurance lapsed",
+    "🛑 New authority"
+  ],
+  "axes": {
+    "crash": "na",
+    "unsafeDriving": "na",
+    "hos": "na",
+    "driverOos": "na",
+    "vehicleOos": "na",
+    "hazmatOos": "na",
+    "revocations": "clean",
+    "authority": "critical",
+    "insurance": "critical"
+  }
+}

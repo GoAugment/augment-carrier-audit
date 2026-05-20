@@ -1,0 +1,18 @@
+{
+  "dot": 2619058,
+  "reasonNote": "CLEAN: no address sharing",
+  "carrierName": "TODAYS CATCH SEAFOOD INC",
+  "riskLevel": "Clean",
+  "reasonLabels": [],
+  "axes": {
+    "crash": "na",
+    "unsafeDriving": "na",
+    "hos": "na",
+    "driverOos": "na",
+    "vehicleOos": "na",
+    "hazmatOos": "na",
+    "revocations": "clean",
+    "authority": "clean",
+    "insurance": "na"
+  }
+}

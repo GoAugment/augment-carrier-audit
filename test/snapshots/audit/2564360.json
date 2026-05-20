@@ -1,0 +1,21 @@
+{
+  "dot": 2564360,
+  "reasonNote": "CRITICAL: recent involuntary revocation",
+  "carrierName": "TIMEKEEPER TRUCKING INC",
+  "riskLevel": "Critical",
+  "reasonLabels": [
+    "🛑 Insurance lapsed",
+    "🚨 Recent revocation"
+  ],
+  "axes": {
+    "crash": "clean",
+    "unsafeDriving": "na",
+    "hos": "na",
+    "driverOos": "na",
+    "vehicleOos": "na",
+    "hazmatOos": "na",
+    "revocations": "high",
+    "authority": "clean",
+    "insurance": "critical"
+  }
+}

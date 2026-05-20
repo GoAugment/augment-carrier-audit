@@ -1,0 +1,21 @@
+{
+  "dot": 4177120,
+  "reasonNote": "CAUTION: 3 OOS DOTs at same address",
+  "carrierName": "MARSHALLS CARGO LLC",
+  "riskLevel": "Critical",
+  "reasonLabels": [
+    "🛑 Insurance lapsed",
+    "⚡ Address shared with out-of-service DOTs"
+  ],
+  "axes": {
+    "crash": "na",
+    "unsafeDriving": "na",
+    "hos": "na",
+    "driverOos": "na",
+    "vehicleOos": "na",
+    "hazmatOos": "na",
+    "revocations": "clean",
+    "authority": "clean",
+    "insurance": "critical"
+  }
+}

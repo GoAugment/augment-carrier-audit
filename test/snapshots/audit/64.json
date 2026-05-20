@@ -1,0 +1,18 @@
+{
+  "dot": 64,
+  "reasonNote": "CLEAN: active interstate, no flags",
+  "carrierName": "CHEROKEE CULVERT COMPANY INC",
+  "riskLevel": "Clean",
+  "reasonLabels": [],
+  "axes": {
+    "crash": "clean",
+    "unsafeDriving": "na",
+    "hos": "na",
+    "driverOos": "na",
+    "vehicleOos": "na",
+    "hazmatOos": "na",
+    "revocations": "clean",
+    "authority": "info",
+    "insurance": "na"
+  }
+}
