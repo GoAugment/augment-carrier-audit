@@ -77,7 +77,12 @@ const DEFAULT_TIER_STYLE: TierStyle = {
 // on macOS misbehaving with system-ui. Helvetica Neue covers older macOS Mail.
 // Final Arial guarantees a sans-serif on Outlook (which would otherwise pick
 // a Times default at heavy weights).
-const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+//
+// CRITICAL: Use SINGLE quotes inside the stack (e.g. 'Segoe UI'), NOT double.
+// This string gets interpolated into inline style="..." attributes — any inner
+// double quotes prematurely close the attribute, and every declaration after
+// font-family in that style="..." block silently fails to apply.
+const FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
 const FONT_DECL = `font-family:${FONT_STACK};`;
 
 function esc(s: string | number | null | undefined): string {
@@ -988,7 +993,7 @@ export function buildReplyHtml(verdict: Verdict): string {
     <tr><td style="padding:32px 32px 24px 32px;">
       <div style="margin-bottom:18px;">${pill(tierLabel, tier.bg, tier.ink, { large: false })}</div>
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">
-        <tr><td style="${FONT_DECL}font-size:36px;font-weight:700;color:${C.ink};line-height:1.15;letter-spacing:-0.02em;padding:0 0 14px 0;mso-line-height-rule:exactly;">
+        <tr><td style="${FONT_DECL}font-size:24px;font-weight:700;color:${C.ink};line-height:1.25;letter-spacing:-0.01em;padding:0 0 8px 0;mso-line-height-rule:exactly;">
           ${esc(tier.headline)}
         </td></tr>
         <tr><td style="${FONT_DECL}font-size:14px;color:${C.inkMuted};line-height:1.5;">
@@ -1018,16 +1023,16 @@ export function buildReplyHtml(verdict: Verdict): string {
       <table role="presentation" cellpadding="0" cellspacing="0" border="0">
       <tr>
         <td style="padding-right:36px;">
-          <div style="${FONT_DECL}font-size:38px;font-weight:600;color:${C.greenCheck};line-height:1;">${cov.passed}</div>
+          <div style="${FONT_DECL}font-size:22px;font-weight:600;color:${C.ink};line-height:1;">${cov.passed}</div>
           <div style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-transform:uppercase;margin-top:6px;">Passed</div>
         </td>
         ${cov.failed > 0 ? `
         <td style="padding-right:36px;">
-          <div style="${FONT_DECL}font-size:38px;font-weight:600;color:${C.redInkPill};line-height:1;">${cov.failed}</div>
+          <div style="${FONT_DECL}font-size:22px;font-weight:600;color:${C.ink};line-height:1;">${cov.failed}</div>
           <div style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-transform:uppercase;margin-top:6px;">Failed</div>
         </td>` : ""}
         <td>
-          <div style="${FONT_DECL}font-size:38px;font-weight:600;color:${C.inkMuted};line-height:1;">${cov.skipped}</div>
+          <div style="${FONT_DECL}font-size:22px;font-weight:600;color:${C.ink};line-height:1;">${cov.skipped}</div>
           <div style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-transform:uppercase;margin-top:6px;">Skipped</div>
         </td>
       </tr>
@@ -1038,7 +1043,7 @@ export function buildReplyHtml(verdict: Verdict): string {
     <!-- Carrier identity -->
     <tr><td style="padding:24px 32px;border-top:1px solid ${C.border};">
       <div style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-transform:uppercase;margin-bottom:10px;">Carrier · per FMCSA</div>
-      <div style="${FONT_DECL}font-size:24px;font-weight:700;color:${C.ink};line-height:1.2;letter-spacing:-0.01em;text-transform:uppercase;">
+      <div style="${FONT_DECL}font-size:18px;font-weight:700;color:${C.ink};line-height:1.3;letter-spacing:-0.005em;text-transform:uppercase;">
         ${esc(c.legalName ?? "(unnamed)")}
       </div>
       <div style="margin-top:12px;margin-bottom:20px;">${carrierHeaderPills}</div>
