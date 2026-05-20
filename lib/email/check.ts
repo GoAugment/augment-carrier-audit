@@ -208,7 +208,7 @@ function evalIdentityCoherence(
     signals.push({
       category: "identity_coherence",
       tier: "critical",
-      label: "MC# mismatch",
+      label: getRule("mc-number-mismatch").label,
       detail: `Email claims ${e.identity_claims.mc_number}, FMCSA has ${carrier.mcNumber} for DOT ${carrier.dotNumber}.`,
     });
   }
@@ -233,7 +233,7 @@ function evalIdentityCoherence(
         signals.push({
           category: "identity_coherence",
           tier: "high",
-          label: "Sender email doesn't match FMCSA registration",
+          label: getRule("sender-domain-mismatch").label,
           detail: `Email from ${senderEmail}, FMCSA records this carrier at ${fmcsaEmail}. Free-mail domain match alone is meaningless: the local-part differs, which is the actual identifier on shared providers.`,
         });
       }
@@ -244,14 +244,14 @@ function evalIdentityCoherence(
         signals.push({
           category: "identity_coherence",
           tier: "high",
-          label: `Sender at ${senderDomain} doesn't match FMCSA-registered ${fmcsaDomain}`,
+          label: getRule("sender-domain-mismatch").label,
           detail: `Email comes from ${senderDomain}, but FMCSA records ${carrierName} at ${fmcsaDomain}. Possible impersonation. Verify by calling the FMCSA-registered phone before tendering.`,
         });
       } else {
         signals.push({
           category: "identity_coherence",
           tier: "high",
-          label: `Sender at ${senderDomain} doesn't match FMCSA-registered ${fmcsaDomain}`,
+          label: getRule("sender-domain-mismatch").label,
           detail: `Email comes from ${senderDomain}, but FMCSA records ${carrierName} at ${fmcsaDomain}. Verify identity through another channel before tendering.`,
         });
       }
@@ -263,7 +263,7 @@ function evalIdentityCoherence(
       signals.push({
         category: "identity_coherence",
         tier: "high",
-        label: `Sender at ${senderDomain} doesn't match FMCSA-registered ${fmcsa}`,
+        label: getRule("sender-domain-mismatch").label,
         detail: `Email comes from ${senderDomain}, but FMCSA records ${carrier.legalName ?? "this carrier"} at ${fmcsa}. Verify identity before tendering.`,
       });
     }
@@ -273,7 +273,7 @@ function evalIdentityCoherence(
     signals.push({
       category: "identity_coherence",
       tier: "info",
-      label: "Sender at free email (no FMCSA email to compare)",
+      label: getRule("sender-free-email-no-fmcsa-comparison").label,
       detail: `Sender uses ${e.sender_metadata.sender_email_domain} and FMCSA has no email on file. Common for owner-operators; verify by phone if uncertain.`,
     });
   }
@@ -286,7 +286,7 @@ function evalIdentityCoherence(
       signals.push({
         category: "identity_coherence",
         tier: "high",
-        label: "Company name doesn't match FMCSA",
+        label: getRule("company-name-mismatch").label,
         detail: `Email claims "${claimedName}", DOT ${carrier.dotNumber} is registered to "${carrier.legalName}".`,
       });
     }
@@ -300,7 +300,7 @@ function evalIdentityCoherence(
     signals.push({
       category: "identity_coherence",
       tier: "caution",
-      label: "Phone in email doesn't match FMCSA",
+      label: getRule("phone-mismatch").label,
       detail: `Email lists ${e.identity_claims.claimed_phone}, FMCSA has ${identity?.phone}. Could be a new number; verify if unsure.`,
     });
   }

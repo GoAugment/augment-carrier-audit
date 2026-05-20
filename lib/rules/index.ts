@@ -174,6 +174,61 @@ export const RULES: Rule[] = [
   },
 
   // ---------------------------------------------------------------------
+  // IDENTITY COHERENCE — email-only rules comparing what the email claims
+  // against what FMCSA has on file.
+  // ---------------------------------------------------------------------
+  {
+    id: "mc-number-mismatch",
+    category: "identityCoherence",
+    label: "MC# mismatch",
+    definition:
+      "The MC (Motor Carrier) number stated in the email doesn't match FMCSA's registered MC for the claimed DOT. MC and DOT numbers are tied to the same legal entity in FMCSA's records — a mismatch suggests either a fabricated identity or an impersonator using a stolen DOT alongside a different (often valid-looking) MC.",
+    thresholds: {
+      critical: "Email's MC number doesn't equal the FMCSA-registered MC for the claimed DOT.",
+    },
+  },
+  {
+    id: "sender-domain-mismatch",
+    category: "identityCoherence",
+    label: "Sender domain doesn't match FMCSA registration",
+    definition:
+      "The sender's email domain (or full address, when both are free-mail) doesn't match the email FMCSA has on file for this carrier. The cleanest impersonation pattern: an email from a brand-new look-alike domain or a free-mail address claiming to represent a carrier whose real domain is on file.",
+    thresholds: {
+      high: "Sender domain (or full address for free-mail) differs from FMCSA's registered email.",
+    },
+  },
+  {
+    id: "sender-free-email-no-fmcsa-comparison",
+    category: "identityCoherence",
+    label: "Sender at free email (no FMCSA email to compare)",
+    definition:
+      "Sender is on a free-mail provider (Gmail, Yahoo, Outlook, etc.) and FMCSA has no email on file for this carrier. We can't verify the sender against FMCSA — common in small-carrier and owner-op populations, so this is informational rather than a flag.",
+    thresholds: {
+      info: "Sender domain is free-mail AND FMCSA has no email for this DOT.",
+    },
+  },
+  {
+    id: "company-name-mismatch",
+    category: "identityCoherence",
+    label: "Company name doesn't match FMCSA",
+    definition:
+      "The carrier company name claimed in the email body doesn't match FMCSA's legal name for the claimed DOT. We allow minor variations (LLC vs Inc, common abbreviations, DBA variants), but a substantive name mismatch suggests the sender is using a stolen DOT alongside a fabricated company name.",
+    thresholds: {
+      high: "Claimed company name and FMCSA's legal name don't match after normalization.",
+    },
+  },
+  {
+    id: "phone-mismatch",
+    category: "identityCoherence",
+    label: "Phone in email doesn't match FMCSA",
+    definition:
+      "The phone number stated in the email doesn't match FMCSA's registered phone for this DOT. Carriers do change phone numbers, so a single mismatch isn't damning — but combined with other identity flags it strengthens the impersonation hypothesis.",
+    thresholds: {
+      caution: "Phone in the email doesn't match FMCSA's registered phone after normalization.",
+    },
+  },
+
+  // ---------------------------------------------------------------------
   // SMS BASIC + CRASH — statistical-axis rules
   //
   // These six rules all share the same shape: an observed rate (violation /
