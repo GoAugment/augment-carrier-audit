@@ -24,7 +24,157 @@ import type { Rule, RuleId } from "./types";
 
 export const RULES: Rule[] = [
   // ---------------------------------------------------------------------
+  // AUTHORITY
+  // ---------------------------------------------------------------------
+  {
+    id: "authority-not-active",
+    category: "authority",
+    label: "Authority not active",
+    definition:
+      "FMCSA's operating-authority status for this DOT is not Active. Status codes other than 'A' (e.g. 'I' inactive, 'V' voluntarily-revoked) mean the carrier is not currently authorized to haul. Brokers should never tender freight to a non-active authority.",
+    thresholds: {
+      critical: "FMCSA status_code is anything other than 'A' (Active).",
+    },
+  },
+  {
+    id: "new-authority",
+    category: "authority",
+    label: "New authority",
+    definition:
+      "FMCSA issued the DOT less than the industry's 90-day chameleon-prevention tenure floor. Brand-new authorities have no operating history and are statistically over-represented in re-incarnation patterns: the typical chameleon registers a new DOT shortly after their old one was revoked, and the new authority is often paired with a low-activity / tiny fleet.",
+    thresholds: {
+      critical: "DOT issued less than 90 days ago.",
+    },
+  },
+
+  // ---------------------------------------------------------------------
+  // SAFETY RATING (FMCSA's official compliance review verdict)
+  // ---------------------------------------------------------------------
+  {
+    id: "safety-rating-unsatisfactory",
+    category: "authority",
+    label: "Safety rating: Unsatisfactory",
+    definition:
+      "FMCSA's most recent compliance review rated this carrier Unsatisfactory. An Unsatisfactory rating is the worst possible FMCSA verdict and triggers an out-of-service order for hazmat and passenger carriers. Property carriers can theoretically continue operating, but the industry standard is to refuse the load.",
+    thresholds: {
+      critical: "Safety rating = Unsatisfactory.",
+    },
+  },
+  {
+    id: "safety-rating-conditional",
+    category: "authority",
+    label: "Safety rating: Conditional",
+    definition:
+      "FMCSA's most recent compliance review rated this carrier Conditional. A Conditional rating means the carrier's safety management practices have specific deficiencies; FMCSA continues to monitor and the rating may downgrade to Unsatisfactory. The industry standard is to refuse loads from Conditional carriers.",
+    thresholds: {
+      critical: "Safety rating = Conditional.",
+    },
+  },
+
+  // ---------------------------------------------------------------------
+  // INSURANCE
+  // ---------------------------------------------------------------------
+  {
+    id: "insurance-lapsed",
+    category: "insurance",
+    label: "Insurance lapsed",
+    definition:
+      "FMCSA-required BIPD (Bodily Injury / Property Damage) liability insurance is missing or below the required minimum for this carrier's authority. Tendering freight to an underinsured carrier exposes the broker to the full loss with no recourse, since the carrier's policy is the broker's first line of recovery in a cargo claim or accident.",
+    thresholds: {
+      critical: "$0 BIPD on file when FMCSA requires it, or on-file amount below FMCSA minimum.",
+    },
+  },
+  {
+    id: "cargo-insurance-not-on-file",
+    category: "insurance",
+    label: "Cargo insurance not on file",
+    definition:
+      "FMCSA flags cargo insurance as required for this carrier, but no active cargo policy is on file. Cargo insurance pays the broker when freight is damaged in transit. Some large carriers legitimately self-insure cargo, so this is not a hard refusal — verify a current cargo COI directly before tendering.",
+    thresholds: {
+      high: "FMCSA cargo required, no policy on file.",
+    },
+  },
+  {
+    id: "insurance-rapid-replace",
+    category: "insurance",
+    label: "Rapid replace + cancellation history",
+    definition:
+      "Insurance policy was cancelled and replaced within roughly 30 days, paired with three or more prior cancellations in the last 24 months. Quick policy swap by itself is a routine renewal pattern, but combined with repeated prior cancellations it's a re-incarnation move: a carrier with a damaged insurance history cycles policies to maintain on-file appearance.",
+    thresholds: {
+      critical: "Rapid-replace flag AND ≥3 true cancellations in 24 months.",
+    },
+  },
+  {
+    id: "insurance-severe-churn",
+    category: "insurance",
+    label: "Severe insurance churn",
+    definition:
+      "Five or more true insurance cancellations in the last 24 months — the top 1% of carriers nationally. Repeated insurer dropouts indicate the carrier is on the edge of becoming uninsurable; the next cancellation may not be replaced, leaving the broker exposed.",
+    thresholds: {
+      critical: "≥5 true insurance cancellations in 24 months.",
+    },
+  },
+  {
+    id: "insurance-churn",
+    category: "insurance",
+    label: "Insurance churn",
+    definition:
+      "Three to four true insurance cancellations in the last 24 months — top 5% nationally. Frequent insurer changes suggest the carrier is being shopped between insurers, often due to claim history or premium nonpayment. Worth confirming the current policy is stable before tendering.",
+    thresholds: {
+      caution: "3 or 4 true insurance cancellations in 24 months.",
+    },
+  },
+
+  // ---------------------------------------------------------------------
+  // REVOCATION / ENFORCEMENT
+  // ---------------------------------------------------------------------
+  {
+    id: "recent-revocation",
+    category: "authority",
+    label: "Recent revocation",
+    definition:
+      "FMCSA involuntarily revoked this carrier's authority within the last 24 months. A revocation means FMCSA pulled the carrier's authority for non-compliance (failed insurance, biennial-update lapse, safety violations). Even when authority is reinstated, the revocation history is a strong negative signal.",
+    thresholds: {
+      critical: "≥1 involuntary revocation in the last 24 months.",
+    },
+  },
+  {
+    id: "recent-enforcement",
+    category: "authority",
+    label: "Recent enforcement",
+    definition:
+      "FMCSA closed at least one civil-penalty enforcement case against this carrier in recent history. Enforcement cases follow compliance reviews and indicate FMCSA found violations serious enough to fine. Large settlements ($75k+) often correlate with safety patterns the carrier has not corrected.",
+    thresholds: {
+      high: "≥1 closed enforcement case (large = settlement ≥ $75,000).",
+    },
+  },
+
+  // ---------------------------------------------------------------------
   // CHAMELEON
+  // ---------------------------------------------------------------------
+  {
+    id: "chameleon-prior-revoke",
+    category: "chameleon",
+    label: "FMCSA prior-revoke flag (chameleon)",
+    definition:
+      "FMCSA's own PRIOR_REVOKE_FLAG marks this DOT as a re-incarnation of a previously-revoked predecessor DOT. This is the strongest single chameleon signal available — no inference required, FMCSA explicitly linked the active DOT to its revoked predecessor. The new authority exists specifically to escape the predecessor's enforcement history.",
+    thresholds: {
+      critical: "FMCSA PRIOR_REVOKE_FLAG = Y AND PRIOR_REVOKE_DOT_NUMBER points to a different DOT.",
+    },
+  },
+  {
+    id: "chameleon-cluster",
+    category: "chameleon",
+    label: "Chameleon-pattern cluster",
+    definition:
+      "Two or more independent chameleon signals fire on the same carrier — combinations like prior-revoke flag + insurance rapid-replace + new authority + low activity. Any single signal is already flagged by its own rule; this is the combined-signal escalator that pushes the carrier to Severe minimum because multiple unrelated indicators agree.",
+    thresholds: {
+      high: "≥2 of {prior-revoke flag, rapid replace, ≥2 cancellations, new authority + low activity, ≥3 OOS DOTs at same address} fire together.",
+    },
+  },
+
+  // ---------------------------------------------------------------------
+  // CHAMELEON — address cluster
   // ---------------------------------------------------------------------
   {
     id: "chameleon-address-cluster",
