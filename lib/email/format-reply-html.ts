@@ -612,6 +612,45 @@ function renderDetailSection(c: NonNullable<Verdict["carrier"]>): string {
   addInspBar("Vehicle OOS", c.vehicleInspections, c.auditAxes.vehicleOos);
   addInspBar("Hazmat OOS", c.hazmatInspections, c.auditAxes.hazmatOos);
 
+  // Unsafe Driving + HOS — rendered like OOS axes (rate vs peer P85/P90/P95).
+  // The analyzer's classification uses the violation rate, so we plot that
+  // rather than the raw FMCSA SMS measure (1.88 etc.) which is on a
+  // different scale and harder to interpret at a glance.
+  const addRateBar = (label: string, axis: typeof c.auditAxes.crash, violationCount: number, totalInsp: number) => {
+    if (totalInsp === 0 || !axis) return;
+    const pct = (violationCount / totalInsp) * 100;
+    const display = `${violationCount} of ${totalInsp} insp (${pct.toFixed(0)}%)`;
+    barRows.push(renderBarRow(label, display, pct, axis.cutoffs, "%"));
+  };
+  // Only render when the axis actually fired (non-clean) — for a clean
+  // carrier the OOS rows already cover the inspection volume context.
+  if (c.auditAxes.unsafeDriving && c.auditAxes.unsafeDriving.status !== "clean") {
+    // unsafeDrivingViolations isn't on VerdictCarrierSummary, but the axis's
+    // observed field carries the rate (already × 100 via AXIS_SCALE_FOR_DISPLAY).
+    const obs = c.auditAxes.unsafeDriving.observed;
+    if (obs != null) {
+      barRows.push(renderBarRow(
+        "Unsafe Driving",
+        `${obs.toFixed(0)}% of driver inspections`,
+        obs,
+        c.auditAxes.unsafeDriving.cutoffs,
+        "%"
+      ));
+    }
+  }
+  if (c.auditAxes.hos && c.auditAxes.hos.status !== "clean") {
+    const obs = c.auditAxes.hos.observed;
+    if (obs != null) {
+      barRows.push(renderBarRow(
+        "HOS Compliance",
+        `${obs.toFixed(0)}% of driver inspections`,
+        obs,
+        c.auditAxes.hos.cutoffs,
+        "%"
+      ));
+    }
+  }
+
   // Crash rate bar (per million miles), followed by the count breakdown.
   if (c.crashesPerMillionMiles != null) {
     barRows.push(renderBarRow(
@@ -706,10 +745,9 @@ function renderDetailSection(c: NonNullable<Verdict["carrier"]>): string {
       </td>
     </tr>`);
   };
-  addAxisRow("Unsafe Driving", c.auditAxes.unsafeDriving);
-  addAxisRow("HOS Compliance", c.auditAxes.hos);
-  // Hazmat OOS is rendered as a bar in the safety profile above, so we
-  // skip the text row here to avoid duplicating the same finding twice.
+  // Unsafe Driving + HOS + Hazmat OOS are all rendered as bars in the
+  // safety-profile block above; we skip the text rows here to avoid
+  // duplicating the same finding in two visual styles.
 
   // BASIC alerts pill row — FMCSA's own Y flags. Optional, supplements the
   // axis rows above when FMCSA themselves has called the carrier out.

@@ -836,16 +836,21 @@ function composeVerdict(
       auditAxes: audit
         ? (() => {
             const peer = audit.peerGroup as PeerGroup;
-            // Observed values for each axis match the analyzer's input scale.
-            // OOS axes are stored as 0-1 in the analyzer but displayed as %,
-            // so we multiply by 100 to match the cutoffs' percent scale.
+            // Observed values for each axis match the analyzer's peer-group
+            // cutoff scale. OOS + Unsafe Driving + HOS are all "violation
+            // rates" (count / driver-or-vehicle inspections) shown as %.
+            // Crash is crashes-per-million-miles. The SMS measure (1.88
+            // etc.) is referenced in the audit detail string but the bar
+            // visualization uses the comparable per-peer-group rate.
             const driverOosObs = carrier.driverInsp > 0 ? (carrier.driverOosInsp / carrier.driverInsp) * 100 : null;
             const vehicleOosObs = carrier.vehicleInsp > 0 ? (carrier.vehicleOosInsp / carrier.vehicleInsp) * 100 : null;
             const hazmatOosObs = carrier.hazmatInsp > 0 ? (carrier.hazmatOosInsp / carrier.hazmatInsp) * 100 : null;
+            const unsafeDrivingRate = carrier.driverInsp > 0 ? (carrier.unsafeDrivingViolations / carrier.driverInsp) * 100 : null;
+            const hosRate = carrier.driverInsp > 0 ? (carrier.hosViolations / carrier.driverInsp) * 100 : null;
             return {
               crash: pickAxis(audit.axes.crash, "crashesPerMillionMiles", peer, carrier.crashesPerMillionMiles ?? null),
-              unsafeDriving: pickAxis(audit.axes.unsafeDriving, "unsafeDriving", peer, carrier.unsafeDrivingMeasure ?? null),
-              hos: pickAxis(audit.axes.hos, "hos", peer, carrier.hosMeasure ?? null),
+              unsafeDriving: pickAxis(audit.axes.unsafeDriving, "unsafeDriving", peer, unsafeDrivingRate),
+              hos: pickAxis(audit.axes.hos, "hos", peer, hosRate),
               driverOos: pickAxis(audit.axes.driverOos, "driverOos", peer, driverOosObs),
               vehicleOos: pickAxis(audit.axes.vehicleOos, "vehicleOos", peer, vehicleOosObs),
               hazmatOos: pickAxis(audit.axes.hazmatOos, "hazmatOos", peer, hazmatOosObs),
@@ -874,8 +879,11 @@ const AXIS_SCALE_FOR_DISPLAY: Record<AxisKey, number> = {
   hazmatOos: 100,
   crashesPerMillionMiles: 1,
   crashMeasure: 1,
-  unsafeDriving: 1,
-  hos: 1,
+  // Unsafe Driving + HOS rate cutoffs are stored as decimals (0-1) in
+  // thresholds.json. The email displays them as % — so multiply by 100 to
+  // keep observed (also in %) on the same scale.
+  unsafeDriving: 100,
+  hos: 100,
 };
 
 /** Strip the analyzer's AxisCell down to plain JSON + attach the peer-group
