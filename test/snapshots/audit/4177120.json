@@ -4,8 +4,8 @@
   "carrierName": "MARSHALLS CARGO LLC",
   "riskLevel": "Critical",
   "reasonLabels": [
-    "🛑 Insurance lapsed",
-    "⚡ Address shared with out-of-service DOTs"
+    "Insurance lapsed",
+    "Address shared with out-of-service DOTs"
   ],
   "axes": {
     "crash": "na",

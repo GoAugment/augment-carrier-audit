@@ -4,7 +4,7 @@
   "carrierName": "KELLY RONNING",
   "riskLevel": "Severe",
   "reasonLabels": [
-    "🛑 Address shared with out-of-service DOTs"
+    "Address shared with out-of-service DOTs"
   ],
   "axes": {
     "crash": "na",

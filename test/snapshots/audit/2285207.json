@@ -4,7 +4,7 @@
   "carrierName": "OLE SOUTHERN TRUCKING INC",
   "riskLevel": "Critical",
   "reasonLabels": [
-    "🛑 FMCSA prior-revoke flag (chameleon)"
+    "FMCSA prior-revoke flag (chameleon)"
   ],
   "axes": {
     "crash": "na",

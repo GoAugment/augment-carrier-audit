@@ -4,8 +4,8 @@
   "carrierName": "NADIA ALICIA GRIMALDO YANEZ",
   "riskLevel": "Severe",
   "reasonLabels": [
-    "⚖ Recent enforcement",
-    "🚨 Chameleon-pattern cluster"
+    "Recent enforcement",
+    "Chameleon-pattern cluster"
   ],
   "axes": {
     "crash": "na",

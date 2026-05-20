@@ -505,29 +505,34 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
       for (const r of c.audit.reasons) {
         rows.push({
           status: "failed",
-          label: r.label.replace(/^[^\w]+\s*/, ""),  // strip leading 🛑/🚨/⚠ glyph
+          // Labels are plain text (no glyphs) by registry convention; the
+          // tier-colored ✗ icon to the left of the row provides the
+          // visual severity, so we don't need an emoji in the label too.
+          label: r.label,
           detail: r.detail,
         });
       }
     }
   }
 
-  // Insurance — explicit failed row when BIPD is missing / $0; passed when
-  // amount + insurer are on file. This makes the "no insurance" case
-  // unambiguous to the broker (e.g. MAXIM EXPEDITED with $0 BIPD).
+  // Insurance — explicit failed row when BIPD is missing AND FMCSA requires
+  // it. Many carriers (intrastate-only, private, owner-op without property
+  // authority) legally don't need BIPD on file — flagging those as
+  // "No insurance" creates Critical-tier false positives. We mirror the
+  // audit's logic (analyzer.ts > classifyInsurance), which only fires when
+  // fmcsaRequired > 0 AND onFile === 0.
   if (c) {
-    const hasInsurance = (c.bipdAmount ?? 0) > 0 || !!c.bipdInsurer;
-    if (!hasInsurance) {
-      // Label must match the verdict — a scanner who sees "Active BIPD..."
-      // next to a ✗ might still walk away thinking insurance is in place.
-      // State the missing-insurance finding directly.
+    const fmcsaRequired = c.bipdRequiredAmount ?? 0;
+    const onFile = c.bipdAmount ?? 0;
+    const hasInsurance = onFile > 0 || !!c.bipdInsurer;
+    if (fmcsaRequired > 0 && !hasInsurance) {
       rows.push({
         status: "failed",
         label: "No active BIPD insurance",
-        detail: "FMCSA shows $0 BIPD insurance on file for this carrier. Tendering freight to an uninsured carrier exposes the broker to the full loss.",
+        detail: `FMCSA requires ${formatBipd(fmcsaRequired)} BIPD for this carrier's authority, but $0 is on file. Tendering freight to an uninsured carrier exposes the broker to the full loss.`,
       });
-    } else {
-      const amount = c.bipdAmount ? formatBipd(c.bipdAmount) : null;
+    } else if (hasInsurance) {
+      const amount = onFile > 0 ? formatBipd(onFile) : null;
       const insurer = c.bipdInsurer ?? "insurer on file";
       rows.push({
         status: "passed",
@@ -535,6 +540,8 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
         detail: `${insurer}. Coverage current, no lapses in the most recent FMCSA snapshot. Verify the COI before booking; freight over $750k (or hazmat over $1M / $5M) needs higher coverage.`,
       });
     }
+    // No row at all when FMCSA doesn't require BIPD AND none is on file —
+    // there's nothing wrong, and no positive verification to report either.
   }
 
   // MC match

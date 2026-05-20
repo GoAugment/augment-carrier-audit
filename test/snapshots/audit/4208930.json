@@ -4,8 +4,8 @@
   "carrierName": "KP MARTIN ENTERPRISE LLC",
   "riskLevel": "Severe",
   "reasonLabels": [
-    "🛑 Severe insurance churn",
-    "🚨 Recent revocation"
+    "Severe insurance churn",
+    "Recent revocation"
   ],
   "axes": {
     "crash": "na",

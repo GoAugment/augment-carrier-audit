@@ -4,7 +4,7 @@
   "carrierName": "ROAD EXPERTS LLC",
   "riskLevel": "Critical",
   "reasonLabels": [
-    "🛑 Insurance lapsed"
+    "Insurance lapsed"
   ],
   "axes": {
     "crash": "na",

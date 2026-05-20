@@ -28,7 +28,6 @@ export const RULES: Rule[] = [
   // ---------------------------------------------------------------------
   {
     id: "chameleon-address-cluster",
-    surface: ["audit", "email"],
     category: "chameleon",
     label: "Address shared with out-of-service DOTs",
     definition:
@@ -38,7 +37,6 @@ export const RULES: Rule[] = [
       high:     "5 to 9 out-of-service DOTs share this carrier's address.",
       caution:  "3 or 4 out-of-service DOTs share this carrier's address.",
     },
-    sources: ["companyCensus"],
     fixtures: {
       // Fixtures sampled from May 2026 parquet snapshot. Each DOT chosen
       // because its address_dupe_oos_count puts it solidly inside the tier's
@@ -82,4 +80,4 @@ export function getRule(id: RuleId): Rule {
   return r;
 }
 
-export type { Rule, RuleId, RuleSurface, RuleCategory, RuleTier, RuleSource, RuleFixture, RuleFixtures } from "./types";
+export type { Rule, RuleId, RuleCategory, RuleTier, RuleFixture, RuleFixtures } from "./types";

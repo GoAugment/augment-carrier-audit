@@ -855,6 +855,7 @@ function composeVerdict(
       fmcsaEmail: identity?.email ?? null,
       bipdInsurer: carrier.bipdInsurerName ?? null,
       bipdAmount: carrier.bipdInsuranceOnFile || null,
+      bipdRequiredAmount: carrier.bipdRequiredAmount ?? 0,
       cargoInsurer: carrier.cargoInsurerName ?? null,
       cargoInsuranceOnFile: carrier.cargoInsuranceOnFile,
       inspections24mo: carrier.driverInsp + carrier.vehicleInsp,

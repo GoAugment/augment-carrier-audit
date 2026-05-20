@@ -4,8 +4,8 @@
   "carrierName": "ONE STOP USA LLC",
   "riskLevel": "High",
   "reasonLabels": [
-    "⚠ Insurance churn",
-    "⚖ Recent enforcement"
+    "Insurance churn",
+    "Recent enforcement"
   ],
   "axes": {
     "crash": "clean",

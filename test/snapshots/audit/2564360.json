@@ -4,8 +4,8 @@
   "carrierName": "TIMEKEEPER TRUCKING INC",
   "riskLevel": "Critical",
   "reasonLabels": [
-    "🛑 Insurance lapsed",
-    "🚨 Recent revocation"
+    "Insurance lapsed",
+    "Recent revocation"
   ],
   "axes": {
     "crash": "clean",

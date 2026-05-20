@@ -4,8 +4,8 @@
   "carrierName": "LBLMX LOGISTICS LLC",
   "riskLevel": "Critical",
   "reasonLabels": [
-    "🛑 Safety rating",
-    "⚖ Recent enforcement"
+    "Safety rating: Conditional",
+    "Recent enforcement"
   ],
   "axes": {
     "crash": "na",

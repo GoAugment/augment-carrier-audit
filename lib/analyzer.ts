@@ -411,7 +411,7 @@ function classifyRevocation(c: FmcsaCarrier): {
       `Most recent involuntary revocation: ${c.mostRecentInvoluntaryDate}.`
     );
     reasons.push({
-      label: "🚨 Recent revocation",
+      label: "Recent revocation",
       detail: `${c.mostRecentInvoluntaryDate} — FMCSA pulled authority within the last 24 months.`,
     });
   } else if (c.revocationsTotal > 0) {
@@ -467,7 +467,7 @@ function classifyAuthority(c: FmcsaCarrier): {
     parts.push(code);
     promote("critical");
     reasons.push({
-      label: "🛑 Authority",
+      label: "Authority not active",
       detail: `FMCSA operating authority is not Active (status_code=${code}).`,
     });
   } else {
@@ -480,14 +480,14 @@ function classifyAuthority(c: FmcsaCarrier): {
     parts.push("Unsat");
     promote("critical");
     reasons.push({
-      label: "🛑 Safety rating",
+      label: "Safety rating: Unsatisfactory",
       detail: "FMCSA safety rating: Unsatisfactory.",
     });
   } else if (rating === "C" || rating === "CONDITIONAL") {
     parts.push("Cond");
     promote("critical");
     reasons.push({
-      label: "🛑 Safety rating",
+      label: "Safety rating: Conditional",
       detail: "FMCSA safety rating: Conditional (industry standard is to refuse).",
     });
   } else if (rating === "S" || rating === "SATISFACTORY") {
@@ -512,7 +512,7 @@ function classifyAuthority(c: FmcsaCarrier): {
       parts.push(`${days}d NEW`);
       promote("critical");
       reasons.push({
-        label: "🛑 New authority",
+        label: "New authority",
         detail: `DOT issued ${days} days ago (${c.dotAddDate}) — below the ${MIN_AUTHORITY_AGE_DAYS}-day industry tenure floor.`,
       });
     } else if (days < 365) {
@@ -588,7 +588,7 @@ function classifyInsurance(
         detail: `BIPD on file: $0. FMCSA required: ${fmtMoney(fmcsaRequired)}. Industry floor: ${fmtMoney(floor)}.`,
       },
       reason: {
-        label: "🛑 Insurance lapsed",
+        label: "Insurance lapsed",
         detail: `$0 BIPD on file vs ${fmtMoney(fmcsaRequired || floor)} required.`,
       },
     };
@@ -601,7 +601,7 @@ function classifyInsurance(
         detail: `BIPD on file (${fmtMoney(onFile)}) is below FMCSA-required (${fmtMoney(fmcsaRequired)}).`,
       },
       reason: {
-        label: "🛑 Insurance lapsed",
+        label: "Insurance lapsed",
         detail: `${fmtMoney(onFile)} on file vs ${fmtMoney(fmcsaRequired)} FMCSA-required.`,
       },
     };
@@ -662,7 +662,7 @@ function classifyCargoInsurance(c: FmcsaCarrier): {
           "FMCSA flags cargo insurance as required for this carrier, but no cargo policy is on file. Many large carriers legitimately self-insure cargo — verify a current COI directly before tendering.",
       },
       reason: {
-        label: "⚠ Cargo insurance not on file",
+        label: "Cargo insurance not on file",
         detail:
           "FMCSA marks cargo as required but no policy on file. Many large carriers self-insure cargo — verify via direct COI before tender.",
       },
@@ -718,7 +718,7 @@ function classifyAuthorityAge(c: FmcsaCarrier): {
         detail: `DOT issued ${days} days ago — below the ${MIN_AUTHORITY_AGE_DAYS}-day industry tenure rule (chameleon-prevention).`,
       },
       reason: {
-        label: "🛑 New authority",
+        label: "New authority",
         detail: `DOT issued ${days} days ago (${c.dotAddDate}) — below the ${MIN_AUTHORITY_AGE_DAYS}-day industry tenure minimum.`,
       },
     };
@@ -764,7 +764,7 @@ function classifyEnforcement(c: FmcsaCarrier): {
       detail: `${c.enforcementCasesCount} closed case(s), $${c.enforcementTotalSettled.toLocaleString()} settled (latest ${c.enforcementRecentDate}).`,
     },
     reason: {
-      label: "⚖ Recent enforcement",
+      label: "Recent enforcement",
       detail: `${c.enforcementCasesCount} closed case(s), $${c.enforcementTotalSettled.toLocaleString()} settled (latest ${c.enforcementRecentDate}).`,
     },
     hit: true,
@@ -922,7 +922,7 @@ function scoreCarrier(
     revocation.cell.detail = revocation.cell.detail
       ? `${revocation.cell.detail}\n${detail}`
       : detail;
-    revocation.reasons.push({ label: "🛑 FMCSA prior-revoke flag (chameleon)", detail });
+    revocation.reasons.push({ label: "FMCSA prior-revoke flag (chameleon)", detail });
   }
 
   // A2. Rapid cancel+replace insurance pattern is a chameleon signal ONLY
@@ -935,7 +935,7 @@ function scoreCarrier(
     insurance.cell.status = "critical";
     const detail = `Insurance policy cancelled and replaced within ~30 days, alongside ${c.insuranceCancellations24mo} true cancellations in 24 months — re-incarnation pattern.`;
     insurance.cell.detail = insurance.cell.detail ? `${insurance.cell.detail}\n${detail}` : detail;
-    insurance.reason = { label: "🛑 Rapid replace + cancellation history", detail };
+    insurance.reason = { label: "Rapid replace + cancellation history", detail };
   } else if (c.rapidReplaceFlag) {
     // Surface as info-only context — broker can see "they swapped insurers
     // recently" without it driving the tier.
@@ -958,7 +958,7 @@ function scoreCarrier(
       }
       if (!insurance.reason) {
         insurance.reason = {
-          label: "🛑 Severe insurance churn",
+          label: "Severe insurance churn",
           detail: `${c.insuranceCancellations24mo} true insurance cancellations in last 24 months — top 1% of carriers nationally. Carrier is on the edge of insurer dropout.`,
         };
       }
@@ -968,7 +968,7 @@ function scoreCarrier(
       }
       if (!insurance.reason) {
         insurance.reason = {
-          label: "⚠ Insurance churn",
+          label: "Insurance churn",
           detail: `${c.insuranceCancellations24mo} true insurance cancellations in last 24 months — top 5% nationally. Verify carrier is on a stable policy before tendering.`,
         };
       }
@@ -1072,11 +1072,7 @@ function scoreCarrier(
         `physical address on FMCSA.${siblingsClause} ` +
         `${addrRule.thresholds[addrTier]} ` +
         `Common chameleon-carrier pattern; verify the operating address out-of-band before tendering.`;
-      const glyph =
-        addrTier === "critical" ? "🛑"
-        : addrTier === "high" ? "⚠"
-        : "⚡";
-      reasons.push({ label: `${glyph} ${addrRule.label}`, detail });
+      reasons.push({ label: addrRule.label, detail });
       // Contribute to the multi-signal chameleon-cluster escalator below.
       chameleonSignals.push(`${oos} OOS DOTs at same address`);
       // Direct level escalation: critical-tier address cluster floors the
@@ -1097,7 +1093,7 @@ function scoreCarrier(
       level = "Severe";
     }
     reasons.push({
-      label: "🚨 Chameleon-pattern cluster",
+      label: "Chameleon-pattern cluster",
       detail: `${chameleonSignals.length} independent re-incarnation signals: ${chameleonSignals.join("; ")}.`,
     });
   }

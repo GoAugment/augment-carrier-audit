@@ -4,7 +4,7 @@
   "carrierName": "CHRISTENSEN TRUCKING INC",
   "riskLevel": "Critical",
   "reasonLabels": [
-    "🛑 Safety rating"
+    "Safety rating: Conditional"
   ],
   "axes": {
     "crash": "clean",

@@ -175,6 +175,10 @@ export interface VerdictCarrierSummary {
    *  general freight; $1M is common for brokers; $5M for hazmat. Broker can
    *  decide on-the-spot whether the carrier meets their cargo's minimum. */
   bipdAmount: number | null;
+  /** FMCSA-required BIPD amount (US dollars). 0 means BIPD is not required
+   *  for this authority — intrastate-only / private / broker-only carriers
+   *  don't need BIPD at all, so an absent BIPD on those is not a flag. */
+  bipdRequiredAmount: number;
   /** Cargo insurer on file (if any). Cargo coverage is separate from BIPD
    *  and is the policy that pays the broker when freight is damaged. */
   cargoInsurer: string | null;

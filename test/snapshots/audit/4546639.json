@@ -4,8 +4,8 @@
   "carrierName": "HOSELTON IMPORTS INC",
   "riskLevel": "Critical",
   "reasonLabels": [
-    "🛑 Insurance lapsed",
-    "🛑 New authority"
+    "Insurance lapsed",
+    "New authority"
   ],
   "axes": {
     "crash": "na",
