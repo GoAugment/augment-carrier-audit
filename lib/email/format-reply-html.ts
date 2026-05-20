@@ -15,7 +15,7 @@
  *
  * Goal is ~90% visual fidelity to the mockup in Gmail / Apple Mail / Outlook.
  */
-import type { Signal, Verdict } from "./types";
+import type { ExtractedEmail, Signal, Verdict } from "./types";
 
 // Brand palette. Tier colors below match the website's audit-result pill
 // palette (components/AuditWidget.tsx) — Tailwind red-200/red-950 for
@@ -132,6 +132,61 @@ function criticalHeadline(verdict: Verdict, base: string): string {
   const first = findings[0];
   const rest = findings.slice(1).join(" · ");
   return `${first} · ${rest} — do not tender`;
+}
+
+/** Decide which 5-scale tier the pill should display. Starts from the
+ *  carrier's audit tier and escalates if email-side signals (identity_
+ *  coherence, lane_viability, email_authenticity, chameleon_cluster) fire
+ *  harder. Without this, an audit-Clean carrier with a sender-domain
+ *  mismatch would show "Clean" + green pill while the body explained an
+ *  impersonation pattern — exactly the contradiction we want to avoid. */
+function computeDisplayTier(verdict: Verdict): string {
+  const RANK: Record<string, number> = {
+    Clean: 0, Elevated: 1, High: 2, Severe: 3, Critical: 4, Verify: 1,
+  };
+  const TIERS = ["Clean", "Elevated", "High", "Severe", "Critical"];
+  const auditTier = verdict.carrier?.audit.tier ?? "Verify";
+  let maxRank = RANK[auditTier] ?? 1;
+  for (const s of verdict.signals) {
+    if (s.tier === "info" || s.category === "audit_tier") continue;
+    // Map signal-tier to 5-scale rank conservatively:
+    //   critical → Critical (4), high → High (2), caution → Elevated (1)
+    const r = s.tier === "critical" ? 4 : s.tier === "high" ? 2 : 1;
+    if (r > maxRank) maxRank = r;
+  }
+  return TIERS[maxRank];
+}
+
+/** Render the "Read as" block — a one-line summary of what Stage 1 extracted
+ *  from the email body, so brokers can confirm we interpreted them correctly.
+ *  Returns empty string when nothing meaningful was extracted. */
+function renderReadAsBlock(extracted: ExtractedEmail | undefined): string {
+  if (!extracted) return "";
+  const parts: string[] = [];
+  const mc = extracted.identity_claims.mc_number;
+  const dot = extracted.identity_claims.dot_number;
+  if (mc) parts.push(esc(mc));
+  else if (dot) parts.push(`DOT ${esc(dot)}`);
+  const { origin_city, origin_state, destination_city, destination_state, equipment_type, is_hazmat_load } = extracted.lane;
+  const hasOrigin = origin_city || origin_state;
+  const hasDest = destination_city || destination_state;
+  if (hasOrigin || hasDest) {
+    const origin = [origin_city, origin_state].filter(Boolean).join(", ");
+    const dest = [destination_city, destination_state].filter(Boolean).join(", ");
+    parts.push(`${esc(origin || "?")} → ${esc(dest || "?")}`);
+  }
+  if (equipment_type) parts.push(esc(equipment_type));
+  if (is_hazmat_load) parts.push(`<span style="color:${C.redInkPill};font-weight:600;">hazmat</span>`);
+  const claimedName = extracted.identity_claims.claimed_company_name;
+  if (claimedName) parts.push(`claims: ${esc(claimedName)}`);
+  if (parts.length === 0) return "";
+  return `
+    <tr><td style="padding:0 32px 24px 32px;">
+      <div style="background:${C.pageBg};border-radius:4px;padding:10px 14px;font-size:12px;color:${C.inkMuted};line-height:1.5;">
+        <span style="color:${C.inkLabel};font-weight:600;letter-spacing:0.08em;text-transform:uppercase;">Read as</span>
+        &nbsp; ${parts.join(" &nbsp;·&nbsp; ")}
+      </div>
+    </td></tr>`;
 }
 
 /** Map the analyzer's axis status to the same colors the website uses. */
@@ -324,21 +379,25 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
     });
   }
 
-  // Lane viability
+  // Lane viability — honest phrasing about what we actually checked.
+  // For long-haul interstate carriers (the common case) ANY state-to-state
+  // lane is in scope; the lane info is confirmational, not gating. The
+  // gate is whether the carrier has interstate authority at all, plus a
+  // soft check for "interstate within 100 miles" carriers on long lanes.
   if (cov.lane_viability_checked) {
     const fail = hasHardSignal((s) => s.category === "lane_viability" && !s.label.toLowerCase().includes("hazmat"));
     rows.push({
       status: fail ? "failed" : "passed",
-      label: "Lane viability OK",
+      label: "Lane viability",
       detail: fail
-        ? "Carrier's MCS-150 operating-area registration doesn't support the proposed lane."
-        : "Carrier's MCS-150 supports the proposed origin → destination radius.",
+        ? "Carrier's MCS-150 operating area doesn't support this lane — see Issues above."
+        : "Carrier has interstate authority on file with FMCSA — any state-to-state lane is in scope.",
     });
   } else {
     rows.push({
       status: "skipped",
-      label: "Lane viability check",
-      detail: "Email didn't specify a clear origin / destination lane.",
+      label: "Lane viability",
+      detail: "Email didn't specify a clear origin / destination lane to check.",
     });
   }
 
@@ -815,13 +874,14 @@ function hardSignalRow(signal: Signal): string {
   </tr>`;
 }
 
-export function buildReplyHtml(verdict: Verdict): string {
+export function buildReplyHtml(verdict: Verdict, extracted?: ExtractedEmail): string {
   const c = verdict.carrier;
-  // Top pill uses the carrier's audit tier (website scale) when available.
-  // No carrier resolved → fall back to a generic "Verify" style. This keeps
-  // the email's headline scale identical to what the website shows for the
-  // same DOT, so brokers see the same severity word in both places.
-  const tierLabel: string = c?.audit.tier ?? "Verify";
+  // Pill label: start with the carrier's audit tier (website 5-scale), then
+  // escalate if email-side signals (identity coherence, lane viability,
+  // email authenticity) fire harder than the audit. A Clean-on-FMCSA carrier
+  // emailed-from-impersonator should NOT show as Clean — that contradicts
+  // the body's findings and misleads a glancing reader.
+  const tierLabel = computeDisplayTier(verdict);
   const baseTier = AUDIT_TIER_STYLES[tierLabel] ?? DEFAULT_TIER_STYLE;
   // For Critical/Severe, "do not engage without verification" is misleading
   // when no verification can change the outcome (revoked authority, $0
@@ -1038,6 +1098,8 @@ export function buildReplyHtml(verdict: Verdict): string {
       </tr>
       </table>
     </td></tr>`}
+
+    ${renderReadAsBlock(extracted)}
 
     ${c ? `
     <!-- Carrier identity -->

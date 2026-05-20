@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Step 4-5: format + send the reply
-  const reply = formatReply(verdict, subject);
+  const reply = formatReply(verdict, subject, extracted);
   try {
     await sendReply({
       to: brokerEmail,

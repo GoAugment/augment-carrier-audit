@@ -12,7 +12,7 @@
  * carrier-identity-block second (so brokers can verify out-of-band), then
  * signals grouped by category. No fluff, no marketing.
  */
-import type { Signal, Verdict } from "./types";
+import type { ExtractedEmail, Signal, Verdict } from "./types";
 import { buildReplyHtml } from "./format-reply-html";
 
 const TIER_HEADER: Record<Verdict["tier"], string> = {
@@ -37,7 +37,11 @@ export interface FormattedReply {
   html: string;
 }
 
-export function formatReply(verdict: Verdict, originalSubject: string): FormattedReply {
+export function formatReply(
+  verdict: Verdict,
+  originalSubject: string,
+  extracted?: ExtractedEmail
+): FormattedReply {
   const lines: string[] = [];
 
   lines.push(TIER_HEADER[verdict.tier]);
@@ -163,7 +167,7 @@ export function formatReply(verdict: Verdict, originalSubject: string): Formatte
   const rawBase = originalSubject.replace(/^(Re:\s*)+/i, "").trim();
   const subject = rawBase ? `Re: ${rawBase}` : "Re:";
 
-  return { subject, text: lines.join("\n"), html: buildReplyHtml(verdict) };
+  return { subject, text: lines.join("\n"), html: buildReplyHtml(verdict, extracted) };
 }
 
 /** Format 10-digit US phone numbers. Leaves international numbers alone. */

@@ -237,19 +237,20 @@ function evalIdentityCoherence(
       }
     } else if (fmcsaDomain !== senderDomain) {
       const senderIsFree = FREE_EMAIL_DOMAINS.has(senderDomain);
+      const carrierName = carrier.legalName ?? "this carrier";
       if (senderIsFree) {
         signals.push({
           category: "identity_coherence",
           tier: "high",
-          label: "Sender uses free email but FMCSA has business domain",
-          detail: `Email comes from ${senderDomain} but FMCSA records this carrier at ${fmcsaDomain}. Possible impersonation.`,
+          label: `Sender at ${senderDomain} doesn't match FMCSA-registered ${fmcsaDomain}`,
+          detail: `Email comes from ${senderDomain}, but FMCSA records ${carrierName} at ${fmcsaDomain}. Possible impersonation — verify by calling the FMCSA-registered phone before tendering.`,
         });
       } else {
         signals.push({
           category: "identity_coherence",
           tier: "high",
-          label: "Sender domain doesn't match FMCSA registration",
-          detail: `Sender at ${senderDomain}, FMCSA registered ${fmcsaDomain} for this DOT.`,
+          label: `Sender at ${senderDomain} doesn't match FMCSA-registered ${fmcsaDomain}`,
+          detail: `Email comes from ${senderDomain}, but FMCSA records ${carrierName} at ${fmcsaDomain}. Verify identity through another channel before tendering.`,
         });
       }
     }
@@ -260,8 +261,8 @@ function evalIdentityCoherence(
       signals.push({
         category: "identity_coherence",
         tier: "high",
-        label: "Sender domain doesn't match FMCSA registration",
-        detail: `Sender at ${senderDomain}, FMCSA registered ${fmcsa} for this DOT.`,
+        label: `Sender at ${senderDomain} doesn't match FMCSA-registered ${fmcsa}`,
+        detail: `Email comes from ${senderDomain}, but FMCSA records ${carrier.legalName ?? "this carrier"} at ${fmcsa}. Verify identity before tendering.`,
       });
     }
   } else if (FREE_EMAIL_DOMAINS.has(senderDomain)) {
