@@ -95,6 +95,62 @@ function esc(s: string | number | null | undefined): string {
     .replace(/'/g, "&#39;");
 }
 
+/** Compose the email preheader — the hidden one-liner Gmail (and most other
+ *  clients) shows as the inbox preview snippet instead of falling back to
+ *  the first visible text in the body. Without one, Gmail picks "Augie ·
+ *  Carrier safety check audit@augie.ai" from the top banner, which is
+ *  useless for triage. With one, the broker sees the verdict at a glance:
+ *
+ *    "High · SCHNEIDER NATIONAL · Sender domain doesn't match FMCSA"
+ *    "Clean · WERNER ENTERPRISES INC · all checks passed"
+ *    "Carrier identity required — send MC or DOT to verify"
+ *
+ *  Keep it under ~90 chars; Gmail truncates around there. */
+function composePreheader(verdict: Verdict): string {
+  const c = verdict.carrier;
+  if (!c) {
+    return "Carrier identity required. Reply with MC or DOT number to run the safety check.";
+  }
+  const tierLabel = computeDisplayTier(verdict);
+  const carrierName = c.legalName ?? `DOT ${c.dotNumber}`;
+
+  // Pick the most decision-relevant finding to surface in the preview.
+  // Skip the audit-tier-echo signals ("Carrier in Critical tier" etc.) —
+  // they restate the tier we already showed and crowd out the actual
+  // finding. Prefer a specific analyzer reason if present (insurance
+  // lapsed, chameleon, recent revocation); fall back to the first
+  // remaining hard email-side signal; final fallback is a generic
+  // "verify before tendering" tail.
+  const auditReasonLabel = c.audit.reasonLabels[0];
+  const hardSignals = verdict.signals.filter(
+    (s) => s.tier !== "info" && s.category !== "audit_tier",
+  );
+  const dominant = auditReasonLabel || hardSignals[0]?.label;
+
+  if (tierLabel === "Clean") {
+    return `Clean · ${carrierName} · all checks passed.`;
+  }
+  if (dominant) {
+    return `${tierLabel} · ${carrierName} · ${dominant}.`;
+  }
+  return `${tierLabel} · ${carrierName} · verify before tendering.`;
+}
+
+/** Render the preheader as a hidden block at the top of the email body.
+ *  Belt-and-suspenders styles cover all the major clients:
+ *    display:none      — Gmail / Apple Mail / Outlook web
+ *    max-height:0      — guards against clients that ignore display:none
+ *    overflow:hidden   — pairs with max-height:0
+ *    mso-hide:all      — Outlook desktop (Word rendering engine) */
+function renderPreheader(text: string): string {
+  return (
+    `<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;` +
+    `font-size:1px;line-height:1px;color:transparent;opacity:0;">` +
+    `${esc(text)}` +
+    `</div>`
+  );
+}
+
 /** For Critical/Severe verdicts, pick a finding-specific headline instead of
  *  the generic "Do not engage without verification" — verification can't
  *  change a revoked authority or $0 insurance, so the action is "stop," not
@@ -1317,6 +1373,7 @@ export function buildReplyHtml(verdict: Verdict, extracted?: ExtractedEmail): st
 </style>
 </head>
 <body style="margin:0;padding:0;background:${C.pageBg};font-family:${FONT_STACK};color:${C.ink};">
+${renderPreheader(composePreheader(verdict))}
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${C.pageBg};">
 <tr><td align="center" style="padding:24px 12px;">
 
