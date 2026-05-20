@@ -35,8 +35,11 @@ export interface ReplyParams {
 
 export async function sendReply(p: ReplyParams): Promise<void> {
   init();
-  const from = process.env.SAFE_EMAIL_FROM;
-  if (!from) throw new Error("SAFE_EMAIL_FROM env var not set");
+  // SAFE_EMAIL_FROM holds just the address — it's environment-specific
+  // (different in dev vs prod). The display name is brand and lives in
+  // code: "Augie" is what brokers see in their inbox.
+  const fromAddress = process.env.SAFE_EMAIL_FROM;
+  if (!fromAddress) throw new Error("SAFE_EMAIL_FROM env var not set");
 
   const headers: Record<string, string> = {};
   if (p.inReplyTo) {
@@ -46,7 +49,7 @@ export async function sendReply(p: ReplyParams): Promise<void> {
 
   await sgMail.send({
     to: p.to,
-    from,
+    from: { email: fromAddress, name: "Augie" },
     subject: p.subject,
     text: p.text,
     ...(p.html ? { html: p.html } : {}),
