@@ -127,6 +127,9 @@ async function fetchOne(
     driverFitnessAlert: null,
     controlledSubstancesAlert: null,
     vehicleMaintenanceAlert: null,
+    // SAFER API fallback has no address dedup data; treat as "nothing to flag."
+    addressDupeActiveCount: 0,
+    addressDupeOosCount: 0,
   };
 }
 

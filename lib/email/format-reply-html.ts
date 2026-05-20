@@ -119,19 +119,19 @@ function criticalHeadline(verdict: Verdict, base: string): string {
   }
   // Missing insurance — also unrecoverable in the moment.
   if ((c.bipdAmount ?? 0) === 0 && !c.bipdInsurer) {
-    findings.push("no insurance on file");
+    findings.push("No insurance on file");
   }
   // Chameleon / re-incarnation pattern.
   if (/chameleon|re-incarnation|rapid replace/.test(reasonsText)) {
-    findings.push("likely fraud pattern");
+    findings.push("Likely fraud pattern");
   }
 
   if (findings.length === 0) return base;
-  if (findings.length === 1) return `${findings[0]} — do not tender`;
+  if (findings.length === 1) return `${findings[0]}. Do not tender.`;
   // Capitalize the first finding, join the rest with " · ", and append the action.
   const first = findings[0];
   const rest = findings.slice(1).join(" · ");
-  return `${first} · ${rest} — do not tender`;
+  return `${first} · ${rest}. Do not tender.`;
 }
 
 /** Decide which 5-scale tier the pill should display. Starts from the
@@ -157,36 +157,262 @@ function computeDisplayTier(verdict: Verdict): string {
   return TIERS[maxRank];
 }
 
-/** Render the "Read as" block — a one-line summary of what Stage 1 extracted
- *  from the email body, so brokers can confirm we interpreted them correctly.
- *  Returns empty string when nothing meaningful was extracted. */
-function renderReadAsBlock(extracted: ExtractedEmail | undefined): string {
+/** Per-field status used to color each "FROM THE EMAIL" pill:
+ *   match    = green dot, gray border  (we verified it against FMCSA)
+ *   mismatch = red dot, red border     (we verified it and it didn't match)
+ *   neutral  = amber dot, amber border (extracted but not independently verified)
+ */
+type FieldStatus = "match" | "mismatch" | "neutral";
+
+const FIELD_STATUS_COLORS: Record<FieldStatus, { dot: string; border: string }> = {
+  match:    { dot: "#2f9742", border: "#e6e5e0" },
+  mismatch: { dot: "#b91c1c", border: "#ef9a9a" },
+  neutral:  { dot: "#d97706", border: "#fcd34d" },
+};
+
+function renderFieldPill(label: string, value: string, status: FieldStatus): string {
+  const { dot, border } = FIELD_STATUS_COLORS[status];
+  return (
+    `<span style="display:inline-block;border:1px solid ${border};border-radius:999px;` +
+    `padding:5px 12px 5px 10px;margin:0 6px 8px 0;background:#ffffff;` +
+    `font-size:13px;line-height:1.3;white-space:nowrap;">` +
+      `<span style="color:${dot};font-size:14px;line-height:1;vertical-align:-1px;">&bull;</span>` +
+      `&nbsp;<span style="color:${C.inkLabel};">${esc(label)}</span>` +
+      `&nbsp;<span style="color:${C.ink};font-weight:600;">${esc(value)}</span>` +
+    `</span>`
+  );
+}
+
+/** Render the "FROM THE EMAIL" block, a grid of pills showing each field we
+ *  extracted from the broker's forwarded message plus a green/amber/red dot
+ *  for whether it matched FMCSA. Lets brokers eyeball at a glance which
+ *  claimed details checked out and which didn't, without reading the prose
+ *  in the safety-checks section.
+ *
+ *  Status is derived from the verdict signals:
+ *    match    when a "matches FMCSA"-style positive signal fired for that field
+ *    mismatch when an evaluator hard-signal flagged that field as wrong
+ *    neutral  when the field was extracted but no verification was possible
+ *             (e.g. sender display names, or fields with no FMCSA record to
+ *             compare against)
+ *
+ *  Returns empty string when extracted is undefined or nothing meaningful was
+ *  pulled out of the email. */
+function renderFromTheEmailBlock(
+  verdict: Verdict,
+  extracted: ExtractedEmail | undefined,
+): string {
   if (!extracted) return "";
-  const parts: string[] = [];
-  const mc = extracted.identity_claims.mc_number;
-  const dot = extracted.identity_claims.dot_number;
-  if (mc) parts.push(esc(mc));
-  else if (dot) parts.push(`DOT ${esc(dot)}`);
-  const { origin_city, origin_state, destination_city, destination_state, equipment_type, is_hazmat_load } = extracted.lane;
-  const hasOrigin = origin_city || origin_state;
-  const hasDest = destination_city || destination_state;
-  if (hasOrigin || hasDest) {
-    const origin = [origin_city, origin_state].filter(Boolean).join(", ");
-    const dest = [destination_city, destination_state].filter(Boolean).join(", ");
-    parts.push(`${esc(origin || "?")} → ${esc(dest || "?")}`);
+  const sigs = verdict.signals;
+  const cov = verdict.coverage;
+  const claims = extracted.identity_claims;
+  const sender = extracted.sender_metadata;
+  const lane = extracted.lane;
+
+  const hasHard = (predicate: (s: Signal) => boolean) =>
+    sigs.some((s) => s.tier !== "info" && predicate(s));
+
+  const pills: string[] = [];
+
+  // Carrier (claimed legal name). Match when name_match passed; mismatch when
+  // it failed; neutral when we couldn't check (no FMCSA record, or no name in
+  // the email).
+  if (claims.claimed_company_name) {
+    let status: FieldStatus = "neutral";
+    if (cov.name_match_checked) {
+      status = hasHard((s) => s.label.toLowerCase().includes("company name"))
+        ? "mismatch"
+        : "match";
+    }
+    pills.push(renderFieldPill("Carrier", claims.claimed_company_name, status));
   }
-  if (equipment_type) parts.push(esc(equipment_type));
-  if (is_hazmat_load) parts.push(`<span style="color:${C.redInkPill};font-weight:600;">hazmat</span>`);
-  const claimedName = extracted.identity_claims.claimed_company_name;
-  if (claimedName) parts.push(`claims: ${esc(claimedName)}`);
-  if (parts.length === 0) return "";
+
+  // MC. Match when MC tied to the same legal entity (no mc# mismatch signal);
+  // mismatch when the email claims a different MC than FMCSA has on file.
+  if (claims.mc_number) {
+    let status: FieldStatus = "neutral";
+    if (cov.mc_match_checked) {
+      status = hasHard((s) => s.label.toLowerCase().includes("mc# mismatch"))
+        ? "mismatch"
+        : "match";
+    }
+    pills.push(renderFieldPill("MC", claims.mc_number, status));
+  }
+
+  // DOT. Match when the DOT resolved against the FMCSA snapshot (i.e. a
+  // carrier was loaded for this verdict). Mismatch when the email named a
+  // DOT but lookup came up empty.
+  if (claims.dot_number) {
+    const status: FieldStatus = verdict.carrier ? "match" : "mismatch";
+    pills.push(renderFieldPill("DOT", `DOT ${claims.dot_number}`, status));
+  }
+
+  // Email domain (sender). Match when sender domain aligns with FMCSA email;
+  // mismatch when an identity_coherence signal flagged a domain/email
+  // disparity; neutral when there's no FMCSA email on file to compare.
+  if (sender.sender_email_domain) {
+    let status: FieldStatus = "neutral";
+    if (cov.sender_domain_match_checked) {
+      status = hasHard(
+        (s) =>
+          s.category === "identity_coherence" &&
+          /sender|domain|email/i.test(s.label)
+      )
+        ? "mismatch"
+        : "match";
+    }
+    pills.push(renderFieldPill("Email domain", sender.sender_email_domain, status));
+  }
+
+  // Phone (claimed). Same pattern as the other identity fields.
+  if (claims.claimed_phone) {
+    let status: FieldStatus = "neutral";
+    if (cov.phone_match_checked) {
+      status = hasHard((s) => s.label.toLowerCase().includes("phone"))
+        ? "mismatch"
+        : "match";
+    }
+    pills.push(renderFieldPill("Phone", claims.claimed_phone, status));
+  }
+
+  // Sender display name. We never verify these (display names are trivially
+  // spoofable on every email client), so it stays neutral by default.
+  if (sender.sender_display_name) {
+    pills.push(renderFieldPill("Sender name", sender.sender_display_name, "neutral"));
+  }
+
+  // Lane. Match when lane viability passed; mismatch when it failed.
+  if (lane.origin_city || lane.origin_state || lane.destination_city || lane.destination_state) {
+    const origin = [lane.origin_city, lane.origin_state].filter(Boolean).join(", ");
+    const dest = [lane.destination_city, lane.destination_state].filter(Boolean).join(", ");
+    const text = `${origin || "?"} → ${dest || "?"}`;
+    let status: FieldStatus = "neutral";
+    if (cov.lane_viability_checked) {
+      status = hasHard(
+        (s) =>
+          s.category === "lane_viability" &&
+          !s.label.toLowerCase().includes("hazmat")
+      )
+        ? "mismatch"
+        : "match";
+    }
+    pills.push(renderFieldPill("Lane", text, status));
+  }
+
+  // Equipment + hazmat get their own pills only when present; both stay
+  // neutral since there's nothing in FMCSA to verify equipment against, and
+  // hazmat is a load characteristic, not a carrier claim.
+  if (lane.equipment_type) {
+    pills.push(renderFieldPill("Equipment", lane.equipment_type, "neutral"));
+  }
+  if (lane.is_hazmat_load) {
+    const hazStatus: FieldStatus = cov.hazmat_match_checked
+      ? (hasHard((s) => s.label.toLowerCase().includes("hazmat")) ? "mismatch" : "match")
+      : "neutral";
+    pills.push(renderFieldPill("Load", "Hazmat", hazStatus));
+  }
+
+  if (pills.length === 0) return "";
+
   return `
     <tr><td style="padding:0 32px 24px 32px;">
-      <div style="background:${C.pageBg};border-radius:4px;padding:10px 14px;font-size:12px;color:${C.inkMuted};line-height:1.5;">
-        <span style="color:${C.inkLabel};font-weight:600;letter-spacing:0.08em;text-transform:uppercase;">Read as</span>
-        &nbsp; ${parts.join(" &nbsp;·&nbsp; ")}
+      <div style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-transform:uppercase;margin-bottom:10px;">From the email</div>
+      <div style="background:${C.pageBg};border-radius:6px;padding:14px 14px 6px 14px;">
+        ${pills.join("\n        ")}
       </div>
     </td></tr>`;
+}
+
+/** Pick the headline for the no-carrier-resolved case. The wording names the
+ *  specific identifier the broker should ask for, so the headline is
+ *  actionable instead of just "couldn't verify." */
+function noCarrierHeadline(extracted: ExtractedEmail | undefined): string {
+  const claims = extracted?.identity_claims;
+  const hasMc = !!claims?.mc_number;
+  const hasDot = !!claims?.dot_number;
+  if (!hasMc && !hasDot) return "Can't verify. No MC or DOT in the email.";
+  if (!hasMc) return "Can't verify. No MC number in the email.";
+  if (!hasDot) return "DOT not in FMCSA snapshot.";
+  return "Can't verify the sender.";
+}
+
+/** "Missing from the email" pill — same shape as the FROM THE EMAIL pills
+ *  but with a dashed border, no status dot, and muted ink. Visually
+ *  reinforces "this is something we'd need but don't have," distinct from
+ *  the solid pills that show what we *did* find. */
+function renderMissingPill(label: string): string {
+  return (
+    `<span style="display:inline-block;border:1px dashed ${C.borderStrong};border-radius:999px;` +
+    `padding:5px 12px;margin:0 6px 8px 0;background:#ffffff;` +
+    `font-size:13px;line-height:1.3;color:${C.inkLabel};white-space:nowrap;">` +
+      `+ ${esc(label)}` +
+    `</span>`
+  );
+}
+
+/** Render the MISSING FROM THE EMAIL + SUGGESTED REPLY block shown when no
+ *  carrier was resolved. Lists the specific identifiers we need to actually
+ *  run the safety check, then gives the broker copy-pasteable reply text. */
+function renderNoCarrierFollowupBlock(extracted: ExtractedEmail | undefined): string {
+  const claims = extracted?.identity_claims;
+  const missing: string[] = [];
+  if (!claims?.mc_number) missing.push("MC number");
+  if (!claims?.dot_number) missing.push("DOT number");
+  if (!claims?.claimed_company_name) missing.push("Carrier legal name");
+
+  // Reply text — name the carrier's contact when we extracted one, otherwise
+  // a generic "Hi". Always include the missing-fields ask so the broker can
+  // forward verbatim.
+  const contactName =
+    claims?.contact_person ||
+    extracted?.sender_metadata?.sender_display_name?.split(" ")[0] ||
+    "";
+  const greeting = contactName ? `Hi ${esc(contactName)},` : "Hi,";
+  const ask =
+    missing.length === 3
+      ? "before I can quote, can you send your MC or DOT number, plus the legal name on your authority?"
+      : missing.length > 0
+        ? `before I can quote, can you send your ${joinMissingForReply(missing)}?`
+        : "can you confirm the MC and DOT on file for your authority?";
+  const reply = `${greeting} ${ask} Thanks.`;
+
+  const missingBlock =
+    missing.length > 0
+      ? `
+      <div style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-transform:uppercase;margin-bottom:10px;">Missing from the email</div>
+      <div style="margin-bottom:18px;">
+        ${missing.map(renderMissingPill).join("\n        ")}
+      </div>`
+      : "";
+
+  const suggestedReplyBlock = `
+      <div style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-transform:uppercase;margin-bottom:10px;">Suggested reply</div>
+      <div style="background:${C.pageBg};border:1px solid ${C.border};border-radius:6px;padding:14px 16px;font-size:14px;color:${C.ink};line-height:1.5;">
+        ${esc(reply)}
+      </div>`;
+
+  return `
+    <tr><td style="padding:0 32px 24px 32px;">
+      ${missingBlock}
+      ${suggestedReplyBlock}
+    </td></tr>`;
+}
+
+/** Join missing-field labels into a natural sentence fragment for the reply
+ *  text. ["MC number", "DOT number"] -> "MC or DOT number, and legal name". */
+function joinMissingForReply(missing: string[]): string {
+  // Collapse MC/DOT into "MC or DOT" since they're alternatives.
+  const hasMc = missing.includes("MC number");
+  const hasDot = missing.includes("DOT number");
+  const hasName = missing.includes("Carrier legal name");
+  const parts: string[] = [];
+  if (hasMc && hasDot) parts.push("MC or DOT number");
+  else if (hasMc) parts.push("MC number");
+  else if (hasDot) parts.push("DOT number");
+  if (hasName) parts.push("legal name on your authority");
+  if (parts.length === 0) return "MC and DOT number";
+  if (parts.length === 1) return parts[0];
+  return parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1];
 }
 
 /** Map the analyzer's axis status to the same colors the website uses. */
@@ -254,6 +480,12 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
 
   const hasHardSignal = (predicate: (s: Signal) => boolean) =>
     sigs.some((s) => s.tier !== "info" && predicate(s));
+  /** Find the first hard signal matching the predicate, so a failed check row
+   *  can surface the concrete evaluator detail (e.g. "Sender at gmail.com
+   *  doesn't match FMCSA-registered schneider.com") instead of a generic
+   *  fallback. */
+  const findHardSignal = (predicate: (s: Signal) => boolean): Signal | undefined =>
+    sigs.find((s) => s.tier !== "info" && predicate(s));
 
   const rows: CheckRow[] = [];
 
@@ -300,20 +532,28 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
       rows.push({
         status: "passed",
         label: amount ? `Active BIPD insurance: ${amount}` : "Active BIPD insurance on file",
-        detail: `${insurer} — coverage current, no lapses in the most recent FMCSA snapshot. Verify the COI before booking; freight over $750k (or hazmat over $1M / $5M) needs higher coverage.`,
+        detail: `${insurer}. Coverage current, no lapses in the most recent FMCSA snapshot. Verify the COI before booking; freight over $750k (or hazmat over $1M / $5M) needs higher coverage.`,
       });
     }
   }
 
   // MC match
   if (cov.mc_match_checked) {
-    const fail = hasHardSignal((s) => s.label.toLowerCase().includes("mc# mismatch"));
+    const sig = findHardSignal((s) => s.label.toLowerCase().includes("mc# mismatch"));
+    const fail = !!sig;
     rows.push({
       status: fail ? "failed" : "passed",
-      label: "MC number tied to same legal entity",
+      // Label states the OUTCOME so it reads correctly next to the status icon.
+      // "MC number matches" + ✓ scans clean; "MC number matches" + ✗ scans as a
+      // contradiction. Flip the label per status instead of leaving it neutral.
+      label: fail
+        ? "MC number doesn't match FMCSA"
+        : "MC number tied to same legal entity",
+      // When failed, prefer the evaluator's concrete detail (which names the
+      // claimed vs. registered MC numbers) over a generic fallback.
       detail: fail
-        ? "MC number in the email doesn't match FMCSA's registered MC for this DOT."
-        : `MC ties to ${c?.legalName ?? "this carrier"} — no reassignment, no recent changes.`,
+        ? (sig!.detail || "MC number in the email doesn't match FMCSA's registered MC for this DOT.")
+        : `MC ties to ${c?.legalName ?? "this carrier"}. No reassignment, no recent changes.`,
     });
   } else {
     rows.push({
@@ -325,14 +565,21 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
 
   // Sender identity (domain for business, full email for free-mail)
   if (cov.sender_domain_match_checked) {
-    const fail = hasHardSignal(
+    const sig = findHardSignal(
       (s) => s.category === "identity_coherence" && /sender|domain|email/i.test(s.label)
     );
+    const fail = !!sig;
     rows.push({
       status: fail ? "failed" : "passed",
-      label: "Sender identity matches FMCSA records",
+      label: fail
+        ? "Sender identity doesn't match FMCSA records"
+        : "Sender identity matches FMCSA records",
+      // Surface the evaluator's concrete sender-vs-FMCSA domain pair when
+      // failed (e.g. "Email comes from gmail.com, but FMCSA records
+      // Schneider National at schneider.com..."). The generic fallback only
+      // kicks in if the signal detail somehow came through empty.
       detail: fail
-        ? "Sender's email doesn't match the address FMCSA has on file for this DOT."
+        ? (sig!.detail || "Sender's email doesn't match the address FMCSA has on file for this DOT.")
         : "From: address aligns with the email FMCSA has registered for this carrier.",
     });
   } else {
@@ -345,12 +592,15 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
 
   // Company name match
   if (cov.name_match_checked) {
-    const fail = hasHardSignal((s) => s.label.toLowerCase().includes("company name"));
+    const sig = findHardSignal((s) => s.label.toLowerCase().includes("company name"));
+    const fail = !!sig;
     rows.push({
       status: fail ? "failed" : "passed",
-      label: "Carrier name matches FMCSA",
+      label: fail
+        ? "Carrier name doesn't match FMCSA"
+        : "Carrier name matches FMCSA",
       detail: fail
-        ? "Name in the email doesn't match FMCSA's legal name for this DOT."
+        ? (sig!.detail || "Name in the email doesn't match FMCSA's legal name for this DOT.")
         : "Carrier name in the email matches FMCSA's legal name on file.",
     });
   } else {
@@ -363,12 +613,15 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
 
   // Phone match
   if (cov.phone_match_checked) {
-    const fail = hasHardSignal((s) => s.label.toLowerCase().includes("phone"));
+    const sig = findHardSignal((s) => s.label.toLowerCase().includes("phone"));
+    const fail = !!sig;
     rows.push({
       status: fail ? "failed" : "passed",
-      label: "Phone matches FMCSA",
+      label: fail
+        ? "Phone doesn't match FMCSA"
+        : "Phone matches FMCSA",
       detail: fail
-        ? "Phone in the email doesn't match FMCSA's registered phone."
+        ? (sig!.detail || "Phone in the email doesn't match FMCSA's registered phone.")
         : "Phone in the email matches the number FMCSA has on file.",
     });
   } else {
@@ -390,8 +643,8 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
       status: fail ? "failed" : "passed",
       label: "Lane viability",
       detail: fail
-        ? "Carrier's MCS-150 operating area doesn't support this lane — see Issues above."
-        : "Carrier has interstate authority on file with FMCSA — any state-to-state lane is in scope.",
+        ? "Carrier's MCS-150 operating area doesn't support this lane. See Issues above."
+        : "Carrier has interstate authority on file with FMCSA. Any state-to-state lane is in scope.",
     });
   } else {
     rows.push({
@@ -435,7 +688,7 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
     rows.push({
       status: "passed",
       label: "Sender domain configured for business email",
-      detail: "Sender's domain accepts inbound mail and publishes SPF or DMARC — the domain itself is set up like a real business. (Inline-forwarded emails strip the original auth headers, so we don't claim to verify the specific message.)",
+      detail: "Sender's domain accepts inbound mail and publishes SPF or DMARC. The domain itself is set up like a real business. (Inline-forwarded emails strip the original auth headers, so we don't claim to verify the specific message.)",
     });
   }
 
@@ -444,9 +697,11 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
     const fail = hasHardSignal((s) => s.category === "chameleon_cluster");
     rows.push({
       status: fail ? "failed" : "passed",
-      label: "No revoked predecessor DOTs sharing identity",
+      label: fail
+        ? "Revoked predecessor DOT shares identity"
+        : "No revoked predecessor DOTs sharing identity",
       detail: fail
-        ? "Sender's phone matches a DOT with prior revocation — possible chameleon-carrier pattern."
+        ? "Sender's phone matches a DOT with prior revocation. Possible chameleon-carrier pattern."
         : "No re-incarnation / chameleon pattern detected based on shared phone identity.",
     });
   }
@@ -456,10 +711,12 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
     const fail = hasHardSignal((s) => s.label.toLowerCase().includes("hazmat"));
     rows.push({
       status: fail ? "failed" : "passed",
-      label: "Hazmat authorization match",
+      label: fail
+        ? "Hazmat authorization missing"
+        : "Hazmat authorization on file",
       detail: fail
         ? "Carrier is not registered for hazmat but the email pitched a hazmat load."
-        : "Carrier's HM_Ind=Y on Census — they're registered to haul hazmat.",
+        : "Carrier's HM_Ind=Y on Census. They're registered to haul hazmat.",
     });
   }
 
@@ -609,9 +866,9 @@ function renderBarRow(
   const { p85, p90, p95 } = cutoffs;
   // Band label: where does observed fall in the percentile distribution?
   const band =
-    observed >= p95 ? { label: "≥P95 — Severe", color: C.redInkPill } :
-    observed >= p90 ? { label: "≥P90 — High", color: "#7c2d12" } :
-    observed >= p85 ? { label: "≥P85 — Elevated", color: C.amberInkPill } :
+    observed >= p95 ? { label: "≥P95 · Severe", color: C.redInkPill } :
+    observed >= p90 ? { label: "≥P90 · High", color: "#7c2d12" } :
+    observed >= p85 ? { label: "≥P85 · Elevated", color: C.amberInkPill } :
     { label: "below P85", color: C.inkMuted };
   return `<tr>
     <td colspan="2" style="padding:12px 0 0 0;">
@@ -824,7 +1081,7 @@ function renderDetailSection(c: NonNullable<Verdict["carrier"]>): string {
       <td style="padding:6px 0;color:${C.inkMuted};font-size:13px;width:34%;vertical-align:top;">FMCSA BASIC alerts</td>
       <td style="padding:6px 0;font-size:13px;">
         <div>${pills}</div>
-        <div style="color:${C.inkMuted};font-size:12px;font-weight:400;margin-top:4px;">FMCSA has flagged this carrier as above the regulatory intervention threshold — eligible for compliance review.</div>
+        <div style="color:${C.inkMuted};font-size:12px;font-weight:400;margin-top:4px;">FMCSA has flagged this carrier as above the regulatory intervention threshold. Eligible for compliance review.</div>
       </td>
     </tr>`);
   }
@@ -881,14 +1138,22 @@ export function buildReplyHtml(verdict: Verdict, extracted?: ExtractedEmail): st
   // email authenticity) fire harder than the audit. A Clean-on-FMCSA carrier
   // emailed-from-impersonator should NOT show as Clean — that contradicts
   // the body's findings and misleads a glancing reader.
-  const tierLabel = computeDisplayTier(verdict);
-  const baseTier = AUDIT_TIER_STYLES[tierLabel] ?? DEFAULT_TIER_STYLE;
+  const computedTierLabel = computeDisplayTier(verdict);
+  const baseTier = AUDIT_TIER_STYLES[computedTierLabel] ?? DEFAULT_TIER_STYLE;
   // For Critical/Severe, "do not engage without verification" is misleading
   // when no verification can change the outcome (revoked authority, $0
   // insurance, chameleon pattern). Override the generic headline with the
   // dominant decision-relevant finding so a glancing reader gets the actual
   // recommended action.
-  const tier = { ...baseTier, headline: criticalHeadline(verdict, baseTier.headline) };
+  //
+  // For the no-carrier case (no DOT/MC, or DOT not found in FMCSA), the
+  // generic "Elevated · Worth a closer look" reads as if we found something
+  // mild. Override with a specific "Need MC / DOT" pill and a headline that
+  // names the missing identifier so the broker knows exactly what to ask for.
+  const tier = !c
+    ? { ...DEFAULT_TIER_STYLE, headline: noCarrierHeadline(extracted) }
+    : { ...baseTier, headline: criticalHeadline(verdict, baseTier.headline) };
+  const tierLabel = !c ? "Need MC / DOT" : computedTierLabel;
 
   // Checks list — every system check with pass/fail/skip status. Powers both
   // the counter and the VERIFIED + SKIPPED sections so they stay in sync.
@@ -1062,21 +1327,7 @@ export function buildReplyHtml(verdict: Verdict, extracted?: ExtractedEmail): st
       </table>
     </td></tr>
 
-    ${!c ? `
-    <!-- No-carrier hint — when the email didn't include a DOT/MC (or the
-         DOT couldn't be resolved), the counter and safety checks aren't
-         meaningful. Instead, tell the broker exactly what to forward next
-         so they can get a real verdict. -->
-    <tr><td style="padding:0 32px 28px 32px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${C.pageBg};border-radius:4px;">
-        <tr><td style="padding:18px 20px;">
-          <div style="font-size:14px;color:${C.ink};font-weight:600;margin-bottom:6px;">What we need to run a full check:</div>
-          <div style="font-size:13px;color:${C.inkMuted};line-height:1.6;">
-            Forward the carrier's original email <em>as an attachment</em> (Gmail: ⋮ → Forward as attachment; Outlook: Home → More → Forward as Attachment) so we can read their signature, DOT/MC, and original headers. Or reply asking them to confirm <strong>USDOT number</strong> and <strong>MC number</strong> in their next message.
-          </div>
-        </td></tr>
-      </table>
-    </td></tr>` : `
+    ${!c ? "" : `
     <!-- Counter row — passed / failed / skipped. Failed only renders when >0
          so a Clean verdict shows the standard two-column layout. -->
     <tr><td style="padding:0 32px 28px 32px;">
@@ -1099,7 +1350,9 @@ export function buildReplyHtml(verdict: Verdict, extracted?: ExtractedEmail): st
       </table>
     </td></tr>`}
 
-    ${renderReadAsBlock(extracted)}
+    ${renderFromTheEmailBlock(verdict, extracted)}
+
+    ${!c ? renderNoCarrierFollowupBlock(extracted) : ""}
 
     ${c ? `
     <!-- Carrier identity -->
@@ -1114,7 +1367,7 @@ export function buildReplyHtml(verdict: Verdict, extracted?: ExtractedEmail): st
       </table>
     </td></tr>` : ""}
 
-    ${(failedChecks.length + passedChecks.length) > 0 ? `
+    ${c && (failedChecks.length + passedChecks.length) > 0 ? `
     <!-- Safety checks — combined section with failed (red ✗) first, then
          passed (green ✓). Order matches the counter at the top of the email
          and mirrors how a broker reads the verdict: "show me what failed,
@@ -1152,12 +1405,12 @@ export function buildReplyHtml(verdict: Verdict, extracted?: ExtractedEmail): st
       </table>
     </td></tr>` : ""}
 
-    ${skippedChecks.length > 0 ? `
+    ${c && skippedChecks.length > 0 ? `
     <!-- Skipped panel — checks we couldn't run because the email didn't include the inputs -->
     <tr><td style="padding:24px 32px;">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${C.pageBg};border-radius:2px;">
         <tr><td style="padding:16px;">
-          <div style="font-size:13px;color:${C.ink};font-weight:600;margin-bottom:8px;">${skippedChecks.length} check${skippedChecks.length === 1 ? "" : "s"} skipped — the email didn't include the inputs we'd need</div>
+          <div style="font-size:13px;color:${C.ink};font-weight:600;margin-bottom:8px;">${skippedChecks.length} check${skippedChecks.length === 1 ? "" : "s"} skipped, the email didn't include the inputs we'd need</div>
           ${skippedChecks.map((r) => `<div style="font-size:13px;color:${C.inkMuted};padding:3px 0;">+ ${esc(r.label)}</div>`).join("")}
         </td></tr>
       </table>

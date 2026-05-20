@@ -19,6 +19,7 @@
  *      hide behind "normal for small."
  */
 import type { FmcsaCarrier } from "./fmcsa";
+import { getRule } from "./rules";
 import {
   getCutoffs,
   peerGroupForPU,
@@ -1048,6 +1049,48 @@ function scoreCarrier(
   if (isNewAuth && lowActivity) {
     chameleonSignals.push(`New authority (${authAgeDays}d) + ${c.fleetSizeFlag} fleet`);
   }
+  // D10b. Chameleon address-cluster — N other OOS DOTs share this carrier's
+  // physical address. Rule definition + thresholds documented in
+  // lib/rules/index.ts > chameleon-address-cluster; we pull the label and
+  // threshold-detail strings from the registry so the website and email
+  // can't drift in wording.
+  {
+    const addrRule = getRule("chameleon-address-cluster");
+    const oos = c.addressDupeOosCount;
+    const active = c.addressDupeActiveCount;
+    let addrTier: "critical" | "high" | "caution" | null = null;
+    if (oos >= 10) addrTier = "critical";
+    else if (oos >= 5) addrTier = "high";
+    else if (oos >= 3) addrTier = "caution";
+
+    if (addrTier) {
+      const siblingsClause = active > 0
+        ? ` Also ${active} other active DOT${active === 1 ? "" : "s"} at this address.`
+        : "";
+      const detail =
+        `${oos} out-of-service DOT${oos === 1 ? "" : "s"} share this carrier's ` +
+        `physical address on FMCSA.${siblingsClause} ` +
+        `${addrRule.thresholds[addrTier]} ` +
+        `Common chameleon-carrier pattern; verify the operating address out-of-band before tendering.`;
+      const glyph =
+        addrTier === "critical" ? "🛑"
+        : addrTier === "high" ? "⚠"
+        : "⚡";
+      reasons.push({ label: `${glyph} ${addrRule.label}`, detail });
+      // Contribute to the multi-signal chameleon-cluster escalator below.
+      chameleonSignals.push(`${oos} OOS DOTs at same address`);
+      // Direct level escalation: critical-tier address cluster floors the
+      // carrier at Severe minimum (preserves Critical); high-tier floors at
+      // High; caution alone doesn't escalate level (it just appears as a
+      // reason on the carrier audit row).
+      if (addrTier === "critical" && level !== "Critical") {
+        level = "Severe";
+      } else if (addrTier === "high" && level !== "Critical" && level !== "Severe") {
+        level = "High";
+      }
+    }
+  }
+
   if (chameleonSignals.length >= CHAMELEON_CLUSTER_THRESHOLD) {
     // Escalate to Severe minimum (preserve Critical if already there).
     if (level !== "Critical" && level !== "Severe") {

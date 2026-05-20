@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:rules": "tsx --env-file=.env.local scripts/test_rules.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

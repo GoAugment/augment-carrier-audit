@@ -45,8 +45,26 @@ FMCSA publishes new snapshots around the 13th-18th of each month. To refresh:
 1. From [data.transportation.gov](https://data.transportation.gov/browse?category=Trucking+and+Motorcoaches&limitTo=datasets&utf8=%E2%9C%93), download each file in the "Files we use" table above (Datasets view, not External Datasets).
 2. From [SMS Tools Downloads](https://ai.fmcsa.dot.gov/SMS/Tools/Downloads.aspx), download `SMS_AB_PassProperty`.
 3. Drop them into this folder (`data/sources/`). The build script's globs will pick up the latest by mtime — no rename needed.
-4. Run `node scripts/build_parquet.mjs` from the repo root.
-5. Validate with `node scripts/validate_parquet.mjs` (compares the 12-DOT SAFER baseline).
+4. Run the Polars pipeline (canonical builder, lives in the sibling workspace):
+   `uv run /Users/art/conductor/workspaces/augment-services/abuja/.context/fmcsa-aggregate/build_aggregates.py`
+5. Copy the resulting `carrier_aggregates.parquet` + `carrier_identity.parquet` into `data/`.
+6. Validate against the 12-DOT SAFER baseline (numbers in `data/national_thresholds.json` should match).
+
+> A second DuckDB-based builder (`scripts/build_parquet.mjs`) was prototyped early on but is no longer maintained — the Polars pipeline is the source of truth for column schema and chameleon-cluster derivations.
+
+## Derived columns worth knowing about
+
+Beyond the raw FMCSA fields, the aggregate parquet emits a few computed columns
+the analyzer + email-check depend on:
+
+| Column | Source | Meaning |
+|---|---|---|
+| `prior_revoke_flag` + `prior_revoke_dot_number` | Company Census | FMCSA's own flag identifying a re-incarnation of a revoked predecessor DOT. Strongest single chameleon signal — no inference. |
+| `address_dupe_active_count` | derived (Company Census self-join) | # of OTHER currently-active DOTs registered at this carrier's normalized physical address. Excludes PO boxes and addresses with ≥50 carriers (registered agents / virtual offices). |
+| `address_dupe_oos_count` | derived (Company Census self-join) | # of OTHER out-of-service DOTs at the same address. High count + recent ADD_DATE = classic chameleon pattern. |
+| `name_reused_from_oos_dot` | derived (Company Census self-join) | DOT_NUMBER of the OLDEST out-of-service DOT sharing this active carrier's normalized legal name. Catches the GenLogs-style "Logistics LLC was previously USDOT 3702012 (OOS)" pattern that `prior_revoke_flag` misses (it only fires for formal revocations). |
+| `crashes_per_million_miles` | derived (crashes ÷ MCS-150 mileage) | Industry-standard fleet metric. Werner ≈ 0.42, JB Hunt ≈ 0.50, fleet avg ≈ 1.0, problem carrier ≥ 2.0. |
+| `peer_group` | derived (power_units bucketing) | `owner_op` / `small` / `mid` / `large` / `mega` — anchors P95 cutoffs to comparable fleets. |
 
 ## Future / not yet pulled
 

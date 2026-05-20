@@ -160,6 +160,12 @@ export interface FmcsaCarrier {
   driverFitnessAlert: string | null;
   controlledSubstancesAlert: string | null;
   vehicleMaintenanceAlert: string | null;
+  /** # of OTHER active-status DOTs sharing this carrier's normalized
+   *  physical address. Context for the chameleon-address-cluster rule. */
+  addressDupeActiveCount: number;
+  /** # of OTHER out-of-service DOTs sharing this carrier's normalized
+   *  physical address. Primary signal for chameleon-address-cluster. */
+  addressDupeOosCount: number;
 }
 
 export async function fetchCarriers(

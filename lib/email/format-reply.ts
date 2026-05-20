@@ -16,10 +16,10 @@ import type { ExtractedEmail, Signal, Verdict } from "./types";
 import { buildReplyHtml } from "./format-reply-html";
 
 const TIER_HEADER: Record<Verdict["tier"], string> = {
-  Critical: "🛑 CRITICAL — do not engage without out-of-band verification",
-  High: "⚠ HIGH — verify identity before tendering",
-  Caution: "⚡ CAUTION — proceed with elevated scrutiny",
-  Clean: "✓ CLEAN — looks legitimate",
+  Critical: "🛑 CRITICAL. Do not engage without out-of-band verification.",
+  High: "⚠ HIGH. Verify identity before tendering.",
+  Caution: "⚡ CAUTION. Proceed with elevated scrutiny.",
+  Clean: "✓ CLEAN. Looks legitimate.",
 };
 
 const TIER_ICON: Record<Signal["tier"], string> = {
@@ -148,7 +148,7 @@ export function formatReply(
       `Full audit:  https://augment-carrier-audit.vercel.app/?dot=${verdict.carrier.dotNumber}`
     );
   }
-  lines.push("— audit@augie.ai");
+  lines.push("audit@augie.ai");
   lines.push(`Generated: ${verdict.generatedAt}`);
 
   // Subject: standard "Re: <original>" form, no tier appended. Modifying the

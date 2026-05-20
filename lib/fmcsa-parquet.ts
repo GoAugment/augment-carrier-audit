@@ -114,6 +114,11 @@ interface ParquetRow {
   driver_fitness_alert: string | null;
   controlled_substances_alert: string | null;
   vehicle_maintenance_alert: string | null;
+  // Chameleon-cluster counters from Company Census self-join. Counts OTHER
+  // DOTs sharing this carrier's normalized physical address, split by status.
+  // See lib/rules/index.ts > chameleon-address-cluster for definition.
+  address_dupe_active_count: number | bigint | null;
+  address_dupe_oos_count: number | bigint | null;
 }
 
 function asInt(v: number | bigint | null | undefined): number {
@@ -206,6 +211,8 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
     driverFitnessAlert: r.driver_fitness_alert,
     controlledSubstancesAlert: r.controlled_substances_alert,
     vehicleMaintenanceAlert: r.vehicle_maintenance_alert,
+    addressDupeActiveCount: asInt(r.address_dupe_active_count),
+    addressDupeOosCount: asInt(r.address_dupe_oos_count),
   };
 }
 
@@ -272,7 +279,8 @@ export async function fetchCarriersFromParquet(
       unsafe_driving_measure, hos_measure, driver_fitness_measure,
       controlled_substances_measure, vehicle_maintenance_measure,
       unsafe_driving_alert, hos_alert, driver_fitness_alert,
-      controlled_substances_alert, vehicle_maintenance_alert
+      controlled_substances_alert, vehicle_maintenance_alert,
+      address_dupe_active_count, address_dupe_oos_count
     FROM read_parquet('${PARQUET_PATH.replace(/'/g, "''")}')
     WHERE DOT_NUMBER IN (${placeholders})
   `;
