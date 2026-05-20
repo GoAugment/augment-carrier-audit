@@ -51,15 +51,19 @@ const C = {
  *  We surface the carrier's audit tier here directly so "Severe" on the
  *  website is "Severe" in the email — same scale, same colors. */
 type TierStyle = { bg: string; ink: string; headline: string };
+// Severe + Critical use white text on solid red for mobile-dark-mode safety.
+// Gmail/iOS mobile inverts light-background pills (light pink → dark gray)
+// while leaving the text color alone — so dark red text on (inverted) dark
+// gray becomes invisible. White ink on saturated red survives the inversion.
+// Light tiers (Clean/Elevated/High) use dark ink on a tinted background;
+// they stay legible in dark mode because mobile clients typically leave
+// dark-on-light tinted pills alone (or invert symmetrically).
 const AUDIT_TIER_STYLES: Record<string, TierStyle> = {
   Clean:    { bg: "#dcfce7", ink: "#14532d", headline: "Looks legitimate" },
   Elevated: { bg: "#fffbeb", ink: "#78350f", headline: "Worth a closer look" },
   High:     { bg: "#ffedd5", ink: "#7c2d12", headline: "Verify before tendering" },
-  // Severe should read as "almost Critical" — the previous #fee2e2 was too
-  // close to Caution. Use the same red family as Critical but with a lighter
-  // pink so there's still a step between the two.
-  Severe:   { bg: "#fca5a5", ink: "#7f1d1d", headline: "Verify carefully before tendering" },
-  Critical: { bg: "#dc2626", ink: "#ffffff", headline: "Do not engage without verification" },
+  Severe:   { bg: "#ef4444", ink: "#ffffff", headline: "Verify carefully before tendering" },
+  Critical: { bg: "#b91c1c", ink: "#ffffff", headline: "Do not engage without verification" },
 };
 // Default style used when no carrier was resolved (no DOT/MC in the email,
 // or claimed DOT not in FMCSA snapshot). Headline tells the broker what to
@@ -945,10 +949,14 @@ export function buildReplyHtml(verdict: Verdict): string {
     <!-- Tier headline -->
     <tr><td style="padding:32px 32px 24px 32px;">
       <div style="margin-bottom:18px;">${pill(tierLabel, tier.bg, tier.ink, { large: false })}</div>
-      <div style="${FONT_DECL}font-size:42px;font-weight:700;color:${C.ink};line-height:1.1;letter-spacing:-0.025em;margin-bottom:14px;">
-        ${esc(tier.headline)}
-      </div>
-      <div style="font-size:15px;color:${C.inkMuted};line-height:1.5;">${esc(verdict.summary)}</div>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">
+        <tr><td style="${FONT_DECL}font-size:36px;font-weight:700;color:${C.ink};line-height:1.15;letter-spacing:-0.02em;padding:0 0 14px 0;mso-line-height-rule:exactly;">
+          ${esc(tier.headline)}
+        </td></tr>
+        <tr><td style="${FONT_DECL}font-size:14px;color:${C.inkMuted};line-height:1.5;">
+          ${esc(verdict.summary)}
+        </td></tr>
+      </table>
     </td></tr>
 
     ${!c ? `
