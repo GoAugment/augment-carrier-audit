@@ -44,7 +44,7 @@ IMPORTANT: Do not wrap your response in markdown, code blocks, or any other form
 </analysis_order>
 
 <critical_warning>
-The outer HEADERS section contains the BROKER who forwarded the email — that broker's From address is NOT the carrier. Extracting sender_email from outer headers will give you the broker's address and silently break downstream identity verification. ALWAYS pull sender_email from the inner forwarded header block in the body. If no forwarded block is present (rare — the email came directly to safe@augie.ai without being forwarded), only then use the outer From.
+The outer HEADERS section contains the BROKER who forwarded the email — that broker's From address is NOT the carrier. Extracting sender_email from outer headers will give you the broker's address and silently break downstream identity verification. ALWAYS pull sender_email from the inner forwarded header block in the body. If no forwarded block is present (rare — the email came directly to audit@augie.ai without being forwarded), only then use the outer From.
 </critical_warning>
 
 <identity_claims>
@@ -71,7 +71,7 @@ Pull values from those four lines (especially From and Reply-To if present):
   - sender_display_name: human-readable part of the carrier's From:. ("Schneider Dispatch <foo@bar.com>" → "Schneider Dispatch")
   - reply_to_domain: domain of the carrier's Reply-To: header. Return null if Reply-To is absent OR matches From: domain.
 
-If the email is direct to safe@augie.ai (no forwarded block) and the outer HEADERS section IS the carrier, use those outer values. But verify there's truly no inner forwarded block first — the common case is that there IS one.
+If the email is direct to audit@augie.ai (no forwarded block) and the outer HEADERS section IS the carrier, use those outer values. But verify there's truly no inner forwarded block first — the common case is that there IS one.
 </sender_metadata>
 
 <behavioral_signals>

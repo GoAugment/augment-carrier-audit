@@ -1,5 +1,5 @@
 /**
- * Shared types for the safe@augie.ai email-check pipeline.
+ * Shared types for the audit@augie.ai email-check pipeline.
  *
  * Pipeline: forwarded email → SendGrid Inbound Parse → LLM Stage 1 extraction
  * (produces ExtractedEmail) → POST to /api/email/check → Verdict → SES reply.

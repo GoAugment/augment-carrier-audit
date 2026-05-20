@@ -1,5 +1,5 @@
 /**
- * Deterministic verdict pipeline for safe@augie.ai.
+ * Deterministic verdict pipeline for audit@augie.ai.
  *
  * Five evaluators run against the parsed email + FMCSA data. Each returns a
  * list of Signals (tier + label + detail). The verdict tier is the worst

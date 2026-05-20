@@ -1,5 +1,5 @@
 /**
- * SendGrid outbound for safe@augie.ai replies.
+ * SendGrid outbound for audit@augie.ai replies.
  *
  * Single function: send a plain-text reply on the broker's existing thread.
  * No template rendering, no attachments, no HTML. The formatReply() function

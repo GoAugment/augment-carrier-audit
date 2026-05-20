@@ -144,7 +144,7 @@ export function formatReply(verdict: Verdict, originalSubject: string): Formatte
       `Full audit:  https://augment-carrier-audit.vercel.app/?dot=${verdict.carrier.dotNumber}`
     );
   }
-  lines.push("— safe@augie.ai");
+  lines.push("— audit@augie.ai");
   lines.push(`Generated: ${verdict.generatedAt}`);
 
   // Subject: standard "Re: <original>" form, no tier appended. Modifying the

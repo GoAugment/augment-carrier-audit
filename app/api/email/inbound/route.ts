@@ -2,7 +2,7 @@
  * POST /api/email/inbound
  *
  * SendGrid Inbound Parse webhook target. Configure SendGrid to POST parsed
- * email payloads to this URL when mail arrives at safe@augie.ai (or the
+ * email payloads to this URL when mail arrives at audit@augie.ai (or the
  * subdomain we point at it).
  *
  * Full lifecycle:
@@ -72,14 +72,15 @@ export async function POST(req: NextRequest) {
     subject_present: !!subject && subject !== "(no subject)",
   });
 
-  // Recipient filter: only process mail addressed to safe@*. We MX'd the
+  // Recipient filter: only process mail addressed to audit@*. We MX'd the
   // augie.ai apex to SendGrid Inbound Parse, which means ALL @augie.ai mail
   // arrives here — including marketing@, hello@, anything anyone makes up.
-  // We only have value for the safe@ flow, so silently drop everything else.
-  // (We return 200 so SendGrid doesn't retry.)
-  if (!isSafeRecipient(toField)) {
+  // We only have value for the audit@ flow, so silently drop everything else.
+  // (We return 200 so SendGrid doesn't retry.) During transition we also
+  // accept the legacy safe@ local-part so any in-flight emails still work.
+  if (!isAuditRecipient(toField)) {
     logEvent("email_inbound_ignored_recipient", { to: toField, from: brokerEmail });
-    return NextResponse.json({ ok: true, note: "not a safe@ recipient" });
+    return NextResponse.json({ ok: true, note: "not an audit@ recipient" });
   }
 
   if (!brokerEmail) {
@@ -165,15 +166,17 @@ function pickFirstAddress(s: string): string {
 }
 
 /**
- * Recipient guard: only safe@augie.ai (or safe@anything-augie.ai for the
+ * Recipient guard: only audit@augie.ai (or audit@anything-augie.ai for the
  * subdomain variant) is in scope. The To: field can have multiple
  * recipients comma-separated; we treat it as a match if ANY recipient is
- * a safe@ address.
+ * an audit@ address. Legacy safe@ is also accepted during transition so
+ * any in-flight forwards still get processed.
  */
-function isSafeRecipient(toField: string): boolean {
+function isAuditRecipient(toField: string): boolean {
   if (!toField) return false;
-  // Match safe@augie.ai OR safe@<subdomain>.augie.ai (e.g. safe@parse.augie.ai)
-  return /\bsafe@(?:[a-z0-9-]+\.)*augie\.ai\b/i.test(toField);
+  // Match audit@augie.ai OR audit@<subdomain>.augie.ai. Also matches the
+  // legacy safe@ local-part for backwards compatibility.
+  return /\b(?:audit|safe)@(?:[a-z0-9-]+\.)*augie\.ai\b/i.test(toField);
 }
 
 /** Pull the Message-ID header value from a raw headers blob. */
@@ -184,7 +187,7 @@ function extractMessageId(rawHeaders: string): string | undefined {
 
 /**
  * Mask a broker email for telemetry — keep the domain so we can see which
- * brokerages are using safe@, but obfuscate the user part. We don't need
+ * brokerages are using audit@, but obfuscate the user part. We don't need
  * cryptographic hashing here; this is internal analytics, not auth.
  */
 function maskEmail(email: string): string {

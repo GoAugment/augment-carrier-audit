@@ -983,7 +983,7 @@ export function buildReplyHtml(verdict: Verdict): string {
           <span style="color:${C.greenCheck};">●</span> &nbsp;Augie · Carrier safety check
         </td>
         <td style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-align:right;text-transform:uppercase;">
-          safe@augie.ai
+          audit@augie.ai
         </td>
       </tr>
       </table>
