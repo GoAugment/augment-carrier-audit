@@ -174,6 +174,93 @@ export const RULES: Rule[] = [
   },
 
   // ---------------------------------------------------------------------
+  // SMS BASIC + CRASH — statistical-axis rules
+  //
+  // These six rules all share the same shape: an observed rate (violation /
+  // OOS / crash count divided by exposure) is compared against the carrier's
+  // peer-group P85 / P90 / P95 cutoff. Cutoffs are recomputed per-snapshot
+  // and stored in data/national_thresholds.json. Tier mapping:
+  //   ≥P95 → Severe, ≥P90 → High, ≥P85 → Elevated, <P85 → Clean.
+  //
+  // The "definition" text below intentionally leaves out specific cutoff
+  // numbers because they change with each FMCSA snapshot — see the
+  // tooltip on the website Scorecard for the live peer-group cutoff at
+  // the time of the audit.
+  // ---------------------------------------------------------------------
+  {
+    id: "crash-rate",
+    category: "crash",
+    label: "Crashes",
+    definition:
+      "Crashes per million miles, peer-group adjusted. Universal trucking-safety metric: Werner is around 0.42, J.B. Hunt around 0.50, fleet average around 1.0, problem carriers 2.0 or higher. Mileage denominator comes from MCS-150, which is much harder to fabricate than power-unit count.",
+    thresholds: {
+      critical: "Crashes per million miles at or above P95 cutoff for peer group, with absolute floor.",
+      high:     "Crashes per million miles between P90 and P95 for peer group.",
+      caution:  "Crashes per million miles between P85 and P90 for peer group.",
+    },
+  },
+  {
+    id: "unsafe-driving-rate",
+    category: "smsBasic",
+    label: "Unsafe Driving",
+    definition:
+      "FMCSA SMS BASIC: driver inspections with Unsafe Driving violations divided by total driver inspections (24 months). Captures speeding, reckless driving, improper lane change, following too close, and similar moving violations. High rates indicate driver supervision and training gaps.",
+    thresholds: {
+      critical: "Unsafe Driving violation rate at or above P95 for peer group.",
+      high:     "Between P90 and P95 for peer group.",
+      caution:  "Between P85 and P90 for peer group.",
+    },
+  },
+  {
+    id: "hos-compliance-rate",
+    category: "smsBasic",
+    label: "HOS Compliance",
+    definition:
+      "FMCSA SMS BASIC: driver inspections with Hours-of-Service violations divided by total driver inspections. Captures log falsification, driving beyond limits, missed rest periods. A driver fatigued by HOS violations is statistically more likely to crash.",
+    thresholds: {
+      critical: "HOS violation rate at or above P95 for peer group.",
+      high:     "Between P90 and P95 for peer group.",
+      caution:  "Between P85 and P90 for peer group.",
+    },
+  },
+  {
+    id: "driver-oos-rate",
+    category: "smsBasic",
+    label: "Driver OOS",
+    definition:
+      "Driver out-of-service rate: roadside inspections where the driver was placed OOS (could not continue driving) divided by total driver inspections. Driver OOS is the consequence-side metric — it's what happens when violations are severe enough to halt the trip immediately.",
+    thresholds: {
+      critical: "Driver OOS rate at or above P95 for peer group.",
+      high:     "Between P90 and P95 for peer group.",
+      caution:  "Between P85 and P90 for peer group.",
+    },
+  },
+  {
+    id: "vehicle-oos-rate",
+    category: "smsBasic",
+    label: "Vehicle OOS",
+    definition:
+      "Vehicle out-of-service rate: roadside inspections where the truck was placed OOS (mechanical defects, lighting, brakes, tires) divided by total vehicle inspections. High Vehicle OOS rate is the leading indicator of in-transit breakdowns and roadside delays.",
+    thresholds: {
+      critical: "Vehicle OOS rate at or above P95 for peer group.",
+      high:     "Between P90 and P95 for peer group.",
+      caution:  "Between P85 and P90 for peer group.",
+    },
+  },
+  {
+    id: "hazmat-oos-rate",
+    category: "smsBasic",
+    label: "Hazmat OOS",
+    definition:
+      "Hazmat out-of-service rate: hazmat-load inspections that resulted in an OOS order divided by total hazmat inspections (24 months). Hazmat OOS is materially more serious than general Vehicle OOS — the regulatory threshold is lower and the consequences (placard violations, leak risk) are higher. Only fires for carriers with hazmat activity.",
+    thresholds: {
+      critical: "Hazmat OOS rate at or above P95 for peer group.",
+      high:     "Between P90 and P95 for peer group.",
+      caution:  "Between P85 and P90 for peer group.",
+    },
+  },
+
+  // ---------------------------------------------------------------------
   // CHAMELEON — address cluster
   // ---------------------------------------------------------------------
   {

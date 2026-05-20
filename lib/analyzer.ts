@@ -384,7 +384,7 @@ function classifyCrash(
   return {
     cell,
     reason: {
-      label: "Crashes",
+      label: getRule("crash-rate").label,
       detail: `${cpm.toFixed(2)} per million miles (${c.crashTotal} crashes on ${c.totalPowerUnits} PU${sevStr}). Above ${bandLabel(status)} cutoff for ${peerGroupLabel[peer]} fleets (${crashCutoff.toFixed(2)})${floorApplied ? "; absolute floor applied" : ""}. ${crashMag.toFixed(2)}× over cutoff (${crashMagLabel}).`,
     },
   };
@@ -800,35 +800,35 @@ function scoreCarrier(
     c.unsafeDrivingViolations,
     c.driverInsp,
     peer,
-    "Unsafe Driving"
+    getRule("unsafe-driving-rate").label
   );
   const hos = classifyOos(
     "hos",
     c.hosViolations,
     c.driverInsp,
     peer,
-    "HOS Compliance"
+    getRule("hos-compliance-rate").label
   );
   const driver = classifyOos(
     "driverOos",
     c.driverOosInsp,
     c.driverInsp,
     peer,
-    "Driver OOS"
+    getRule("driver-oos-rate").label
   );
   const vehicle = classifyOos(
     "vehicleOos",
     c.vehicleOosInsp,
     c.vehicleInsp,
     peer,
-    "Vehicle OOS"
+    getRule("vehicle-oos-rate").label
   );
   const hazmat = classifyOos(
     "hazmatOos",
     c.hazmatOosInsp,
     c.hazmatInsp,
     peer,
-    "Hazmat OOS"
+    getRule("hazmat-oos-rate").label
   );
   const revocation = classifyRevocation(c);
   const authority = classifyAuthority(c);
