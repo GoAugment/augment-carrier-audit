@@ -229,6 +229,247 @@ export const RULES: Rule[] = [
   },
 
   // ---------------------------------------------------------------------
+  // LANE VIABILITY — does the carrier's authority + operating area cover
+  // the lane they're offering to haul?
+  // ---------------------------------------------------------------------
+  {
+    id: "lane-not-authorized-interstate",
+    category: "laneViability",
+    label: "Not authorized for interstate",
+    definition:
+      "The email proposes an interstate lane (origin and destination states differ), but FMCSA shows this carrier has no interstate operating authority. Hauling interstate freight without interstate authority is a federal violation; FMCSA can order the load off the road and fine both parties.",
+    thresholds: {
+      critical: "Email proposes interstate lane AND carrier's authority is intrastate-only.",
+    },
+  },
+  {
+    id: "lane-interstate-local-only",
+    category: "laneViability",
+    label: "Carrier registers as interstate-local only",
+    definition:
+      "Carrier's MCS-150 marks them as interstate within 100 miles only — no long-haul drivers, no over-the-road inspections. The proposed lane likely exceeds that 100-mile radius. Carrier could be expanding (and should update their MCS-150 first), but the mismatch is worth flagging.",
+    thresholds: {
+      caution: "Carrier operation = interstate within 100 miles AND proposed lane is plausibly long-haul.",
+    },
+  },
+
+  // ---------------------------------------------------------------------
+  // HAZMAT — applies only when the broker's email pitches a hazmat load
+  // ---------------------------------------------------------------------
+  {
+    id: "hazmat-not-registered",
+    category: "hazmat",
+    label: "Carrier not registered for hazmat",
+    definition:
+      "Email pitches a hazmat (placardable) load, but FMCSA Census shows HM_Ind=N for this carrier — they have not indicated they handle hazardous materials on their MCS-150. Tendering placarded hazmat to a non-hazmat carrier is a regulatory and liability problem regardless of how willing the driver is.",
+    thresholds: {
+      critical: "Email pitches hazmat AND carrier's MCS-150 HM_Ind = N.",
+    },
+  },
+  {
+    id: "hazmat-no-recent-activity",
+    category: "hazmat",
+    label: "Hazmat-registered carrier with no recent hazmat activity",
+    definition:
+      "Carrier's MCS-150 indicates hazmat capability (HM_Ind=Y), but FMCSA has no hazmat inspections on record in the last 24 months. The hazmat self-report may be stale — verify the carrier's current hazmat permit and driver endorsements before tendering.",
+    thresholds: {
+      caution: "HM_Ind = Y but 0 hazmat inspections in last 24 months.",
+    },
+  },
+  {
+    id: "hazmat-registered-active",
+    category: "hazmat",
+    label: "Hazmat-registered, with recent hazmat activity",
+    definition:
+      "Carrier handles hazmat per MCS-150 (HM_Ind=Y) and has recent hazmat inspections on record. This is a positive verification — they actively haul placardable loads. The broker should still confirm specific endorsements (HM placard, tanker, etc.) match the load class.",
+    thresholds: {
+      info: "HM_Ind = Y AND ≥1 hazmat inspections in last 24 months.",
+    },
+  },
+
+  // ---------------------------------------------------------------------
+  // CHAMELEON — phone-based (email-only, not in audit)
+  // ---------------------------------------------------------------------
+  {
+    id: "phone-corp-switchboard",
+    category: "chameleon",
+    label: "Phone shared with multiple DOTs (corporate switchboard)",
+    definition:
+      "Sender's phone matches three or more other DOTs in FMCSA. Large fleets commonly share an 800-line across subsidiary authorities — this isn't a fraud signal by itself, but worth surfacing as context so brokers know the phone belongs to a corporate dispatch line, not the specific carrier they're tendering to.",
+    thresholds: {
+      info: "Phone matches ≥3 other DOTs (corporate switchboard pattern).",
+    },
+  },
+  {
+    id: "phone-chameleon-revoked-predecessor",
+    category: "chameleon",
+    label: "New DOT shares phone with revoked predecessor",
+    definition:
+      "Sender's phone matches a DOT whose authority was involuntarily revoked, AND the focal carrier (this DOT) was registered AFTER the predecessor's revocation date, AND the focal DOT is itself less than three years old. Textbook chameleon: same operator, new authority, dodging the predecessor's safety record. The phone match makes the link evidentiary.",
+    thresholds: {
+      critical: "Phone match to revoked DOT AND focal DOT post-dates revocation AND focal DOT < 3 years old.",
+    },
+  },
+  {
+    id: "phone-shared-with-revoked-carrier",
+    category: "chameleon",
+    label: "Phone shared with carrier that had revocation history",
+    definition:
+      "Phone matches a DOT with revocation history, but the timing doesn't fit a re-incarnation pattern (focal carrier is older than the revocation, or the revocation is more recent than focal registration). Likely a sibling / family entity. Worth flagging at caution so the broker can verify independently.",
+    thresholds: {
+      caution: "Phone match to revoked DOT BUT timing doesn't support chameleon pattern.",
+    },
+  },
+  {
+    id: "phone-shared-one-other-dot",
+    category: "chameleon",
+    label: "Phone shared with one other DOT",
+    definition:
+      "Sender's phone matches exactly one other DOT in FMCSA, and that other DOT has no revocation history. Common owner-operator pattern (one person operating multiple authorities, often spouse-and-spouse or family-owned). Surfaced as info so the broker knows about the sibling, not as a flag.",
+    thresholds: {
+      info: "Phone matches exactly one other DOT AND that DOT has no revocation history.",
+    },
+  },
+
+  // ---------------------------------------------------------------------
+  // EMAIL AUTHENTICITY — DNS / WHOIS / behavioral signals about the sender
+  // ---------------------------------------------------------------------
+  {
+    id: "reply-to-differs-from-sender",
+    category: "emailAuthenticity",
+    label: "Reply-To domain differs from sender",
+    definition:
+      "Email's Reply-To header points to a different domain than the From: address. Classic phishing pattern: the From: looks plausible (carrier's real domain or a near-domain) but the Reply-To routes to an attacker-controlled inbox so the broker's reply goes to the wrong party.",
+    thresholds: {
+      high: "From: and Reply-To: header domains differ.",
+    },
+  },
+  {
+    id: "urgency-language",
+    category: "emailAuthenticity",
+    label: "Email uses urgency language",
+    definition:
+      "The email body contains time-pressure or urgency markers (\"today\", \"ASAP\", \"need answer in 10\", etc.). Urgency by itself is normal in freight; flagging it as info reminds the broker not to skip identity verification because of the time pressure.",
+    thresholds: {
+      info: "Email contains urgency markers.",
+    },
+  },
+  {
+    id: "vague-cold-pitch",
+    category: "emailAuthenticity",
+    label: "Vague cold pitch without signature",
+    definition:
+      "Email is an unsolicited cold inquiry with no signature block and low specificity (no MC#, no specific lanes, no equipment detail). Common cold-list pattern from carrier brokers or scrapers — not necessarily fraudulent but worth flagging as low-specificity outreach.",
+    thresholds: {
+      info: "No load-posting response AND no signature block AND specificity score is low.",
+    },
+  },
+  {
+    id: "sender-email-matches-fmcsa",
+    category: "emailAuthenticity",
+    label: "Sender email matches FMCSA registration",
+    definition:
+      "Full sender address matches the email FMCSA has on file for this DOT. Strong identity signal on a free-mail domain (where the domain itself proves nothing) because the local-part is what identifies the sender on shared providers.",
+    thresholds: {
+      info: "Sender full email matches FMCSA's registered email exactly.",
+    },
+  },
+  {
+    id: "sender-domain-matches-fmcsa",
+    category: "emailAuthenticity",
+    label: "Sender domain matches FMCSA registration",
+    definition:
+      "Sender's email domain matches the email domain FMCSA has on file for this DOT (business-domain case). Confirms the sender is at the same domain the carrier uses with the regulator.",
+    thresholds: {
+      info: "Sender domain matches FMCSA's registered email domain (business domain only).",
+    },
+  },
+  {
+    id: "sender-domain-no-mx",
+    category: "emailAuthenticity",
+    label: "Sender domain has no MX records",
+    definition:
+      "Sender's domain has no MX (mail exchanger) records in DNS — replies will bounce. Typical of parked domains, throwaway typo-squats, or newly-registered domains that haven't been provisioned for email. Legitimate carriers operate from domains that accept inbound mail.",
+    thresholds: {
+      high: "Sender domain has no MX records in DNS.",
+    },
+  },
+  {
+    id: "sender-domain-no-email-auth",
+    category: "emailAuthenticity",
+    label: "Sender domain lacks email authentication setup",
+    definition:
+      "Sender's domain accepts mail (MX on file) but publishes neither SPF nor DMARC. Real businesses configure at least one — without them anyone can spoof mail from this domain. Unusual for a legitimate carrier; worth confirming the carrier's identity through another channel.",
+    thresholds: {
+      caution: "Sender domain has MX but neither SPF nor DMARC.",
+    },
+  },
+  {
+    id: "sender-domain-auth-configured",
+    category: "emailAuthenticity",
+    label: "Sender domain configured for authenticated email",
+    definition:
+      "Sender's domain publishes SPF and/or DMARC and accepts inbound mail — set up like a real business. This is a domain-level check, not a per-message check (inline-forwarded emails strip the per-message auth headers, so we can't claim the specific message passed authentication, only that the domain is properly configured).",
+    thresholds: {
+      info: "Sender domain has MX AND publishes SPF and/or DMARC.",
+    },
+  },
+  {
+    id: "sender-domain-newly-registered",
+    category: "emailAuthenticity",
+    label: "Sender domain newly registered",
+    definition:
+      "Sender's domain was registered less than 90 days ago. Brand-new domains are uncommon for legitimate carriers — they're operating businesses with established web presence. New domains paired with carrier outreach is a recurring fraud pattern (impersonators register a domain that looks like a real carrier's days before the scam).",
+    thresholds: {
+      high: "WHOIS registration date less than 90 days ago.",
+    },
+  },
+  {
+    id: "sender-domain-less-than-year-old",
+    category: "emailAuthenticity",
+    label: "Sender domain less than a year old",
+    definition:
+      "Sender's domain was registered between 90 days and 1 year ago. Not as suspicious as a brand-new domain but worth verifying — most established carriers operate on multi-year-old domains.",
+    thresholds: {
+      caution: "WHOIS registration date between 90 and 365 days ago.",
+    },
+  },
+  {
+    id: "sender-domain-aged",
+    category: "emailAuthenticity",
+    label: "Sender domain age established",
+    definition:
+      "Sender's domain has been registered for at least a year, often many years. Positive identity signal — establishes the sender's domain isn't a recently-spun-up impersonation site.",
+    thresholds: {
+      info: "WHOIS registration date ≥365 days ago.",
+    },
+  },
+
+  // ---------------------------------------------------------------------
+  // EDGE CASES — fired by composeVerdict when carrier can't be resolved
+  // ---------------------------------------------------------------------
+  {
+    id: "no-dot-or-mc-in-email",
+    category: "identityCoherence",
+    label: "No DOT or MC number in email",
+    definition:
+      "The forwarded email doesn't include either a DOT or MC number, so we can't cross-check the sender against FMCSA's carrier registry. Without an identifier, the safety check is unrunnable and we can't credit the sender as a real carrier. Reply asking for the USDOT or MC before tendering anything.",
+    thresholds: {
+      caution: "Email contains neither a DOT number nor an MC number.",
+    },
+  },
+  {
+    id: "dot-not-found-in-fmcsa",
+    category: "identityCoherence",
+    label: "DOT not found in FMCSA",
+    definition:
+      "The DOT number claimed in the email doesn't exist in FMCSA's active-carrier universe. Possibilities: the number was fabricated (most concerning), the DOT was fully deregistered, or the carrier has been dormant long enough to fall out of the active dataset. Verify the claimed DOT on FMCSA SAFER before any further engagement.",
+    thresholds: {
+      critical: "Claimed DOT number isn't in our FMCSA parquet snapshot.",
+    },
+  },
+
+  // ---------------------------------------------------------------------
   // SMS BASIC + CRASH — statistical-axis rules
   //
   // These six rules all share the same shape: an observed rate (violation /

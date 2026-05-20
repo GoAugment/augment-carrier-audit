@@ -138,6 +138,14 @@ function evalAuditTier(carrier: FmcsaCarrier, dot: number): Signal[] {
     ? row.reasons.map((r) => r.label).join(", ")
     : "no specific reasons surfaced";
 
+  // These four "Carrier in X tier" signals are tier echos of the analyzer's
+  // overall verdict — not standalone rules. They aggregate the analyzer's
+  // individual rule findings (insurance lapsed, prior-revoke, address
+  // cluster, etc.) into a single carrier-tier line for brokers who want
+  // the bottom line. Labels stay inline because the actual rules (which
+  // ARE in the registry) are the ones the analyzer fired to produce the
+  // tier; surfacing those four wrappers in the methodology page would be
+  // duplicative and confusing.
   switch (row.riskLevel) {
     case "Critical":
       return [
@@ -343,7 +351,7 @@ function evalLaneViability(
       {
         category: "lane_viability",
         tier: "critical",
-        label: "Not authorized for interstate",
+        label: getRule("lane-not-authorized-interstate").label,
         detail: `Email proposes lane ${origin} → ${dest} (interstate), but MCS-150 records 0 interstate drivers for this carrier.`,
       },
     ];
@@ -356,7 +364,7 @@ function evalLaneViability(
       {
         category: "lane_viability",
         tier: "caution",
-        label: "Carrier registers as interstate-local only",
+        label: getRule("lane-interstate-local-only").label,
         detail: `MCS-150 records this carrier as interstate within 100 miles only, no long-haul drivers. Proposed lane ${origin} → ${dest} likely exceeds that radius.`,
       },
     ];
@@ -396,7 +404,7 @@ function evalHazmat(
       {
         category: "lane_viability",
         tier: "critical",
-        label: "Carrier not registered for hazmat",
+        label: getRule("hazmat-not-registered").label,
         detail:
           "Email proposes a hazmat load, but FMCSA Census shows HM_Ind=N for this carrier. They have not indicated they handle hazardous materials on their MCS-150. Tendering placarded hazmat would be a regulatory and liability problem.",
       },
@@ -411,7 +419,7 @@ function evalHazmat(
       {
         category: "lane_viability",
         tier: "caution",
-        label: "Hazmat-registered carrier with no recent hazmat activity",
+        label: getRule("hazmat-no-recent-activity").label,
         detail:
           "Carrier's MCS-150 indicates hazmat capability (HM_Ind=Y), but FMCSA has no hazmat inspections on record for them in the last 24 months. Verify their current hazmat permit and driver endorsements before tendering.",
       },
@@ -422,7 +430,7 @@ function evalHazmat(
     {
       category: "lane_viability",
       tier: "info",
-      label: "Hazmat-registered, with recent hazmat activity",
+      label: getRule("hazmat-registered-active").label,
       detail: `Carrier handles hazmat per MCS-150 (HM_Ind=Y) and has ${carrier.hazmatInsp} hazmat inspection${carrier.hazmatInsp === 1 ? "" : "s"} in the last 24 months. Confirm specific endorsements (HM placard, tanker, etc.) match the load.`,
     },
   ];
@@ -519,7 +527,7 @@ async function evalChameleonCluster(
       {
         category: "chameleon_cluster",
         tier: "info",
-        label: `Phone shared with ${others.length} other DOTs (corporate switchboard)`,
+        label: getRule("phone-corp-switchboard").label,
         detail: revokedSibling
           ? `${others.length} other DOTs use this phone. Appears to be a corporate dispatch line. One sibling DOT (${revokedSibling.dotNumber}) has historical revocations, but this is sibling/family history, not re-incarnation of the focal carrier.`
           : `${others.length} other DOTs use this phone. Appears to be a corporate dispatch line shared across affiliated authorities.`,
@@ -551,7 +559,7 @@ async function evalChameleonCluster(
       signals.push({
         category: "chameleon_cluster",
         tier: "critical",
-        label: "New DOT shares phone with revoked predecessor",
+        label: getRule("phone-chameleon-revoked-predecessor").label,
         detail: `Sender's phone matches DOT ${o.dotNumber} (${c.legalName ?? "unnamed"}), which had authority revoked ${c.mostRecentInvoluntaryDate}. Focal DOT ${focalDot} was registered after that revocation. Textbook chameleon pattern.`,
       });
     } else if (hasRevocation) {
@@ -560,7 +568,7 @@ async function evalChameleonCluster(
       signals.push({
         category: "chameleon_cluster",
         tier: "caution",
-        label: "Phone shared with carrier that had revocation history",
+        label: getRule("phone-shared-with-revoked-carrier").label,
         detail: `Phone matches DOT ${o.dotNumber} (${c.legalName ?? "unnamed"}), which has revocation history. Timing doesn't fit a re-incarnation pattern (focal carrier is older or the revocation is more recent than focal registration). Likely a sibling/family entity; verify if uncertain.`,
       });
     } else {
@@ -568,7 +576,7 @@ async function evalChameleonCluster(
       signals.push({
         category: "chameleon_cluster",
         tier: "info",
-        label: "Phone shared with one other DOT",
+        label: getRule("phone-shared-one-other-dot").label,
         detail: `Phone matches DOT ${o.dotNumber} (${c.legalName ?? "unnamed"}). Common when an operator holds multiple authorities; not necessarily suspicious.`,
       });
     }
@@ -601,7 +609,7 @@ async function evalEmailAuthenticity(
     signals.push({
       category: "email_authenticity",
       tier: "high",
-      label: "Reply-To domain differs from sender",
+      label: getRule("reply-to-differs-from-sender").label,
       detail: `From: ${sm.sender_email_domain}, but Reply-To: ${sm.reply_to_domain}. Replies will go to a different party. Classic phishing pattern.`,
     });
   }
@@ -611,7 +619,7 @@ async function evalEmailAuthenticity(
     signals.push({
       category: "email_authenticity",
       tier: "info",
-      label: "Email uses urgency language",
+      label: getRule("urgency-language").label,
       detail: `Phrases detected: ${e.behavioral_signals.urgency_markers
         .slice(0, 3)
         .map((s) => `"${s}"`)
@@ -628,7 +636,7 @@ async function evalEmailAuthenticity(
     signals.push({
       category: "email_authenticity",
       tier: "info",
-      label: "Vague cold pitch without signature",
+      label: getRule("vague-cold-pitch").label,
       detail:
         "Email is a cold inquiry with no signature block and no specific lane/load reference. Common with bulk spam; verify identity before responding.",
     });
@@ -648,7 +656,7 @@ async function evalEmailAuthenticity(
     signals.push({
       category: "email_authenticity",
       tier: "info",
-      label: "Sender email matches FMCSA registration",
+      label: getRule("sender-email-matches-fmcsa").label,
       detail: `Full address ${senderEmailLc} matches the email on file with FMCSA for this DOT. Strong identity signal on a free-mail domain.`,
     });
   } else if (
@@ -659,7 +667,7 @@ async function evalEmailAuthenticity(
     signals.push({
       category: "email_authenticity",
       tier: "info",
-      label: "Sender domain matches FMCSA registration",
+      label: getRule("sender-domain-matches-fmcsa").label,
       detail: `Sender at ${sm.sender_email_domain} matches the email domain on file with FMCSA for this DOT.`,
     });
   }
@@ -686,14 +694,14 @@ async function evalEmailAuthenticity(
         signals.push({
           category: "email_authenticity",
           tier: "high",
-          label: "Sender domain has no MX records",
+          label: getRule("sender-domain-no-mx").label,
           detail: `${senderDomain} has no mail servers configured to receive email. Replies to this address will bounce. Typical of parked, throwaway, or typo-squat domains.`,
         });
       } else if (!dnsConfig.hasSpf && !dnsConfig.hasDmarc) {
         signals.push({
           category: "email_authenticity",
           tier: "caution",
-          label: "Sender domain lacks email authentication setup",
+          label: getRule("sender-domain-no-email-auth").label,
           detail: `${senderDomain} accepts mail (MX on file) but publishes neither SPF nor DMARC. Unusual for a real business; most legitimate carriers configure at least one. Worth confirming the carrier's identity through another channel.`,
         });
       } else {
@@ -705,7 +713,7 @@ async function evalEmailAuthenticity(
         signals.push({
           category: "email_authenticity",
           tier: "info",
-          label: "Sender domain configured for authenticated email",
+          label: getRule("sender-domain-auth-configured").label,
           detail: `${senderDomain} publishes ${parts.join(" + ")} on DNS and accepts inbound mail (MX configured). This doesn't prove this specific email is authentic (inline forwards strip auth headers), but the domain itself is set up like a real business.`,
         });
       }
@@ -716,21 +724,21 @@ async function evalEmailAuthenticity(
         signals.push({
           category: "email_authenticity",
           tier: "high",
-          label: `Sender domain registered ${age.ageDays} days ago`,
+          label: getRule("sender-domain-newly-registered").label,
           detail: `${senderDomain} was registered on ${age.registeredAt.toISOString().slice(0, 10)}, less than 90 days old. Brand-new domains are unusual for legitimate carriers and a common fraud pattern.`,
         });
       } else if (age.ageDays < 365) {
         signals.push({
           category: "email_authenticity",
           tier: "caution",
-          label: `Sender domain less than a year old`,
+          label: getRule("sender-domain-less-than-year-old").label,
           detail: `${senderDomain} was registered on ${age.registeredAt.toISOString().slice(0, 10)} (${age.ageDays} days ago). Worth verifying. Most established carriers have older domains.`,
         });
       } else {
         signals.push({
           category: "email_authenticity",
           tier: "info",
-          label: `Sender domain age: ${Math.floor(age.ageDays / 365)}+ years`,
+          label: getRule("sender-domain-aged").label,
           detail: `${senderDomain} was registered on ${age.registeredAt.toISOString().slice(0, 10)}, ${Math.floor(age.ageDays / 365)} years ago.`,
         });
       }
@@ -1054,7 +1062,7 @@ function verdictNoDot(e: ExtractedEmail): Verdict {
       {
         category: "identity_coherence",
         tier: "caution",
-        label: "No DOT or MC number in email",
+        label: getRule("no-dot-or-mc-in-email").label,
         detail:
           "The email doesn't include a DOT or MC number, so we can't cross-check the sender against FMCSA. Reply asking the carrier to confirm their USDOT or MC number before tendering.",
       },
@@ -1073,7 +1081,7 @@ function verdictDotNotFound(dot: number, _e: ExtractedEmail): Verdict {
       {
         category: "identity_coherence",
         tier: "critical",
-        label: "DOT not found in FMCSA",
+        label: getRule("dot-not-found-in-fmcsa").label,
         detail: `DOT ${dot} isn't in the active-carrier universe. Possibilities: the number was fabricated (most concerning), the DOT was fully deregistered, or the carrier has been dormant long enough to fall out of the active dataset. Verify the claimed DOT on FMCSA SAFER (safer.fmcsa.dot.gov) before any further engagement.`,
       },
     ],
