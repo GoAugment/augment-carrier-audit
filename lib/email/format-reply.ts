@@ -154,13 +154,14 @@ export function formatReply(verdict: Verdict, originalSubject: string): Formatte
   // visible in the body (pill + headline + counter); no need to repeat it
   // in the subject at the cost of conversation continuity.
   //
-  // When the broker's original had no subject, send our reply with no subject
-  // either — both will show as "(no subject)" in their inbox, threaded
-  // together via In-Reply-To headers. Don't invent a synthetic subject
-  // (which the broker didn't ask for and creates inbox-display dissonance
-  // between their sent item and our reply).
+  // When the broker's original had no subject, fall back to a minimal "Re:"
+  // — empty subjects get rejected by SendGrid's API with "Bad Request" so we
+  // can't fully no-op. "Re:" alone is the lightest possible synthetic
+  // subject: standard reply convention, will display as just "Re:" in the
+  // inbox row (vs the noisier "Carrier safety check" we had before), and
+  // threading via Message-ID is unaffected.
   const rawBase = originalSubject.replace(/^(Re:\s*)+/i, "").trim();
-  const subject = rawBase ? `Re: ${rawBase}` : "";
+  const subject = rawBase ? `Re: ${rawBase}` : "Re:";
 
   return { subject, text: lines.join("\n"), html: buildReplyHtml(verdict) };
 }
