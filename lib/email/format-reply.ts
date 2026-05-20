@@ -153,9 +153,14 @@ export function formatReply(verdict: Verdict, originalSubject: string): Formatte
   // "— High" makes them diverge and threading drops. The tier is plenty
   // visible in the body (pill + headline + counter); no need to repeat it
   // in the subject at the cost of conversation continuity.
+  //
+  // When the broker's original had no subject, send our reply with no subject
+  // either — both will show as "(no subject)" in their inbox, threaded
+  // together via In-Reply-To headers. Don't invent a synthetic subject
+  // (which the broker didn't ask for and creates inbox-display dissonance
+  // between their sent item and our reply).
   const rawBase = originalSubject.replace(/^(Re:\s*)+/i, "").trim();
-  const baseSubject = rawBase || "Carrier safety check";
-  const subject = `Re: ${baseSubject}`;
+  const subject = rawBase ? `Re: ${rawBase}` : "";
 
   return { subject, text: lines.join("\n"), html: buildReplyHtml(verdict) };
 }

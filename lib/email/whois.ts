@@ -12,7 +12,10 @@
  * register their domain the week before pitching freight.
  */
 
-const RDAP_TIMEOUT_MS = 3000;
+// 1.5s timeout — domain age is a low-priority signal, so failing fast saves
+// time on the critical path. A null result is treated as "couldn't check"
+// rather than a flag.
+const RDAP_TIMEOUT_MS = 1500;
 
 export interface DomainAge {
   registeredAt: Date;
