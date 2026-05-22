@@ -134,9 +134,9 @@ export const RULES: Rule[] = [
     category: "insurance",
     label: "Severe insurance churn",
     definition:
-      "Five or more true insurance cancellations in the last 24 months — the top 1% of carriers nationally. Repeated insurer dropouts indicate the carrier is on the edge of becoming uninsurable; the next cancellation may not be replaced, leaving the broker exposed.",
+      "Seven or more true insurance cancellations in the last 24 months — the top 1% (P99) of carriers nationally. Repeated insurer dropouts indicate the carrier is on the edge of becoming uninsurable; the next cancellation may not be replaced, leaving the broker exposed.",
     thresholds: {
-      critical: "≥5 true insurance cancellations in 24 months.",
+      critical: "≥7 true insurance cancellations in 24 months.",
     },
     fixtures: {
       critical: { dot: 3461031, reason: "FRESNO LOGISTICS LLC: 25 insurance cancellations in 24mo." },
@@ -148,9 +148,9 @@ export const RULES: Rule[] = [
     category: "insurance",
     label: "Insurance churn",
     definition:
-      "Three to four true insurance cancellations in the last 24 months — top 5% nationally. Frequent insurer changes suggest the carrier is being shopped between insurers, often due to claim history or premium nonpayment. Worth confirming the current policy is stable before tendering.",
+      "Three to six true insurance cancellations in the last 24 months — between the 95th and 99th national percentiles. Frequent insurer changes suggest the carrier is being shopped between insurers, often due to claim history or premium nonpayment. Worth confirming the current policy is stable before tendering. At 7+ cancellations the rule escalates to Severe insurance churn.",
     thresholds: {
-      caution: "3 or 4 true insurance cancellations in 24 months.",
+      caution: "3 to 6 true insurance cancellations in 24 months (P95 to P99 band).",
     },
     fixtures: {
       caution: { dot: 3016491, reason: "JDS TRUCKING OF NC LLC: 4 cancellations in 24mo, no rapid replace." },
