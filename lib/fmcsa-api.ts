@@ -127,9 +127,15 @@ async function fetchOne(
     driverFitnessAlert: null,
     controlledSubstancesAlert: null,
     vehicleMaintenanceAlert: null,
-    // SAFER API fallback has no address dedup data; treat as "nothing to flag."
+    // SAFER API fallback has no address dedup or fleet-sharing data; treat
+    // as "nothing to flag." These are only computed during the parquet build.
     addressDupeActiveCount: 0,
     addressDupeOosCount: 0,
+    largestSiblingDot: null,
+    largestSiblingLegalName: null,
+    largestSiblingSharedVins: 0,
+    largestSiblingTotalVins: 0,
+    largestSiblingOverlapPct: 0,
   };
 }
 

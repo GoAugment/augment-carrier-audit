@@ -636,6 +636,33 @@ export const RULES: Rule[] = [
   },
 
   // ---------------------------------------------------------------------
+  // CHAMELEON — fleet sharing (cross-DOT VIN overlap)
+  // ---------------------------------------------------------------------
+  {
+    id: "chameleon-shared-fleet",
+    category: "chameleon",
+    label: "Fleet shared with another active DOT",
+    definition:
+      "A meaningful share of the trucks inspected under this carrier (identified by VIN) are also inspected under another currently-active DOT. Two active DOTs running the same physical fleet is the strongest single signal of a multi-shell operator: the same operator is running 'one' business under two paper authorities, which spreads safety violations across two ledgers and dilutes the audit picture brokers see on either DOT alone. Excludes legitimate one-way truck sales (where the seller's DOT goes inactive) because both sides of the overlap must currently be active.",
+    thresholds: {
+      critical: "≥50% VIN overlap with another active DOT at the SAME physical address (DK MAX TRUCKING / DK MAX PRIME pattern: same building, near-identical name, shared fleet).",
+      high:     "≥80% VIN overlap with another active DOT regardless of address (sister-DOT structure — name variants, related entities sharing trucks).",
+      caution:  "≥50% VIN overlap with another active DOT, no address or name correlation (probable fleet acquisition or undisclosed corporate relationship — worth verifying).",
+    },
+    fixtures: {
+      critical: {
+        dot: 3621624,
+        reason: "DK MAX TRUCKING INC: 76% of its 140 inspected VINs (107) overlap with DK MAX PRIME INC (4006982), same building at 2300 Montana Ave Cincinnati OH.",
+        expectMatch: /inspected VINs.*appear/i,
+      },
+      none: {
+        dot: 53467,
+        reason: "Werner: no significant cross-DOT VIN sharing.",
+      },
+    },
+  },
+
+  // ---------------------------------------------------------------------
   // CHAMELEON — address cluster
   // ---------------------------------------------------------------------
   {

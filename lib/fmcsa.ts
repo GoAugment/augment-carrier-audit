@@ -166,6 +166,19 @@ export interface FmcsaCarrier {
   /** # of OTHER out-of-service DOTs sharing this carrier's normalized
    *  physical address. Primary signal for chameleon-address-cluster. */
   addressDupeOosCount: number;
+  /** Active DOT that shares the most inspected VINs with this carrier
+   *  (24-month window). Null when no sibling shares ≥1 VIN. */
+  largestSiblingDot: number | null;
+  /** Legal name of the largest-sibling DOT, surfaced in evaluator details. */
+  largestSiblingLegalName: string | null;
+  /** # of VINs shared with the largest sibling. */
+  largestSiblingSharedVins: number;
+  /** Total # of distinct VINs inspected under this carrier in 24mo.
+   *  Denominator for the overlap percentage. */
+  largestSiblingTotalVins: number;
+  /** Overlap as a percentage of this carrier's inspected fleet (0-100).
+   *  Drives the chameleon-shared-fleet rule tier. */
+  largestSiblingOverlapPct: number;
 }
 
 export async function fetchCarriers(

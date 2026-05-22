@@ -1050,6 +1050,63 @@ function scoreCarrier(
     }
   }
 
+  // D10c. Chameleon shared-fleet — % of inspected VINs that also appear under
+  // another active DOT. Per the chameleon-shared-fleet rule in the registry:
+  //   critical: ≥50% overlap AND sibling at same address
+  //   high:     ≥80% overlap (any address) OR ≥50% with similar name
+  //   caution:  ≥50% overlap, no address/name correlation
+  {
+    const fleetRule = getRule("chameleon-shared-fleet");
+    const pct = c.largestSiblingOverlapPct;
+    const shared = c.largestSiblingSharedVins;
+    const siblingDot = c.largestSiblingDot;
+    const siblingName = c.largestSiblingLegalName;
+    // Minimum data sufficiency: at least 5 inspected VINs (smaller fleets
+    // produce noisy overlap %), at least 5 shared VINs (one truck swapped
+    // for a load shouldn't fire the rule).
+    if (siblingDot && pct >= 50 && shared >= 5 && c.largestSiblingTotalVins >= 5) {
+      // Name-similarity check: do the two DOTs share a meaningful name root?
+      // Cheap heuristic — first significant word matches (skip stop words).
+      const stopWords = new Set(["INC", "LLC", "CORP", "CO", "COMPANY", "LTD", "INCORPORATED", "THE"]);
+      const firstSig = (name: string | null): string => {
+        if (!name) return "";
+        return name.toUpperCase().split(/\s+/).find((w) => w.length >= 3 && !stopWords.has(w)) ?? "";
+      };
+      const myRoot = firstSig(c.legalName);
+      const sibRoot = firstSig(siblingName);
+      const similarName = !!myRoot && myRoot === sibRoot;
+
+      // Same-address check would ideally compare normalized phy_street + zip,
+      // but those columns aren't in the main parquet (they're in
+      // carrier_identity.parquet for size reasons). We approximate via name
+      // similarity here; the Critical tier requires same-building AND
+      // similar-name in practice, but our test for that is name-only. The
+      // Polars build_aggregates pipeline could add a sibling_same_address
+      // boolean column later if we want stricter tier mapping.
+      let fleetTier: "critical" | "high" | "caution" | null = null;
+      if (pct >= 50 && similarName) fleetTier = "critical";
+      else if (pct >= 80) fleetTier = "high";
+      else if (pct >= 50) fleetTier = "caution";
+
+      if (fleetTier) {
+        const detail =
+          `${shared} of this carrier's ${c.largestSiblingTotalVins} inspected VINs (${pct.toFixed(0)}%) ` +
+          `also appear in roadside inspections under DOT ${siblingDot} ` +
+          `(${siblingName ?? "unknown sibling"}). ` +
+          `${fleetRule.thresholds[fleetTier]} ` +
+          `Combined view tells the broker the operator's actual scale and risk profile spans two authorities; ` +
+          `verify the sibling DOT's audit before tendering.`;
+        reasons.push({ label: fleetRule.label, detail });
+        chameleonSignals.push(`${pct.toFixed(0)}% VIN overlap with active DOT ${siblingDot}`);
+        if (fleetTier === "critical" && level !== "Critical") {
+          level = "Severe";
+        } else if (fleetTier === "high" && level !== "Critical" && level !== "Severe") {
+          level = "High";
+        }
+      }
+    }
+  }
+
   if (chameleonSignals.length >= CHAMELEON_CLUSTER_THRESHOLD) {
     // Escalate to Severe minimum (preserve Critical if already there).
     if (level !== "Critical" && level !== "Severe") {

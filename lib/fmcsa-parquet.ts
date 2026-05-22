@@ -119,6 +119,14 @@ interface ParquetRow {
   // See lib/rules/index.ts > chameleon-address-cluster for definition.
   address_dupe_active_count: number | bigint | null;
   address_dupe_oos_count: number | bigint | null;
+  // Fleet-sharing signal from inspection-file VIN cross-DOT join. For each
+  // carrier, the OTHER active DOT that shares the most VINs in inspections.
+  // See lib/rules/index.ts > chameleon-shared-fleet for definition.
+  largest_sibling_dot: number | bigint | null;
+  largest_sibling_legal_name: string | null;
+  largest_sibling_shared_vins: number | bigint | null;
+  largest_sibling_total_vins: number | bigint | null;
+  largest_sibling_overlap_pct: number | null;
 }
 
 function asInt(v: number | bigint | null | undefined): number {
@@ -213,6 +221,11 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
     vehicleMaintenanceAlert: r.vehicle_maintenance_alert,
     addressDupeActiveCount: asInt(r.address_dupe_active_count),
     addressDupeOosCount: asInt(r.address_dupe_oos_count),
+    largestSiblingDot: r.largest_sibling_dot == null ? null : asInt(r.largest_sibling_dot),
+    largestSiblingLegalName: r.largest_sibling_legal_name,
+    largestSiblingSharedVins: asInt(r.largest_sibling_shared_vins),
+    largestSiblingTotalVins: asInt(r.largest_sibling_total_vins),
+    largestSiblingOverlapPct: r.largest_sibling_overlap_pct ?? 0,
   };
 }
 
@@ -280,7 +293,10 @@ export async function fetchCarriersFromParquet(
       controlled_substances_measure, vehicle_maintenance_measure,
       unsafe_driving_alert, hos_alert, driver_fitness_alert,
       controlled_substances_alert, vehicle_maintenance_alert,
-      address_dupe_active_count, address_dupe_oos_count
+      address_dupe_active_count, address_dupe_oos_count,
+      largest_sibling_dot, largest_sibling_legal_name,
+      largest_sibling_shared_vins, largest_sibling_total_vins,
+      largest_sibling_overlap_pct
     FROM read_parquet('${PARQUET_PATH.replace(/'/g, "''")}')
     WHERE DOT_NUMBER IN (${placeholders})
   `;
