@@ -197,7 +197,7 @@ export default function Home() {
             <code className="rounded bg-ink-100 px-1 py-0.5 font-mono text-xs">
               DOT, LoadID, HAZMAT
             </code>
-            . Up to 1,000 loads per submission.
+            . Up to 7,500 loads per submission.
           </p>
           <textarea
             value={input}
