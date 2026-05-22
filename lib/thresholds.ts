@@ -159,5 +159,5 @@ export const MIN_PU_FOR_CRASH = 5;
 export const MIN_INSP_FOR_OOS = 3;
 
 export const maxLoadsPerSubmission = Number(
-  process.env.MAX_LOADS_PER_SUBMISSION ?? 1000
+  process.env.MAX_LOADS_PER_SUBMISSION ?? 7500
 );
