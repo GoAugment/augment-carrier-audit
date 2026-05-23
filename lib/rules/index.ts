@@ -217,10 +217,13 @@ export const RULES: Rule[] = [
       high: "≥2 of {prior-revoke flag, rapid replace, ≥2 cancellations, new authority + low activity, ≥3 OOS DOTs at same address} fire together.",
     },
     fixtures: {
-      // Same DOTs that fire insurance-rapid-replace also tend to fire
-      // chameleon-cluster because rapid-replace + repeated cancellations
-      // satisfy the multi-signal threshold.
-      high: { dot: 4223713, reason: "DJI EXPRESS LLC: rapid replace + ≥3 cancellations fires chameleon-cluster (snapshot baseline)." },
+      // Needs ≥2 TRULY INDEPENDENT chameleon signals. Insurance sub-signals
+      // (rapid-replace + cancellation count) now count as ONE bucket — they
+      // describe the same evidence. So a DOT firing only insurance won't
+      // trigger chameleon-cluster anymore. DK MAX TRUCKING has insurance
+      // churn (5 cancellations) AND fleet-sharing with DK MAX PRIME — two
+      // genuinely independent kinds of evidence corroborating each other.
+      high: { dot: 3621624, reason: "DK MAX TRUCKING INC: insurance churn + fleet-shared with DK MAX PRIME = 2 independent chameleon signals." },
       none: { dot: 53467, reason: "Werner: no chameleon signals." },
     },
   },
@@ -653,7 +656,7 @@ export const RULES: Rule[] = [
       critical: {
         dot: 3621624,
         reason: "DK MAX TRUCKING INC: 76% of its 140 inspected VINs (107) overlap with DK MAX PRIME INC (4006982), same building at 2300 Montana Ave Cincinnati OH.",
-        expectMatch: /inspected VINs.*appear/i,
+        expectMatch: /of this carrier's VINs.*also run under/i,
       },
       none: {
         dot: 53467,

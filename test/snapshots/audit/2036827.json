@@ -2,10 +2,9 @@
   "dot": 2036827,
   "reasonNote": "ENFORCEMENT: closed enforcement case",
   "carrierName": "NADIA ALICIA GRIMALDO YANEZ",
-  "riskLevel": "Severe",
+  "riskLevel": "Clean",
   "reasonLabels": [
-    "Recent enforcement",
-    "Chameleon-pattern cluster"
+    "Recent enforcement"
   ],
   "axes": {
     "crash": "na",

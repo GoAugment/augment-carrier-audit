@@ -4,8 +4,7 @@
   "carrierName": "DJI EXPRESS LLC",
   "riskLevel": "Critical",
   "reasonLabels": [
-    "Rapid replace + cancellation history",
-    "Chameleon-pattern cluster"
+    "Rapid replace + cancellation history"
   ],
   "axes": {
     "crash": "na",

@@ -16,6 +16,7 @@
  * Goal is ~90% visual fidelity to the mockup in Gmail / Apple Mail / Outlook.
  */
 import type { ExtractedEmail, Signal, Verdict } from "./types";
+import { cancelChurnPercentileText } from "../analyzer";
 
 // Brand palette. Tier colors below match the website's audit-result pill
 // palette (components/AuditWidget.tsx) — Tailwind red-200/red-950 for
@@ -834,7 +835,12 @@ function labelValueCell(label: string, value: string): string {
 function renderBar(
   observed: number,
   cutoffs: { p85: number; p90: number; p95: number },
-  height = 10
+  height = 10,
+  fillColorOverride?: string,
+  // Optional tick-label override for rules whose tick positions don't map
+  // to the "P85/P90/P95" peer-group percentile metaphor. Order matches
+  // the cutoff fields: [label_at_p85, label_at_p90, label_at_p95].
+  tickLabelOverride?: [string, string, string],
 ): string {
   if (!Number.isFinite(observed) || cutoffs.p95 <= 0) return "";
   const { p85, p90, p95 } = cutoffs;
@@ -843,12 +849,15 @@ function renderBar(
 
   // Convert observed value into a fill width.
   const obsPct = pct(observed);
-  // Decide overall fill color from which band observed lands in.
-  const fillColor =
+  // Decide overall fill color from which band observed lands in. When the
+  // caller has a non-standard tier mapping (e.g. insurance churn's 2-tier
+  // structure), they pass an explicit override.
+  const fillColor = fillColorOverride ?? (
     observed >= p95 ? "#a01919" :  // ≥P95 — Severe (red)
     observed >= p90 ? "#c2410c" :  // P90-P95 — High (orange)
     observed >= p85 ? "#a16207" :  // P85-P90 — Elevated (amber)
-    "#2f9742";                      // <P85 — Clean (green)
+    "#2f9742"                       // <P85 — Clean (green)
+  );
 
   // Track (un-filled) background with subtle zone tints so brokers see where
   // the percentile bands sit even when observed is low.
@@ -877,16 +886,17 @@ function renderBar(
         </table>
       </td>
     </tr>
-    <!-- Tick label row: P85 / P90 / P95 markers at proportional positions.
-         When two ticks are very close (gap < 8% of bar width), we drop the
-         middle label so they don't overlap visually. -->
+    <!-- Tick label row: P85 / P90 / P95 markers at proportional positions
+         (or caller-supplied labels). When two ticks are very close
+         (gap < 8% of bar width), we drop the middle label so they don't
+         overlap visually. -->
     <tr>
       <td style="padding-top:4px;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">
           <tr>
-            <td width="${trackP85.toFixed(2)}%" align="right" style="font-size:10px;color:${TICK};line-height:1;padding-right:2px;">P85</td>
-            <td width="${Math.max(0, trackP90 - trackP85).toFixed(2)}%" align="right" style="font-size:10px;color:${TICK};line-height:1;padding-right:2px;">${trackP90 - trackP85 >= 8 ? "P90" : ""}</td>
-            <td width="${Math.max(0, trackP95 - trackP90).toFixed(2)}%" align="right" style="font-size:10px;color:${TICK};line-height:1;padding-right:2px;">${trackP95 - trackP90 >= 8 ? "P95" : ""}</td>
+            <td width="${trackP85.toFixed(2)}%" align="right" style="font-size:10px;color:${TICK};line-height:1;padding-right:2px;">${tickLabelOverride?.[0] ?? "P85"}</td>
+            <td width="${Math.max(0, trackP90 - trackP85).toFixed(2)}%" align="right" style="font-size:10px;color:${TICK};line-height:1;padding-right:2px;">${trackP90 - trackP85 >= 8 ? (tickLabelOverride?.[1] ?? "P90") : ""}</td>
+            <td width="${Math.max(0, trackP95 - trackP90).toFixed(2)}%" align="right" style="font-size:10px;color:${TICK};line-height:1;padding-right:2px;">${trackP95 - trackP90 >= 8 ? (tickLabelOverride?.[2] ?? "P95") : ""}</td>
             <td width="${Math.max(0, 100 - trackP95).toFixed(2)}%"></td>
           </tr>
         </table>
@@ -904,7 +914,15 @@ function renderBarRow(
   observedDisplay: string,
   observed: number | null,
   cutoffs: { p85: number; p90: number; p95: number } | null,
-  unit: string = ""
+  unit: string = "",
+  // Optional override for rules whose tier structure doesn't fit the
+  // P85/P90/P95 → Elevated/High/Severe mapping (e.g. insurance churn is a
+  // two-tier rule: 3-6 = Elevated, ≥7 = Severe, no High band). When set,
+  // these replace the auto-computed badge text and fill color.
+  badgeOverride?: { label: string; color: string; fillColor: string },
+  // Optional override for the bar's three tick labels. Used when the
+  // cutoffs don't correspond to the P85/P90/P95 percentile metaphor.
+  tickLabels?: [string, string, string],
 ): string {
   const cutoffsDegenerate =
     !cutoffs ||
@@ -944,11 +962,13 @@ function renderBarRow(
   }
   const { p85, p90, p95 } = cutoffs;
   // Band label: where does observed fall in the percentile distribution?
-  const band =
-    observed >= p95 ? { label: "≥P95 · Severe", color: C.redInkPill } :
-    observed >= p90 ? { label: "≥P90 · High", color: "#7c2d12" } :
-    observed >= p85 ? { label: "≥P85 · Elevated", color: C.amberInkPill } :
-    { label: "below P85", color: C.inkMuted };
+  // Auto-computed unless the caller supplied a badgeOverride.
+  const band = badgeOverride ?? (
+    observed >= p95 ? { label: "≥P95 · Severe", color: C.redInkPill, fillColor: "#a01919" } :
+    observed >= p90 ? { label: "≥P90 · High", color: "#7c2d12", fillColor: "#c2410c" } :
+    observed >= p85 ? { label: "≥P85 · Elevated", color: C.amberInkPill, fillColor: "#a16207" } :
+    { label: "below P85", color: C.inkMuted, fillColor: "#2f9742" }
+  );
   return `<tr>
     <td colspan="2" style="padding:12px 0 0 0;">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
@@ -960,7 +980,7 @@ function renderBarRow(
           </td>
         </tr>
       </table>
-      <div style="margin-top:6px;">${renderBar(observed, cutoffs)}</div>
+      <div style="margin-top:6px;">${renderBar(observed, cutoffs, 10, badgeOverride?.fillColor, tickLabels)}</div>
     </td>
   </tr>`;
 }
@@ -1099,23 +1119,46 @@ function renderDetailSection(c: NonNullable<Verdict["carrier"]>): string {
   // twice.
   const crashRows: string[] = [];
 
-  // Insurance churn bar — uses hard-coded thresholds from analyzer.ts
-  // (P95 = 3 cancellations / 24mo, P99 = 7; we infill P85=1, P90=2 for the
-  // visual). Render even when count is 0 IF the bar would be informative;
-  // for brevity we only render when there's been at least 1 cancellation.
+  // Insurance churn bar. The rule is two-tier (Elevated 3-6, Severe ≥7) so
+  // the standard P85/P90/P95 visual scheme doesn't fit cleanly. We pass an
+  // explicit badge override that names the rule's actual tier and color,
+  // with cutoffs spaced for sensible visual tick placement (the cutoffs
+  // are still used by renderBar for positioning the tick marks at "3" and
+  // "7" along the bar).
   const insRows: string[] = [];
   if (c.insuranceCancellations24mo > 0) {
     const dateLabel = c.insuranceCancellationDate ? `most recent ${c.insuranceCancellationDate}` : "";
     const count = c.insuranceCancellations24mo;
     const display = `${count} cancellation${count === 1 ? "" : "s"}${dateLabel ? ` · ${dateLabel}` : ""}`;
-    // Insurance-churn cutoffs are NATIONAL not peer-group (analyzer hard-codes
-    // these), but the visualization works the same.
+    // The insurance churn rule is two-tier (3-6 = Elevated, ≥7 = Severe)
+    // AND the distribution is heavily zero-inflated — 90% of active
+    // carriers have ZERO cancellations, so the P85/P90/P95 percentile
+    // metaphor used by the SMS BASIC bars doesn't fit. Use empirical
+    // distribution percentiles for both ticks AND badge so the bar tells
+    // the truth about where this carrier sits.
+    //
+    // Empirical (May 2026 snapshot of 2.06M active carriers):
+    //   P95 of distribution = 2 cancellations
+    //   P99               = 4 cancellations
+    //   P99.5             = 6 cancellations  (≥7 → Severe-tier rule)
+    //
+    // Tick positions: ticks at the empirical P95 / P99 / P99.5 thresholds,
+    // labeled honestly so a broker reads "this carrier is at P99" and that
+    // matches the actual rarity.
+    const tier =
+      count >= 7
+        ? { label: `≥P99.75 · Severe · ${cancelChurnPercentileText(count)}`, color: C.redInkPill, fillColor: "#a01919" }
+        : count >= 3
+          ? { label: `Elevated · ${cancelChurnPercentileText(count)}`, color: C.amberInkPill, fillColor: "#a16207" }
+          : { label: `${cancelChurnPercentileText(count)} of carriers`, color: C.inkMuted, fillColor: "#2f9742" };
     insRows.push(renderBarRow(
       "Insurance churn",
       display,
       count,
-      { p85: 1, p90: 2, p95: 3 },
-      ""
+      { p85: 2, p90: 4, p95: 6 },
+      "",
+      tier,
+      ["P95", "P99", "P99.5"],
     ));
   }
 

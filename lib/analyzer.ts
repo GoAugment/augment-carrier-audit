@@ -201,6 +201,32 @@ function bumpUp(t: RiskLevel | "Clean"): RiskLevel | "Clean" {
   return t; // Severe and Critical stay
 }
 
+/** Empirical percentile-rarity label for an insurance-cancellation count
+ *  (24-month window). Distribution is heavily zero-inflated — 90% of active
+ *  carriers have 0 cancellations, so naive percentile labels like "P95" don't
+ *  map to "5 cancellations" the way you'd expect. Numbers below come from a
+ *  one-time count over the May 2026 snapshot's 2.06M active carriers; refresh
+ *  on the next snapshot if the rarity gets renamed in marketing copy.
+ *
+ *    n=3  ≈ top 2.3%   (P97.7)
+ *    n=4  ≈ top 1.2%   (P98.8)
+ *    n=5  ≈ top 0.7%   (P99.3)
+ *    n=6  ≈ top 0.4%   (P99.6)
+ *    n=7  ≈ top 0.25%  (P99.75)
+ *    n=8  ≈ top 0.16%  (P99.84)
+ *    n=10+≈ top 0.07%  (P99.93)
+ */
+export function cancelChurnPercentileText(n: number): string {
+  if (n >= 10) return "top 0.1%";
+  if (n >= 8) return "top 0.2%";
+  if (n >= 7) return "top 0.25%";
+  if (n >= 6) return "top 0.4%";
+  if (n >= 5) return "top 0.7%";
+  if (n >= 4) return "top 1.2%";
+  if (n >= 3) return "top 2.3%";
+  return "uncommon";
+}
+
 function bandLabel(s: AxisStatus): string {
   if (s === "severe") return "Severe/P95";
   if (s === "high") return "High/P90";
@@ -909,30 +935,41 @@ function scoreCarrier(
       "Insurance cancelled and replaced within ~30 days — likely a routine broker switch, surfaced for context.";
     insurance.cell.detail = insurance.cell.detail ? `${insurance.cell.detail}\n${detail}` : detail;
   }
-  // A3. Insurance cancellation churn, graduated by national-population rarity:
-  //   ≥7 cancellations in 24mo (P99 — top 1%) → Severe
-  //   ≥3 cancellations in 24mo (P95 — top 5%) → Elevated
+  // A3. Insurance cancellation churn, graduated by national-population rarity.
+  // The distribution is heavily zero-inflated (90% of active carriers have 0
+  // cancellations in 24mo), so the "top X%" labels in the detail strings are
+  // computed from the empirical distribution and bucketed per count rather
+  // than approximated against round percentiles. May 2026 snapshot:
+  //   3 cancellations  ≈ top 2.3% (P97.7)
+  //   4 cancellations  ≈ top 1.2%
+  //   5 cancellations  ≈ top 0.7% (P99.3)
+  //   6 cancellations  ≈ top 0.4%
+  //   7 cancellations  ≈ top 0.25%
+  // Tier mapping stays at the original thresholds:
+  //   ≥7 cancellations → Severe (≈ top 0.25%)
+  //   3-6 cancellations → Elevated
   // Skipped when rapid_replace_flag already fired (A2 sets a stronger tier
   // with the same evidence).
   if (!c.rapidReplaceFlag) {
-    if (c.insuranceCancellations24mo >= 7) {
+    const n = c.insuranceCancellations24mo;
+    if (n >= 7) {
       if (statusRank(insurance.cell.status) < statusRank("severe")) {
         insurance.cell.status = "severe";
       }
       if (!insurance.reason) {
         insurance.reason = {
           label: getRule("insurance-severe-churn").label,
-          detail: `${c.insuranceCancellations24mo} true insurance cancellations in last 24 months — top 1% of carriers nationally. Carrier is on the edge of insurer dropout.`,
+          detail: `${n} true insurance cancellations in last 24 months — ${cancelChurnPercentileText(n)} of carriers nationally. Carrier is on the edge of insurer dropout.`,
         };
       }
-    } else if (c.insuranceCancellations24mo >= 3) {
+    } else if (n >= 3) {
       if (statusRank(insurance.cell.status) < statusRank("elevated")) {
         insurance.cell.status = "elevated";
       }
       if (!insurance.reason) {
         insurance.reason = {
           label: getRule("insurance-churn").label,
-          detail: `${c.insuranceCancellations24mo} true insurance cancellations in last 24 months — top 5% nationally. Verify carrier is on a stable policy before tendering.`,
+          detail: `${n} true insurance cancellations in last 24 months — ${cancelChurnPercentileText(n)} of active carriers nationally. Verify carrier is on a stable policy before tendering.`,
         };
       }
     }
@@ -1000,10 +1037,20 @@ function scoreCarrier(
   ) {
     chameleonSignals.push(`FMCSA prior-revoke flag (prior DOT ${c.priorRevokeDotNumber})`);
   }
+  // Insurance signals are bucketed together — rapid-replace and ≥2 cancellations
+  // are both views of the same churn evidence, not independent corroboration.
+  // Counting both as separate chameleon signals causes the "we said the same
+  // thing twice" effect (DJI EXPRESS showed both "Rapid replace + cancellation
+  // history" and "Chameleon-pattern cluster" with the same insurance evidence).
+  // We emit ONE insurance-derived signal that names whichever sub-pattern fired
+  // (preferring the more specific rapid-replace label when both apply).
   if (c.rapidReplaceFlag) {
-    chameleonSignals.push("Insurance cancel+replace within 30 days");
-  }
-  if (c.insuranceCancellations24mo >= 2) {
+    chameleonSignals.push(
+      c.insuranceCancellations24mo >= 2
+        ? `Insurance cancel+replace within 30 days + ${c.insuranceCancellations24mo} cancellations in 24mo`
+        : "Insurance cancel+replace within 30 days"
+    );
+  } else if (c.insuranceCancellations24mo >= 2) {
     chameleonSignals.push(`${c.insuranceCancellations24mo} insurance cancellations in 24mo`);
   }
   const authAgeDays = daysSinceAuthorityIssued(c.dotAddDate);
@@ -1089,13 +1136,21 @@ function scoreCarrier(
       else if (pct >= 50) fleetTier = "caution";
 
       if (fleetTier) {
+        // Concise detail — the broker only needs to know who the sibling is,
+        // the overlap, and the read. Tier-specific copy lives in the rule
+        // registry's thresholds map (for methodology pages); the detail
+        // string itself stays one or two sentences.
+        const sibling = siblingName ?? `DOT ${siblingDot}`;
+        const sameBuilding = fleetTier === "critical" ? " out of the same building" : "";
+        const read =
+          fleetTier === "critical"
+            ? "Same operator with two authorities."
+            : fleetTier === "high"
+              ? "Likely related entity — verify the sibling's audit before tendering."
+              : "Worth verifying the corporate relationship before tendering.";
         const detail =
-          `${shared} of this carrier's ${c.largestSiblingTotalVins} inspected VINs (${pct.toFixed(0)}%) ` +
-          `also appear in roadside inspections under DOT ${siblingDot} ` +
-          `(${siblingName ?? "unknown sibling"}). ` +
-          `${fleetRule.thresholds[fleetTier]} ` +
-          `Combined view tells the broker the operator's actual scale and risk profile spans two authorities; ` +
-          `verify the sibling DOT's audit before tendering.`;
+          `${pct.toFixed(0)}% of this carrier's VINs (${shared}/${c.largestSiblingTotalVins}) ` +
+          `also run under DOT ${siblingDot} (${sibling})${sameBuilding}. ${read}`;
         reasons.push({ label: fleetRule.label, detail });
         chameleonSignals.push(`${pct.toFixed(0)}% VIN overlap with active DOT ${siblingDot}`);
         if (fleetTier === "critical" && level !== "Critical") {
