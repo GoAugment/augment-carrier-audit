@@ -2,9 +2,12 @@
   "dot": 3439499,
   "reasonNote": "ENFORCEMENT: closed enforcement case",
   "carrierName": "ONE STOP USA LLC",
-  "riskLevel": "High",
+  "riskLevel": "Severe",
   "reasonLabels": [
+    "Estimated FMCSA ISS — Inspect (top inspection priority)",
     "Insurance churn",
+    "All-cancel insurance pattern",
+    "Acute/critical violations from FMCSA investigation",
     "Recent enforcement"
   ],
   "axes": {

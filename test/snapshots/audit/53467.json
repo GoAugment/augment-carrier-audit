@@ -3,7 +3,9 @@
   "reasonNote": "CLEAN-BIG: Werner Enterprises",
   "carrierName": "WERNER ENTERPRISES INC",
   "riskLevel": "Clean",
-  "reasonLabels": [],
+  "reasonLabels": [
+    "Estimated FMCSA ISS — Inspect (top inspection priority)"
+  ],
   "axes": {
     "crash": "clean",
     "unsafeDriving": "clean",

@@ -125,9 +125,19 @@ async function main(): Promise<void> {
     for (const tier of ["critical", "high", "caution", "none"] as const) {
       const f = fx[tier];
       if (!f) continue;
-      results.push(
-        await testCarrierSideFixture(rule, tier, f.dot, "expectMatch" in f ? f.expectMatch : undefined),
-      );
+      // `none` accepts either a single fixture or an array of negative
+      // cases; other tiers are always a single fixture.
+      const cases = Array.isArray(f) ? f : [f];
+      for (const fixture of cases) {
+        results.push(
+          await testCarrierSideFixture(
+            rule,
+            tier,
+            fixture.dot,
+            "expectMatch" in fixture ? fixture.expectMatch : undefined,
+          ),
+        );
+      }
     }
   }
 

@@ -2,9 +2,9 @@
   "dot": 4208930,
   "reasonNote": "FATAL: ≥1 fatal crash in 24mo",
   "carrierName": "KP MARTIN ENTERPRISE LLC",
-  "riskLevel": "Severe",
+  "riskLevel": "High",
   "reasonLabels": [
-    "Severe insurance churn",
+    "Insurance churn",
     "Recent revocation"
   ],
   "axes": {
@@ -16,6 +16,6 @@
     "hazmatOos": "na",
     "revocations": "high",
     "authority": "clean",
-    "insurance": "severe"
+    "insurance": "elevated"
   }
 }

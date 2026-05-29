@@ -69,9 +69,12 @@ export interface RuleFixtures {
   high?: RuleFixture;
   /** A DOT this rule should fire as Caution against. */
   caution?: RuleFixture;
-  /** A DOT this rule should NOT fire against — guards against false
-   *  positives. */
-  none?: RuleFixture;
+  /** A DOT (or list of DOTs) this rule should NOT fire against — guards
+   *  against false positives. An array is the right shape when a rule has
+   *  multiple distinct false-positive scenarios worth pinning (e.g. a
+   *  generic clean baseline plus a specific carve-out case like
+   *  "leasing pool vs chameleon ring"). */
+  none?: RuleFixture | RuleFixture[];
 }
 
 export interface Rule {

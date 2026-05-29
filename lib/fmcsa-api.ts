@@ -136,6 +136,25 @@ async function fetchOne(
     largestSiblingSharedVins: 0,
     largestSiblingTotalVins: 0,
     largestSiblingOverlapPct: 0,
+    diffuseVinSharePct: 0,
+    diffuseVinShareNSiblings: 0,
+    insuranceReplaces24mo: 0,
+    insuranceDistinctPolicies24mo: 0,
+    // FAST Act high-risk needs BASIC percentiles, computed only in the parquet
+    // build. The SAFER API fallback can't determine it.
+    fastActHighRisk: false,
+    fastActHighRiskN: 0,
+    fastActHighRiskBasics: null,
+    // ISS / Serious Violations / imminent-lapse are parquet-build-only signals.
+    issScore: null,
+    issTier: null,
+    issGroup: null,
+    hasSeriousViolation: false,
+    seriousViolationCount: 0,
+    seriousViolationBasics: null,
+    bipdImminentLapse: false,
+    bipdDaysToLapse: null,
+    bipdPendingCancelDate: null,
   };
 }
 

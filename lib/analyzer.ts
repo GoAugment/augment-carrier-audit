@@ -216,14 +216,26 @@ function bumpUp(t: RiskLevel | "Clean"): RiskLevel | "Clean" {
  *    n=8  ≈ top 0.16%  (P99.84)
  *    n=10+≈ top 0.07%  (P99.93)
  */
+/**
+ * Percentile labels for distinct policies cancelled in 24mo.
+ *
+ * Empirical distribution among carriers with any BIPD cancellation in 24mo:
+ *   P50 = 1 distinct policy, P75 = 2, P95 = 3, P99 = 4, P99.96 = 7+
+ *
+ * National rates among ALL active carriers are sharper still — only ~0.9%
+ * have ≥3 distinct cancelled policies, ~0.04% have ≥5.
+ *
+ * The labels here are aligned to the new "distinct policies" metric. Prior
+ * implementation labeled raw cancellation events, which over-stated the rarity
+ * for carriers with chronic billing-cycle issues (1 policy cancelled 6 times
+ * looked like top 0.4% nationally).
+ */
 export function cancelChurnPercentileText(n: number): string {
-  if (n >= 10) return "top 0.1%";
-  if (n >= 8) return "top 0.2%";
-  if (n >= 7) return "top 0.25%";
-  if (n >= 6) return "top 0.4%";
-  if (n >= 5) return "top 0.7%";
-  if (n >= 4) return "top 1.2%";
-  if (n >= 3) return "top 2.3%";
+  if (n >= 7) return "top 0.04% (P99.96)";
+  if (n >= 5) return "top 0.3% (P99.7)";
+  if (n >= 4) return "top 0.6% (P99.4)";
+  if (n >= 3) return "top 0.9% (P99.1)";
+  if (n >= 2) return "top 4.3% (P95.7)";
   return "uncommon";
 }
 
@@ -922,7 +934,7 @@ function scoreCarrier(
   // replace AND repeated cancellations) is the actual re-incarnation move.
   if (c.rapidReplaceFlag && c.insuranceCancellations24mo >= 3) {
     insurance.cell.status = "critical";
-    const detail = `Insurance policy cancelled and replaced within ~30 days, alongside ${c.insuranceCancellations24mo} true cancellations in 24 months — re-incarnation pattern.`;
+    const detail = `Insurance policy cancelled and replaced within ~30 days, alongside ${c.insuranceCancellations24mo} distinct policies cancelled in 24 months — re-incarnation pattern.`;
     insurance.cell.detail = insurance.cell.detail ? `${insurance.cell.detail}\n${detail}` : detail;
     insurance.reason = { label: getRule("insurance-rapid-replace").label, detail };
   } else if (c.rapidReplaceFlag) {
@@ -952,14 +964,14 @@ function scoreCarrier(
   // with the same evidence).
   if (!c.rapidReplaceFlag) {
     const n = c.insuranceCancellations24mo;
-    if (n >= 7) {
+    if (n >= 5) {
       if (statusRank(insurance.cell.status) < statusRank("severe")) {
         insurance.cell.status = "severe";
       }
       if (!insurance.reason) {
         insurance.reason = {
           label: getRule("insurance-severe-churn").label,
-          detail: `${n} true insurance cancellations in last 24 months — ${cancelChurnPercentileText(n)} of carriers nationally. Carrier is on the edge of insurer dropout.`,
+          detail: `${n} distinct policies cancelled in last 24 months — ${cancelChurnPercentileText(n)} of carriers nationally. Carrier is on the edge of insurer dropout.`,
         };
       }
     } else if (n >= 3) {
@@ -969,16 +981,147 @@ function scoreCarrier(
       if (!insurance.reason) {
         insurance.reason = {
           label: getRule("insurance-churn").label,
-          detail: `${n} true insurance cancellations in last 24 months — ${cancelChurnPercentileText(n)} of active carriers nationally. Verify carrier is on a stable policy before tendering.`,
+          detail: `${n} distinct policies cancelled in last 24 months — ${cancelChurnPercentileText(n)} of active carriers nationally. Verify carrier is on a stable policy before tendering.`,
         };
       }
     }
   }
 
+  // Insurance rules added after the primary classification (A0/A1/A2/A3). These
+  // can coexist with the primary insurance reason — e.g. a carrier can be both
+  // currently lapsed AND historically sub-minimum, both signals deserve their
+  // own row. Pushed into a local array and merged into `reasons` at collection
+  // time.
+  const extraInsuranceReasons: Reason[] = [];
+
+  // A4. Sub-minimum BIPD coverage. Federal minimum for general-freight property
+  // carriers is $750k. Filed coverage below that — when not zero ($0 = lapsed,
+  // already covered by A0) — means the carrier has under-stated coverage on
+  // file. Brokers cannot legally tender loads requiring higher coverage to a
+  // carrier filing below that load's minimum.
+  if (c.bipdInsuranceOnFile > 0 && c.bipdInsuranceOnFile < 750 && c.allowedToOperate === "Y") {
+    if (statusRank(insurance.cell.status) < statusRank("severe")) {
+      insurance.cell.status = "severe";
+    }
+    extraInsuranceReasons.push({
+      label: getRule("insurance-sub-minimum-bipd").label,
+      detail: `Filed BIPD is $${c.bipdInsuranceOnFile}k, below the federal $750k minimum for general-freight property carriers.`,
+    });
+  }
+
+  // A5. All-cancel insurance pattern — multiple distinct policies in 24mo with
+  // zero Replaced events. Indicates the carrier is shopping a new insurer each
+  // policy term rather than renewing with the same one. Distinct from churn
+  // (raw cancellation count) and rapid-replace (cancel + immediate re-bind).
+  if (
+    c.insuranceDistinctPolicies24mo >= 3 &&
+    c.insuranceReplaces24mo === 0 &&
+    !c.rapidReplaceFlag
+  ) {
+    const distinct = c.insuranceDistinctPolicies24mo;
+    const tier: "high" | "caution" = distinct >= 5 ? "high" : "caution";
+    const newStatus: AxisStatus = tier === "high" ? "severe" : "elevated";
+    if (statusRank(insurance.cell.status) < statusRank(newStatus)) {
+      insurance.cell.status = newStatus;
+    }
+    extraInsuranceReasons.push({
+      label: getRule("insurance-all-cancel-pattern").label,
+      detail: `${distinct} distinct BIPD policies in 24 months with zero recorded renewals — every policy ended as a cancellation. Carrier is shopping insurers each term rather than renewing, which usually means the prior insurer declined to continue.`,
+    });
+  }
+
+  // C1b. FAST Act §5305 High-Risk — 2+ of {Unsafe Driving, Crash Indicator,
+  // HOS, Vehicle Maintenance} at ≥90th percentile: FMCSA's own threshold for
+  // targeting a carrier for an onsite investigation. Precomputed in the parquet
+  // (fastActHighRisk). Individual BASIC alerts still surface on their own axes;
+  // this is the only multi-BASIC aggregate signal (FMCSA's actual rule).
+  const fastActBasicNames: Record<string, string> = {
+    UD: "Unsafe Driving", CI: "Crash Indicator",
+    HOS: "Hours-of-Service", VM: "Vehicle Maintenance",
+  };
+  const fastActReason: Reason | null = c.fastActHighRisk
+    ? {
+        label: getRule("fast-act-high-risk").label,
+        detail: `${(c.fastActHighRiskBasics ?? "")
+          .split("+")
+          .map((code) => fastActBasicNames[code] ?? code)
+          .join(" + ")} at ≥90th percentile. This carrier meets FMCSA's FAST Act High-Risk threshold for prioritized onsite investigation — the same percentile bar the agency uses to decide whom to investigate.`,
+      }
+    : null;
+
+  // C1c. Serious Violations — acute/critical violations cited during an FMCSA
+  // investigation in the last 12 months (scraped per-carrier). Direct evidence
+  // of non-compliance found in an audit; FMCSA's ISS forces the affected BASIC
+  // to the 100th percentile. Critical when broad (2+ BASICs).
+  const svBasicNames: Record<string, string> = {
+    UD: "Unsafe Driving", CI: "Crash Indicator", HOS: "Hours-of-Service",
+    DF: "Driver Fitness", CS: "Controlled Substances", VM: "Vehicle Maintenance",
+    HM: "Hazmat",
+  };
+  const svBasicCodes = (c.seriousViolationBasics ?? "").split("+").filter(Boolean);
+  const seriousViolationReason: Reason | null = c.hasSeriousViolation
+    ? {
+        label: getRule("serious-violations").label,
+        detail: `FMCSA investigation in the last 12 months cited ${c.seriousViolationCount} acute/critical violation${c.seriousViolationCount === 1 ? "" : "s"}${
+          svBasicCodes.length
+            ? ` in ${svBasicCodes.map((x) => svBasicNames[x] ?? x).join(" + ")}`
+            : ""
+        }. These are findings from an on-site/off-site audit — FMCSA's ISS forces the affected BASIC to the 100th percentile. Verify corrective action before tendering.`,
+      }
+    : null;
+
+  // C2. Imminent BIPD lapse — the carrier STILL shows active BIPD coverage but
+  // its last/only policy has a cancellation filed with no replacement, so it's
+  // about to lose the insurance that authorizes it to operate. Gated on
+  // bipdInsuranceOnFile >= 1 so it does NOT double-report with the standard
+  // "$0 BIPD on file" insurance check (which already covers carriers that have
+  // already lapsed to zero). This rule is the forward-looking early warning.
+  const lapseReason: Reason | null =
+    c.bipdImminentLapse && c.bipdInsuranceOnFile >= 1
+      ? {
+          label: getRule("insurance-imminent-lapse").label,
+          detail:
+            `Last BIPD liability policy is cancelling (effective ${c.bipdPendingCancelDate})${
+              c.bipdDaysToLapse != null
+                ? c.bipdDaysToLapse >= 0
+                  ? ` — about ${c.bipdDaysToLapse} day(s) out`
+                  : ` — already past due`
+                : ""
+            }, with no replacement filed and no other active BIPD coverage. The carrier is at imminent risk of losing operating authority. (Insurance data as of the latest snapshot — confirm against live FMCSA before relying on it.)`,
+        }
+      : null;
+  if (lapseReason) {
+    const newStatus: AxisStatus =
+      c.bipdDaysToLapse != null && c.bipdDaysToLapse <= 10 ? "severe" : "elevated";
+    if (statusRank(insurance.cell.status) < statusRank(newStatus)) {
+      insurance.cell.status = newStatus;
+    }
+  }
+
+  // FMCSA ISS-CSA score — surfaced as CONTEXT only (not a tier driver: ISS is
+  // FMCSA's roadside-inspection-priority score, which over-weights large
+  // carriers with inspection exposure and under-weights data-poor small ones,
+  // so the underlying alerts/rules drive our tier, not ISS). Show only the
+  // top "Inspect" tier — Optional/Pass are too noisy to surface per-audit.
+  const issReason: Reason | null =
+    c.issTier === "Inspect" && c.issScore != null
+      ? {
+          label: "Estimated FMCSA ISS — Inspect (top inspection priority)",
+          detail: `Estimated Inspection Selection System score ≈ ${c.issScore}/100 (Inspect — the highest of FMCSA's three priority tiers${
+            c.issGroup ? `, ${c.issGroup}` : ""
+          }). ISS is NOT published by FMCSA; this is our reproduction of the ISS-CSA algorithm from public BASIC/investigation data, so treat it as an estimate.`,
+        }
+      : null;
+
   // Collect reasons (for tooltip/expand)
   const reasons: Reason[] = [];
+  if (issReason) reasons.push(issReason);
   if (insurance.reason) reasons.push(insurance.reason);
+  reasons.push(...extraInsuranceReasons);
+  if (lapseReason) reasons.push(lapseReason);
   reasons.push(...authority.reasons);
+  if (seriousViolationReason) reasons.push(seriousViolationReason);
+  if (fastActReason) reasons.push(fastActReason);
   if (crash.reason) reasons.push(crash.reason);
   if (unsafeDriving.reason) reasons.push(unsafeDriving.reason);
   if (hos.reason) reasons.push(hos.reason);
@@ -1018,6 +1161,24 @@ function scoreCarrier(
   if (revocation.recent && hasStatisticalSignal) {
     // Recent revocation + any statistical signal → Severe
     if (level !== "Critical") level = "Severe";
+  }
+
+  // FAST Act High-Risk tier bump — meeting FMCSA's own investigation-targeting
+  // threshold (2+ crash-correlated BASICs at ≥90th) is at least as strong a
+  // signal as the multi-BASIC pattern. Floor at High.
+  if (fastActReason && level !== "Critical" && level !== "Severe") {
+    level = "High";
+  }
+
+  // Serious Violations tier bump — acute/critical violations found in an FMCSA
+  // investigation are direct non-compliance findings. Broad (2+ BASICs) →
+  // Severe; any → floor at High.
+  if (seriousViolationReason) {
+    if (svBasicCodes.length >= 2) {
+      if (level !== "Critical") level = "Severe";
+    } else if (level !== "Critical" && level !== "Severe") {
+      level = "High";
+    }
   }
   // (Chronic lifetime-count bump removed — see classifyRevocation. Carriers
   // are flagged only on actual activity in the last 24 months.)
@@ -1097,6 +1258,15 @@ function scoreCarrier(
     }
   }
 
+  // Tracks whether the shared-fleet rule contributed a chameleon-cluster
+  // signal. Used by the diffuse-equipment rule (D10d) to avoid double-counting
+  // the same VIN overlaps: when both rules fire, the concentrated 76%-with-
+  // single-sibling overlap is a subset of the diffuse 86%-across-N-siblings
+  // count, so they describe overlapping evidence. We still surface both as
+  // separate reasons (they tell different stories to the broker), but only
+  // one of them counts toward the cluster threshold.
+  let firedFleetSharingClusterSignal = false;
+
   // D10c. Chameleon shared-fleet — % of inspected VINs that also appear under
   // another active DOT. Per the chameleon-shared-fleet rule in the registry:
   //   critical: ≥50% overlap AND sibling at same address
@@ -1153,10 +1323,81 @@ function scoreCarrier(
           `also run under DOT ${siblingDot} (${sibling})${sameBuilding}. ${read}`;
         reasons.push({ label: fleetRule.label, detail });
         chameleonSignals.push(`${pct.toFixed(0)}% VIN overlap with active DOT ${siblingDot}`);
+        firedFleetSharingClusterSignal = true;
         if (fleetTier === "critical" && level !== "Critical") {
           level = "Severe";
         } else if (fleetTier === "high" && level !== "Critical" && level !== "Severe") {
           level = "High";
+        }
+      }
+    }
+  }
+
+  // D10d. Chameleon diffuse equipment sharing. Distinct from chameleon-shared-fleet
+  // which catches concentrated two-DOT pairs — this catches operators who spread
+  // the same trucks across 2+ other active DOTs. Min total VINs floor prevents
+  // 1-2 VIN artifacts (e.g. a single inspection under a giant legit fleet).
+  //
+  // Concentration guard: require the largest single sibling to share enough of
+  // this carrier's VINs to distinguish a real ring from a leasing pool. Default
+  // floor is 10% — a Cincinnati carrier running Ryder rentals will have a high
+  // diffuse % across 100+ siblings, but no single sibling (including Ryder)
+  // holds more than a handful of VINs.
+  //
+  // Empirical relaxation: when this carrier already shows a chameleon-specific
+  // signal (prior-revoke, recent involuntary revocation, rapid-replace, lapsed
+  // BIPD, address cluster, or the all-cancel insurance pattern), drop the floor
+  // to 5%. Reasoning: the 10% guard exists to suppress legit leasing
+  // operations, but a carrier that's already showing other chameleon evidence
+  // is clearly not a clean leasing operation. The 5% floor is still well above
+  // the NOOR-style pure-rental noise floor (~4%) — see /tmp/concentration_*
+  // distributions: 5% is roughly the 2-3rd percentile of real-ring carriers
+  // but well above the 1st percentile of clean-diffuse leasing carriers.
+  const hasChameleonSpecificSignal =
+    c.priorRevokeFlag ||
+    revocation.recent ||
+    c.rapidReplaceFlag ||
+    (c.bipdInsuranceOnFile === 0 && c.allowedToOperate === "Y") ||
+    c.addressDupeOosCount >= 3 ||
+    (c.insuranceDistinctPolicies24mo >= 3 && c.insuranceReplaces24mo === 0);
+  const concentrationFloor = hasChameleonSpecificSignal ? 5 : 10;
+
+  {
+    const diffuseRule = getRule("chameleon-diffuse-equipment");
+    const diffPct = c.diffuseVinSharePct;
+    const nSibs = c.diffuseVinShareNSiblings;
+    const totalVins = c.largestSiblingTotalVins;
+    const topConcentration = c.largestSiblingOverlapPct;
+    if (totalVins >= 5 && diffPct >= 25 && nSibs >= 2 && topConcentration >= concentrationFloor) {
+      let diffuseTier: "critical" | "high" | "caution" | null = null;
+      if (diffPct >= 50 && nSibs >= 5) diffuseTier = "critical";
+      else if (diffPct >= 30 && nSibs >= 3) diffuseTier = "high";
+      else if (diffPct >= 25 && nSibs >= 2) diffuseTier = "caution";
+
+      if (diffuseTier) {
+        const read =
+          diffuseTier === "critical"
+            ? "Equipment laundered across a ring of active authorities."
+            : diffuseTier === "high"
+              ? "Operator likely controls multiple authorities sharing the same fleet."
+              : "Worth verifying which authority each truck operates under.";
+        const detail =
+          `${diffPct.toFixed(0)}% of this carrier's VINs also run under ${nSibs} other active DOTs. ${read}`;
+        reasons.push({ label: diffuseRule.label, detail });
+        if (!firedFleetSharingClusterSignal) {
+          chameleonSignals.push(`${diffPct.toFixed(0)}% diffuse VIN overlap across ${nSibs} DOTs`);
+        }
+        if (diffuseTier === "critical" && level !== "Critical") {
+          level = "Severe";
+        } else if (diffuseTier === "high" && level !== "Critical" && level !== "Severe") {
+          level = "High";
+        } else if (
+          diffuseTier === "caution" &&
+          level !== "Critical" &&
+          level !== "Severe" &&
+          level !== "High"
+        ) {
+          level = "Elevated";
         }
       }
     }

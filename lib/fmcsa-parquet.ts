@@ -127,12 +127,40 @@ interface ParquetRow {
   largest_sibling_shared_vins: number | bigint | null;
   largest_sibling_total_vins: number | bigint | null;
   largest_sibling_overlap_pct: number | null;
+  diffuse_vin_share_pct: number | null;
+  diffuse_vin_share_n_siblings: number | bigint | null;
+  insurance_replaces_24mo: number | bigint | null;
+  insurance_distinct_policies_24mo: number | bigint | null;
+  crash_indicator_measure: number | null;
+  crash_indicator_percentile: number | null;
+  crash_indicator_alert: string | null;
+  crash_indicator_seg_group: string | null;
+  fast_act_high_risk: boolean | null;
+  fast_act_high_risk_n: number | bigint | null;
+  fast_act_high_risk_basics: string | null;
+  iss_score: number | bigint | null;
+  iss_tier: string | null;
+  iss_group: string | null;
+  has_serious_violation: boolean | null;
+  serious_violation_count: number | bigint | null;
+  serious_violation_basics: string | null;
+  bipd_imminent_lapse: boolean | null;
+  bipd_days_to_lapse: number | bigint | null;
+  bipd_pending_cancel_date: string | null;
 }
 
 function asInt(v: number | bigint | null | undefined): number {
   if (v == null) return 0;
   if (typeof v === "bigint") return Number(v);
   return Math.floor(v);
+}
+
+/** Normalize a DuckDB DATE (returned as a JS Date) or string to YYYY-MM-DD. */
+function asDateStr(v: unknown): string | null {
+  if (v == null) return null;
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  const s = String(v);
+  return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
 
@@ -226,6 +254,27 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
     largestSiblingSharedVins: asInt(r.largest_sibling_shared_vins),
     largestSiblingTotalVins: asInt(r.largest_sibling_total_vins),
     largestSiblingOverlapPct: r.largest_sibling_overlap_pct ?? 0,
+    diffuseVinSharePct: r.diffuse_vin_share_pct ?? 0,
+    diffuseVinShareNSiblings: asInt(r.diffuse_vin_share_n_siblings),
+    insuranceReplaces24mo: asInt(r.insurance_replaces_24mo),
+    insuranceDistinctPolicies24mo: asInt(r.insurance_distinct_policies_24mo),
+    fastActHighRisk: r.fast_act_high_risk === true,
+    fastActHighRiskN: asInt(r.fast_act_high_risk_n),
+    fastActHighRiskBasics: r.fast_act_high_risk_basics,
+    issScore: r.iss_score == null ? null : asInt(r.iss_score),
+    issTier: r.iss_tier,
+    issGroup: r.iss_group,
+    hasSeriousViolation: r.has_serious_violation === true,
+    seriousViolationCount: asInt(r.serious_violation_count),
+    seriousViolationBasics: r.serious_violation_basics,
+    bipdImminentLapse: r.bipd_imminent_lapse === true,
+    bipdDaysToLapse: r.bipd_days_to_lapse == null ? null : asInt(r.bipd_days_to_lapse),
+    // DuckDB returns DATE as a JS Date; normalize to a plain YYYY-MM-DD string.
+    bipdPendingCancelDate: asDateStr(r.bipd_pending_cancel_date),
+    // crash_indicator_* columns added by /tmp/add_crash_indicator.py — not
+    // yet wired into FmcsaCarrier because the scraped Avg-PU data is still
+    // being collected. Will be plumbed through once scrape finishes and we
+    // compute the final BASIC measure + percentile per FMCSA methodology.
   };
 }
 
@@ -296,7 +345,13 @@ export async function fetchCarriersFromParquet(
       address_dupe_active_count, address_dupe_oos_count,
       largest_sibling_dot, largest_sibling_legal_name,
       largest_sibling_shared_vins, largest_sibling_total_vins,
-      largest_sibling_overlap_pct
+      largest_sibling_overlap_pct,
+      diffuse_vin_share_pct, diffuse_vin_share_n_siblings,
+      insurance_replaces_24mo, insurance_distinct_policies_24mo,
+      fast_act_high_risk, fast_act_high_risk_n, fast_act_high_risk_basics,
+      iss_score, iss_tier, iss_group,
+      has_serious_violation, serious_violation_count, serious_violation_basics,
+      bipd_imminent_lapse, bipd_days_to_lapse, bipd_pending_cancel_date
     FROM read_parquet('${PARQUET_PATH.replace(/'/g, "''")}')
     WHERE DOT_NUMBER IN (${placeholders})
   `;

@@ -3,7 +3,9 @@
   "reasonNote": "CLEAN: no address sharing",
   "carrierName": "TODAYS CATCH SEAFOOD INC",
   "riskLevel": "Clean",
-  "reasonLabels": [],
+  "reasonLabels": [
+    "Estimated FMCSA ISS — Inspect (top inspection priority)"
+  ],
   "axes": {
     "crash": "na",
     "unsafeDriving": "na",

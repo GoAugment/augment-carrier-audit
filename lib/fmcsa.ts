@@ -179,6 +179,56 @@ export interface FmcsaCarrier {
   /** Overlap as a percentage of this carrier's inspected fleet (0-100).
    *  Drives the chameleon-shared-fleet rule tier. */
   largestSiblingOverlapPct: number;
+  /** % of this carrier's inspected VINs that have ALSO run under any other
+   *  active DOT (24-month window). Diffuse equipment-sharing signal —
+   *  catches carriers whose trucks are spread thin across many siblings
+   *  rather than concentrated on one. */
+  diffuseVinSharePct: number;
+  /** Count of distinct other-DOTs that share at least one VIN with this
+   *  carrier. Pairs with diffuseVinSharePct to distinguish leasing
+   *  (1 sibling) from chameleon laundering (multiple siblings). */
+  diffuseVinShareNSiblings: number;
+  /** Count of 'Replaced' events on BIPD policies in last 24mo. Zero means
+   *  the carrier has never recorded a continuous policy renewal. */
+  insuranceReplaces24mo: number;
+  /** Count of distinct BIPD policy numbers in last 24mo. Combined with
+   *  insuranceReplaces24mo == 0 detects annual carrier-shopping. */
+  insuranceDistinctPolicies24mo: number;
+  /** FMCSA FAST Act §5305 High-Risk flag: 2+ of {Unsafe Driving, Crash
+   *  Indicator, HOS, Vehicle Maintenance} at >=90th percentile — the
+   *  threshold FMCSA uses to target a carrier for an onsite investigation.
+   *  Single-snapshot percentile component only (we don't apply the
+   *  two-consecutive-months persistence test or the recent-investigation
+   *  exclusion). Crash Indicator percentile is sparse, so CI-driven
+   *  high-risk is undercounted. See lib/rules > fast-act-high-risk. */
+  fastActHighRisk: boolean;
+  /** Count of the four FAST Act BASICs at >=90th percentile (0-4). */
+  fastActHighRiskN: number;
+  /** Which BASICs are at >=90th percentile, e.g. "UD+VM" ("" if none). */
+  fastActHighRiskBasics: string | null;
+  /** FMCSA ISS-CSA inspection-priority score (1-100), or null if unscored.
+   *  Surfaced as context, not a tier driver — ISS over-weights large carriers
+   *  with inspection exposure and under-weights data-poor small carriers. */
+  issScore: number | null;
+  /** ISS recommendation tier: "Inspect" / "Optional" / "Pass". */
+  issTier: string | null;
+  /** ISS group label, e.g. "Group 1 (high-risk)". */
+  issGroup: string | null;
+  /** Carrier has >=1 acute/critical Serious Violation from an FMCSA
+   *  investigation in the last 12 months (scraped per-carrier; only populated
+   *  for carriers in the investigation-scrape candidate set). */
+  hasSeriousViolation: boolean;
+  /** Count of Serious Violations in the last 12 months. */
+  seriousViolationCount: number;
+  /** Which BASICs the Serious Violations hit, e.g. "HOS+VM" ("" if none). */
+  seriousViolationBasics: string | null;
+  /** BIPD insurance is about to lapse (terminal cancellation, no replacement,
+   *  carrier left with no other active BIPD). Most freshness-sensitive signal. */
+  bipdImminentLapse: boolean;
+  /** Days from the data snapshot to the lapse (negative = already lapsed). */
+  bipdDaysToLapse: number | null;
+  /** Effective date of the terminal BIPD cancellation (YYYY-MM-DD). */
+  bipdPendingCancelDate: string | null;
 }
 
 export async function fetchCarriers(

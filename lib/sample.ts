@@ -1,19 +1,18 @@
-// Sample input — a known mix that produces interesting results.
-// (Real DOTs from publicly available FMCSA data.)
+// Sample input — a curated mix where most carriers show ONE clear, specific
+// pattern (more realistic than carriers that trip every rule), with a couple of
+// multi-signal and clean carriers for contrast. Real DOTs from public FMCSA data.
 export const SAMPLE_INPUT = `# Sample carrier-load list. Format: DOT, optional load id, optional HAZMAT flag
-# Try clicking "Audit now" to see the report against industry safety thresholds.
-3621624, L-1001                 # DK MAX TRUCKING — known high crash rate
-2075148, L-1002                 # ASAP TRANS CORP — known high crash rate
-2049859, L-1003                 # XYQ EXPRESS — known high driver OOS
-2049859, L-1004
-2049859, L-1005
-3201000, L-1006                 # LETEM TRANSPORTATION — high driver OOS
-3168296, L-1007, HAZMAT         # AFS WORLD — hazmat load, elevated hazmat OOS
-2902577, L-1008
-3863705, L-1009
-1221360, L-1010
-3501896, L-1011, HAZMAT         # VOXSER — clean hazmat carrier (for contrast)
-80806, L-1012                   # J.B. HUNT — clean large fleet
-264184, L-1013                  # SCHNEIDER NATIONAL — clean large fleet
-74432, L-1014                   # MARTEN TRANSPORT — clean large fleet
+# Click "Audit now" to see each carrier scored against FMCSA safety data.
+1388780, L-1001                 # FOX TRANSPORTATION — elevated crash rate only (~2.3/million mi), BASICs otherwise clean
+1448431, L-1002                 # STANDARD LOGISTIC SERVICES — single Hours-of-Service alert, nothing else
+2438425, L-1003                 # ALL PRO LOGISTICS — single Vehicle Maintenance alert (360-unit fleet)
+2642590, L-1004                 # TEX-Q EXPRESS — one Driver Fitness acute/critical violation from an FMCSA investigation
+2196912, L-1005                 # TEXAS INTERNATIONAL ENERGY — meets FMCSA High-Risk (HOS + Vehicle Maint ≥90th), not yet investigated
+3610811, L-1006                 # MYKTYBEK EXPRESS — shared-fleet chameleon: 63% of its VINs run under another DOT
+3293950, L-1007                 # LUMY MOVING — BIPD insurance cancels in ~15 days with no replacement on file
+1162977, L-1008                 # UNIVERSAL INTERMODAL — fleet shed + very high per-mile crash rate (stale MCS-150 mileage)
+3501896, L-1009, HAZMAT         # VOXSER — small hazmat carrier with 3 BASIC alerts (ISS is alert-pattern-driven, not size)
+53467,   L-1010                 # WERNER — clean per-mile crash rate, but estimated ISS=Inspect via the hidden HM + Crash Indicator BASICs
+80806,   L-1011                 # J.B. HUNT — clean large fleet (contrast)
+74432,   L-1012                 # MARTEN TRANSPORT — clean large fleet (contrast)
 `;

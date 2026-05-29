@@ -202,6 +202,12 @@ export default function Home() {
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !loading && input.trim()) {
+                e.preventDefault();
+                runAudit();
+              }
+            }}
             rows={10}
             spellCheck={false}
             placeholder={"3621624\n2049859, INF31459-18990\n3168296, L-1007, HAZMAT"}
@@ -216,6 +222,7 @@ export default function Home() {
             >
               {loading ? "Auditing…" : "Audit now"}
             </button>
+            <span className="text-xs text-ink-400">⌘ + ↵</span>
             <span className="text-xs text-ink-500">
               Anonymous. We don&apos;t store your carrier or load IDs.
             </span>
