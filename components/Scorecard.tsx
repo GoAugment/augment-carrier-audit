@@ -25,6 +25,15 @@ const verdictLabel: Record<RiskLevel, string> = {
   Low: "Clean",
 };
 
+// Accent bar on the left of an expanded reasons panel — colored by tier
+// (Critical = the red bar in the design).
+const barColor: Record<RiskLevel, string> = {
+  Critical: "border-l-red-500",
+  High: "border-l-orange-400",
+  Medium: "border-l-amber-400",
+  Low: "border-l-augment-400",
+};
+
 const rowTint: Record<RiskLevel, string> = {
   Critical: "bg-red-50/80",
   High: "bg-orange-50/40",
@@ -216,6 +225,22 @@ export function Scorecard({
 }) {
   const [showAll, setShowAll] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
+  // Per-row expand: the reasons panel is collapsed by default so the matrix
+  // reads as a compact scannable grid; the top (worst) carrier is expanded on
+  // first paint so there's immediate detail. Clicking any flagged row toggles it.
+  const [expandedDots, setExpandedDots] = useState<Set<number>>(() => {
+    const first =
+      rows.find((r) => r.riskLevel === "Critical" || r.riskLevel === "High") ??
+      rows[0];
+    return new Set(first ? [first.dot] : []);
+  });
+  const toggleExpanded = (dot: number) =>
+    setExpandedDots((prev) => {
+      const next = new Set(prev);
+      if (next.has(dot)) next.delete(dot);
+      else next.add(dot);
+      return next;
+    });
   // Triage view: the default queue is Critical + High ("review these"). Medium
   // (awareness/FYI) and Low (clean) collapse behind a toggle so a big arrive
   // list doesn't bury the carriers that actually need a decision.
@@ -237,24 +262,25 @@ export function Scorecard({
   return (
     <div className="mt-6">
       <div className="mb-1 flex items-start justify-between gap-3">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className="text-base font-semibold text-ink-900">
+        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+          <span className="text-lg font-semibold text-ink-900">
             {totalLoads} load{totalLoads === 1 ? "" : "s"} · {totalCarriers} carrier
             {totalCarriers === 1 ? "" : "s"}
           </span>
-          <span className="inline-flex items-center rounded-full bg-ink-100 px-2 py-0.5 text-xs font-medium text-ink-700">
+          <span className="text-ink-300">·</span>
+          <span className="text-sm font-semibold text-ink-900">
             {review.length} flagged
           </span>
           {criticalCount > 0 && (
-            <span className="inline-flex items-center gap-1 text-xs text-ink-600">
-              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-              {criticalCount} Critical
+            <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-900">
+              <strong className="font-semibold tabular-nums">{criticalCount}</strong>
+              <span className="ml-1">Critical</span>
             </span>
           )}
           {highCount > 0 && (
-            <span className="inline-flex items-center gap-1 text-xs text-ink-600">
-              <span className="h-1.5 w-1.5 rounded-full bg-orange-400" />
-              {highCount} High
+            <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">
+              <strong className="font-semibold tabular-nums">{highCount}</strong>
+              <span className="ml-1">High</span>
             </span>
           )}
         </div>
@@ -426,10 +452,18 @@ export function Scorecard({
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map((r) => (
+            {visibleRows.map((r) => {
+              const { safety, fraud } = splitSignals(r.reasons, r.riskFactors);
+              const hasDetail =
+                safety.length > 0 || fraud.length > 0 || r.siblingDot != null;
+              const open = hasDetail && expandedDots.has(r.dot);
+              return (
               <Fragment key={r.dot}>
               <tr
-                className={`border-t border-ink-100 align-top ${rowTint[r.riskLevel]}`}
+                className={`border-t border-ink-100 align-top ${rowTint[r.riskLevel]} ${
+                  hasDetail ? "cursor-pointer hover:brightness-[0.985]" : ""
+                }`}
+                onClick={hasDetail ? () => toggleExpanded(r.dot) : undefined}
               >
                 <td className="px-3 py-2 text-ink-500">{r.rank}</td>
                 <td className="px-3 py-2">
@@ -440,10 +474,23 @@ export function Scorecard({
                   </span>
                 </td>
                 <td className="px-3 py-2">
-                  <div className="font-medium text-ink-900">
-                    {r.carrierName ?? <span className="text-ink-400">unknown</span>}
+                  <div className="flex items-center gap-1.5">
+                    {hasDetail && (
+                      <svg
+                        viewBox="0 0 10 10"
+                        aria-hidden="true"
+                        className={`h-2.5 w-2.5 shrink-0 text-ink-400 transition-transform ${
+                          open ? "rotate-90" : ""
+                        }`}
+                      >
+                        <path d="M3 1.5 L7 5 L3 8.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                    <span className="font-medium text-ink-900">
+                      {r.carrierName ?? <span className="text-ink-400">unknown</span>}
+                    </span>
                   </div>
-                  <div className="mt-0.5 text-[11px] text-ink-500">
+                  <div className={`mt-0.5 text-[11px] text-ink-500 ${hasDetail ? "pl-4" : ""}`}>
                     DOT {r.dot} · {r.peerGroupLabel}
                     {r.loadCount > 0 && ` · ${r.loadCount} load${r.loadCount === 1 ? "" : "s"}`}
                   </div>
@@ -461,9 +508,7 @@ export function Scorecard({
                 <Cell cell={r.axes.authority} />
                 <Cell cell={r.axes.insurance} />
               </tr>
-              {(() => {
-                const { safety, fraud } = splitSignals(r.reasons, r.riskFactors);
-                if (safety.length === 0 && fraud.length === 0) return null;
+              {open && (() => {
                 const renderGroup = (
                   title: string,
                   items: Signal[],
@@ -512,7 +557,10 @@ export function Scorecard({
                   <tr className={`${rowTint[r.riskLevel]}`}>
                     <td className="border-b border-ink-100"></td>
                     <td className="border-b border-ink-100"></td>
-                    <td colSpan={13} className="border-b border-ink-100 px-3 pb-3 pt-0">
+                    <td
+                      colSpan={13}
+                      className={`border-b border-ink-100 border-l-[3px] ${barColor[r.riskLevel]} pl-4 pr-3 pb-3 pt-1`}
+                    >
                       <div className="grid gap-3 sm:grid-cols-2">
                         {renderGroup("On-road safety", safety, "bg-orange-400")}
                         {renderGroup(
@@ -529,7 +577,8 @@ export function Scorecard({
                 );
               })()}
               </Fragment>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
