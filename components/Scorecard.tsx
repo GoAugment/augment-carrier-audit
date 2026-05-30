@@ -566,9 +566,10 @@ export function Scorecard({
                       {extra}
                     </div>
                   ) : null;
-                // When a concentrated shared-fleet sibling was named, show that
-                // linked authority's OWN Augie verdict — a 53%-VIN-overlap partner
-                // that is itself Critical is the real tell.
+                // When a shared-fleet sibling was named, show what it is. A
+                // REVOKED/inactive sibling whose fleet now runs here is the
+                // chameleon-successor tell, so its status takes priority over its
+                // tier; an active sibling shows its own Augie verdict.
                 const siblingNote =
                   r.siblingDot != null ? (
                     <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-600">
@@ -576,7 +577,15 @@ export function Scorecard({
                         Linked authority
                         {r.siblingName ? ` ${r.siblingName}` : ""} (DOT {r.siblingDot}):
                       </span>
-                      {r.siblingTier ? (
+                      {r.siblingStatus === "revoked" ? (
+                        <span className="inline-flex rounded border border-red-400 bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-900">
+                          Revoked{r.siblingRevokedDate ? ` ${r.siblingRevokedDate}` : ""}
+                        </span>
+                      ) : r.siblingStatus === "inactive" ? (
+                        <span className="inline-flex rounded border border-ink-300 bg-ink-100 px-1.5 py-0.5 text-[10px] font-medium text-ink-700">
+                          Inactive
+                        </span>
+                      ) : r.siblingTier ? (
                         <span
                           className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-medium ${riskStyles[r.siblingTier]}`}
                         >

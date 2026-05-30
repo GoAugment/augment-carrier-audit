@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseInput, analyze } from "@/lib/analyzer";
-import { fetchCarriers } from "@/lib/fmcsa";
+import { parseInput, analyze, siblingStatusOf, type SiblingStatus } from "@/lib/analyzer";
+import { fetchCarriers, type FmcsaCarrier } from "@/lib/fmcsa";
 import { nationalThresholds, maxLoadsPerSubmission } from "@/lib/thresholds";
 import { logEvent, hashIp } from "@/lib/log";
 
@@ -40,35 +40,47 @@ export async function POST(req: NextRequest) {
   const t0 = Date.now();
   const dots = Array.from(new Set(loads.map((l) => l.dot)));
   const carriers = await fetchCarriers(dots);
-  const t1 = Date.now();
 
-  const result = analyze(loads, carriers);
-
-  // Second pass: score each carrier's named shared-fleet sibling so the UI can
-  // show the linked authority's OWN verdict (a carrier sharing 53% of its VINs
-  // with another DOT is far more alarming if that sibling is itself Critical).
-  // Most siblings aren't in the broker's pasted list, so fetch + score the ones
-  // we don't already have; reuse the first pass for any that are.
-  const alreadyScored = new Map(result.rows.map((r) => [r.dot, r.riskLevel]));
+  // Pre-fetch every carrier's largest cross-DOT VIN-overlap sibling (a raw field
+  // on the FMCSA record) so we know each sibling's authority STATUS before
+  // scoring. A sibling whose authority was involuntarily revoked — its trucks
+  // now running here — is the chameleon-successor tell, and we want it to drive
+  // this carrier's verdict + fraud score (handled inside analyze).
+  const dotSet = new Set(dots);
   const siblingDots = Array.from(
     new Set(
-      result.rows
-        .map((r) => r.siblingDot)
-        .filter((d): d is number => d != null && !alreadyScored.has(d))
+      Array.from(carriers.values())
+        .map((c) => c.largestSiblingDot)
+        .filter((d): d is number => typeof d === "number" && d > 0 && !dotSet.has(d))
     )
   );
-  if (siblingDots.length) {
-    const siblingCarriers = await fetchCarriers(siblingDots);
+  const siblingCarriers: Map<number, FmcsaCarrier> = siblingDots.length
+    ? await fetchCarriers(siblingDots)
+    : new Map();
+  const t1 = Date.now();
+
+  const siblingStatusMap = new Map<number, SiblingStatus>();
+  for (const c of [...carriers.values(), ...siblingCarriers.values()]) {
+    if (c.dotNumber != null) siblingStatusMap.set(c.dotNumber, siblingStatusOf(c));
+  }
+
+  const result = analyze(loads, carriers, siblingStatusMap);
+
+  // Score the named siblings for the DISPLAY tier chip (shown only when the
+  // sibling is still active; revoked/inactive siblings show their status
+  // instead). Reuse the already-fetched sibling records + the input carriers'
+  // own verdicts.
+  const tierByDot = new Map<number, (typeof result.rows)[number]["riskLevel"]>();
+  for (const r of result.rows) tierByDot.set(r.dot, r.riskLevel);
+  if (siblingCarriers.size) {
     const siblingResult = analyze(
-      siblingDots.map((dot) => ({ dot, isHazmat: false })),
+      Array.from(siblingCarriers.keys()).map((dot) => ({ dot, isHazmat: false })),
       siblingCarriers
     );
-    for (const sr of siblingResult.rows) alreadyScored.set(sr.dot, sr.riskLevel);
+    for (const sr of siblingResult.rows) tierByDot.set(sr.dot, sr.riskLevel);
   }
   for (const r of result.rows) {
-    if (r.siblingDot != null) {
-      r.siblingTier = alreadyScored.get(r.siblingDot) ?? null;
-    }
+    if (r.siblingDot != null) r.siblingTier = tierByDot.get(r.siblingDot) ?? null;
   }
   const t2 = Date.now();
 

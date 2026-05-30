@@ -170,6 +170,12 @@ export interface CarrierRow {
   siblingDot: number | null;
   siblingName: string | null;
   siblingTier: RiskLevel | null;
+  /** The linked sibling's own authority status. "revoked" (involuntary) is the
+   *  textbook chameleon-successor tell — its trucks reappearing under this DOT.
+   *  Null when no sibling was named. `siblingRevokedDate` is the involuntary
+   *  revocation date when status is "revoked". */
+  siblingStatus: "active" | "inactive" | "revoked" | null;
+  siblingRevokedDate: string | null;
   /** Underlying FMCSA record — carried so the CSV export can emit the full FMCSA
    *  (BASIC percentiles) + regulatory (insurance/revocation/authority) columns
    *  beyond what the on-screen axes show. Not serialized into snapshots. */
@@ -1145,9 +1151,35 @@ const AXIS_RANK = {
   hazmatOos: 1,
 } as const;
 
+export type SiblingStatus = {
+  kind: "active" | "inactive" | "revoked";
+  date: string | null;
+};
+
+// Window for treating a linked authority's involuntary revocation as a live
+// chameleon-successor signal. FMCSA's status flag lags (a carrier can show
+// "Active" for months after its authority is pulled, or briefly reinstate), so
+// the revocation EVENT — not the current flag — is what we key on.
+const SIBLING_REVOKE_WINDOW_DAYS = 365 * 3;
+
+/** Authority status of a (sibling) carrier, for the linked-authority signal.
+ *  "revoked" = involuntary revocation within the last 3y (the chameleon-
+ *  predecessor case — its trucks reappearing under our carrier), regardless of
+ *  the current status flag, which lags. "inactive" = currently not allowed to
+ *  operate with no recent involuntary revocation (voluntary/dormant — benign-er). */
+export function siblingStatusOf(c: FmcsaCarrier): SiblingStatus {
+  const revokedDaysAgo = daysAgo(c.mostRecentInvoluntaryDate);
+  if (revokedDaysAgo != null && revokedDaysAgo <= SIBLING_REVOKE_WINDOW_DAYS)
+    return { kind: "revoked", date: c.mostRecentInvoluntaryDate };
+  const allowed = (c.allowedToOperate ?? "").toUpperCase();
+  if (allowed !== "Y" && allowed !== "") return { kind: "inactive", date: null };
+  return { kind: "active", date: null };
+}
+
 function scoreCarrier(
   c: FmcsaCarrier,
-  loadInfo: { loadIds: Set<string>; hazmatLoadIds: Set<string> }
+  loadInfo: { loadIds: Set<string>; hazmatLoadIds: Set<string> },
+  siblingStatusMap: Map<number, SiblingStatus> = new Map()
 ): CarrierRow {
   const peer = peerGroupForPU(c.totalPowerUnits);
 
@@ -1750,6 +1782,11 @@ function scoreCarrier(
   // captured when the chameleon-shared-fleet reason fires so the API route can
   // score it and show its own verdict alongside this carrier's.
   let siblingRef: { dot: number; name: string | null } | null = null;
+  // The named sibling's authority status (filled when siblingRef is set + the
+  // status map has an entry). A "revoked" sibling whose fleet now runs here is
+  // the chameleon-successor tell — it escalates the verdict + fraud score below.
+  let siblingStatusKind: "active" | "inactive" | "revoked" | null = null;
+  let siblingRevokedDate: string | null = null;
 
   // D10c. Chameleon shared-fleet — % of inspected VINs that also appear under
   // another active DOT. Per the chameleon-shared-fleet rule in the registry:
@@ -1823,6 +1860,24 @@ function scoreCarrier(
           fleetTier === "critical" ? 22 : fleetTier === "high" ? 16 : 8,
           `${pct.toFixed(0)}% of inspected VINs shared with active DOT ${siblingDot}`
         );
+        // Linked-authority status: a concentrated fleet shared with a sibling
+        // whose authority was involuntarily REVOKED is the chameleon-successor
+        // pattern (the dead carrier's trucks reappearing here) → force Critical
+        // and make it the dominant fraud-score facet.
+        const sStat = siblingStatusMap.get(siblingDot);
+        if (sStat) {
+          siblingStatusKind = sStat.kind;
+          siblingRevokedDate = sStat.date;
+          if (sStat.kind === "revoked") {
+            level = "Critical";
+            setCham(
+              40,
+              `Runs the fleet of DOT ${siblingDot}, whose authority was involuntarily revoked${
+                sStat.date ? ` ${sStat.date}` : ""
+              } — chameleon-successor pattern`
+            );
+          }
+        }
       }
     }
   }
@@ -1911,6 +1966,26 @@ function scoreCarrier(
           diffuseTier === "critical" ? 22 : diffuseTier === "high" ? 16 : 8,
           `${diffPct.toFixed(0)}% of inspected VINs spread across ${nSibs} other active DOTs`
         );
+        // Largest of the diffuse siblings is a revoked authority → chameleon-
+        // successor tell. Milder than the concentrated case (diffuse is noisier):
+        // escalate to at least High rather than forcing Critical. Only when the
+        // shared-fleet block above didn't already capture this sibling's status.
+        if (siblingRef && siblingStatusKind === null) {
+          const sStat = siblingStatusMap.get(siblingRef.dot);
+          if (sStat) {
+            siblingStatusKind = sStat.kind;
+            siblingRevokedDate = sStat.date;
+            if (sStat.kind === "revoked") {
+              if (level !== "Critical") level = "High";
+              setCham(
+                24,
+                `Largest linked authority DOT ${siblingRef.dot} was involuntarily revoked${
+                  sStat.date ? ` ${sStat.date}` : ""
+                } — chameleon-successor pattern`
+              );
+            }
+          }
+        }
       }
     }
   }
@@ -2071,6 +2146,8 @@ function scoreCarrier(
     siblingDot: siblingRef?.dot ?? null,
     siblingName: siblingRef?.name ?? null,
     siblingTier: null,
+    siblingStatus: siblingStatusKind,
+    siblingRevokedDate,
     carrier: c,
     axes: {
       crash: crash.cell,
@@ -2104,7 +2181,8 @@ function scoreCarrier(
 
 export function analyze(
   loads: LoadInput[],
-  carriers: Map<number, FmcsaCarrier>
+  carriers: Map<number, FmcsaCarrier>,
+  siblingStatusMap: Map<number, SiblingStatus> = new Map()
 ): AuditResult {
   const byCarrier = new Map<
     number,
@@ -2130,7 +2208,7 @@ export function analyze(
       unresolvedDots.push(dot);
       continue;
     }
-    rows.push(scoreCarrier(c, g));
+    rows.push(scoreCarrier(c, g, siblingStatusMap));
   }
 
   const SORT_ORDER: RiskLevel[] = ["Critical", "High", "Medium", "Low"];
