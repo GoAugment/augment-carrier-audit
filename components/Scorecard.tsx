@@ -9,20 +9,18 @@ import type {
 } from "@/lib/analyzer";
 import { toCsv } from "@/lib/csv";
 
-const riskStyles: Record<RiskLevel | "Clean", string> = {
+const riskStyles: Record<RiskLevel, string> = {
   Critical: "bg-red-200 text-red-950 border-red-400 font-semibold",
-  Severe: "bg-red-100 text-red-900 border-red-200",
   High: "bg-orange-100 text-orange-900 border-orange-200",
-  Elevated: "bg-amber-50 text-amber-900 border-amber-200",
-  Clean: "bg-augment-50 text-augment-900 border-augment-200",
+  Medium: "bg-amber-50 text-amber-900 border-amber-200",
+  Low: "bg-augment-50 text-augment-900 border-augment-200",
 };
 
-const rowTint: Record<RiskLevel | "Clean", string> = {
+const rowTint: Record<RiskLevel, string> = {
   Critical: "bg-red-50/80",
-  Severe: "bg-red-50/40",
   High: "bg-orange-50/40",
-  Elevated: "bg-amber-50/30",
-  Clean: "",
+  Medium: "bg-amber-50/30",
+  Low: "",
 };
 
 const cellStyles: Record<AxisStatus, string> = {
@@ -66,7 +64,7 @@ function ReadingNote() {
         <div className="mt-2 space-y-2 text-ink-500">
           <p>
             <span className="font-semibold text-ink-700">Statistical axes</span> (Unsafe Driving,
-            HOS, Driver OOS, Vehicle OOS, Hazmat OOS) fire <span className="rounded bg-red-100 px-1 text-red-900">severe</span>{" "}
+            HOS, Driver Fitness, Controlled Substances, Vehicle Maintenance) fire <span className="rounded bg-red-100 px-1 text-red-900">severe</span>{" "}
             only when the carrier&apos;s rate is at or above the 95th percentile of their peer
             group (≈1-in-20 outlier). Crash rate uses crashes per million miles, peer-group P95.
           </p>
@@ -75,7 +73,7 @@ function ReadingNote() {
             recent involuntary revocations (≤24mo), FMCSA chameleon flag against a different
             predecessor DOT (Critical), insurance lapsed below FMCSA-required (Critical),
             insurance cancel+replace within 30 days with ≥3 true cancellations (Critical), and
-            ≥7 true insurance cancellations in 24mo (Severe).
+            ≥7 true insurance cancellations in 24mo (Critical).
           </p>
           <p>
             <span className="font-semibold text-ink-700">Info-only context</span> doesn&apos;t flag —
@@ -89,15 +87,100 @@ function ReadingNote() {
   );
 }
 
-function Cell({ cell }: { cell: AxisCell }) {
+function Cell({ cell, className = "" }: { cell: AxisCell; className?: string }) {
   return (
     <td
-      className={`px-2 py-2 text-center text-xs tabular-nums ${cellStyles[cell.status]}`}
+      className={`px-2 py-2 text-center text-xs tabular-nums ${className} ${cellStyles[cell.status]}`}
       title={cell.detail ?? ""}
     >
-      {cell.display}
+      <div>{cell.display}</div>
+      {cell.sub && (
+        <div className="text-[10px] font-normal opacity-60">{cell.sub}</div>
+      )}
     </td>
   );
+}
+
+/** Estimated FMCSA ISS badge — context, colored by tier. */
+const issTierStyle: Record<string, string> = {
+  Inspect: "border-orange-300 bg-orange-50 text-orange-800",
+  Optional: "border-amber-300 bg-amber-50 text-amber-800",
+  Pass: "border-augment-200 bg-augment-50 text-augment-700",
+};
+function IssBadge({ score, tier }: { score: number | null; tier: string | null }) {
+  if (score == null || tier == null) return null;
+  return (
+    <span
+      className={`mt-1 inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${issTierStyle[tier] ?? issTierStyle.Pass}`}
+      title="Estimated FMCSA Inspection Selection System score (reproduced from public BASIC/investigation data — FMCSA does not publish ISS). See note below the table."
+    >
+      ISS* {score} · {tier}
+    </span>
+  );
+}
+
+// NB: the Augie Safety Score is still computed (CarrierRow.safetyScore / CSV) but
+// no longer badged — ISS is the safety lens, the Risk score is the differentiator.
+// The badge was a third, overlapping safety number; dropped for clarity.
+
+/** Augie Risk Score badge — always shown (paired with ISS as the two-axis read),
+ *  colored by tier; contributing factors listed inline below the score. */
+const riskTierStyle: Record<string, string> = {
+  High: "border-red-400 bg-red-100 text-red-900 font-semibold",
+  Moderate: "border-orange-300 bg-orange-50 text-orange-800",
+  Low: "border-amber-300 bg-amber-50 text-amber-800",
+  None: "border-augment-200 bg-augment-50 text-augment-700",
+};
+function RiskBadge({
+  score,
+  tier,
+  factors,
+}: {
+  score: number;
+  tier: string;
+  factors: string[];
+}) {
+  const body =
+    factors.length > 0
+      ? `\n\nFactors:\n• ${factors.join("\n• ")}`
+      : "\n\nNo identity / financial-distress / location signals detected.";
+  return (
+    <span
+      className={`mt-1 inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${riskTierStyle[tier] ?? riskTierStyle.None}`}
+      title={`Augie Risk Score (0-100, higher = worse): a composite of identity/deception, financial-distress, tenure, and location signals, weighted by measured lift on future authority loss. A heuristic index, not a probability. FMCSA has no equivalent.${body}`}
+    >
+      Risk {score} · {tier}
+    </span>
+  );
+}
+
+// Split a carrier's signals into the two buckets we show inline: on-road SAFETY
+// (crash + the SMS BASICs + FAST-Act + serious violations + ISS) vs FRAUD /
+// reliability risk (insurance, revocation, chameleon, enforcement, + the
+// insurer/ZIP/tenure risk-score markers that have no axis cell of their own).
+const SAFETY_RE =
+  /crash|unsafe driving|hos compliance|driver oos|vehicle oos|hazmat|fast.?act|acute|serious viol|iss —|multiple basic|safety rating/i;
+// Risk-score markers to surface as fraud-side reasons (they live only in the
+// risk factors — no rule/axis pushes them as a reason).
+const RISK_MARKER_RE =
+  /^(high-risk insurer|high-shutdown zip|very new authority|new authority|limited tenure|phantom fleet)/i;
+
+type Signal = { label: string; detail: string };
+function splitSignals(reasons: Signal[], riskFactors: string[]): {
+  safety: Signal[];
+  fraud: Signal[];
+} {
+  const safety: Signal[] = [];
+  const fraud: Signal[] = [];
+  for (const r of reasons) (SAFETY_RE.test(r.label) ? safety : fraud).push(r);
+  const seen = new Set(fraud.map((f) => f.label.toLowerCase()));
+  for (const f of riskFactors) {
+    if (!RISK_MARKER_RE.test(f)) continue;
+    const [label, ...rest] = f.split(" — ");
+    if (seen.has(label.toLowerCase())) continue;
+    fraud.push({ label, detail: rest.join(" — ") });
+  }
+  return { safety, fraud };
 }
 
 const PREVIEW_ROWS = 10;
@@ -118,9 +201,9 @@ export function Scorecard({
 }) {
   const [showClean, setShowClean] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
-  const allFlagged = rows.filter((r) => r.riskLevel !== "Clean");
+  const allFlagged = rows.filter((r) => r.riskLevel !== "Low");
   const allRows = showClean ? rows : allFlagged;
-  const cleanCount = rows.filter((r) => r.riskLevel === "Clean").length;
+  const cleanCount = rows.filter((r) => r.riskLevel === "Low").length;
   const gateActive = !isLocalDev() && allRows.length > PREVIEW_ROWS && !unlocked;
   const visibleRows = gateActive ? allRows.slice(0, PREVIEW_ROWS) : allRows;
   const hiddenCount = allRows.length - visibleRows.length;
@@ -148,72 +231,101 @@ export function Scorecard({
       <div className="rounded-lg border border-ink-200 bg-white">
         <table className="w-full text-left text-sm">
           <thead className="sticky top-0 z-10 bg-ink-50 text-[11px] uppercase tracking-wide text-ink-600 shadow-sm">
+            {/* Group band: makes explicit that the verdict, the FMCSA SMS
+                safety percentiles, and regulatory standing are three different
+                lenses — they answer different questions and can legitimately
+                disagree (e.g. a chameleon shell with clean inspection scores). */}
+            <tr className="text-[10px] tracking-wide text-ink-500">
+              <th colSpan={3} className="px-3 pt-2 pb-1 text-left font-semibold">
+                Augie verdict
+              </th>
+              <th
+                colSpan={7}
+                className="border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-augment-700"
+                title="FMCSA Safety Measurement System — all 7 BASICs, peer-ranked within the carrier's fleet-size group. Higher percentile = worse than more peers. CI* (crash) and HM* (hazmat) are our estimates; FMCSA doesn't publish them."
+              >
+                FMCSA SMS — on-road safety (all 7 BASICs, peer-ranked)
+              </th>
+              <th colSpan={3} className="border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold">
+                Regulatory standing
+              </th>
+            </tr>
             <tr>
               <th className="px-3 py-2 align-bottom">#</th>
               <th className="px-3 py-2 align-bottom">Risk</th>
               <th className="px-3 py-2 align-bottom">Carrier</th>
               <th
-                className="px-2 py-2 text-center align-bottom"
-                title="Crashes per million miles — raw crash count over 24 months ÷ annual VMT × 2 ÷ 1,000,000"
+                className="border-l border-ink-200 px-2 py-2 text-center align-bottom"
+                title="Crashes per million miles — raw crash count over 24 months ÷ annual VMT × 2 ÷ 1,000,000. CI* = our estimated FMCSA Crash Indicator percentile (peer-ranked) where available; see note below the table."
               >
-                Crashes
+                Crash
                 <br />
                 <span className="text-[10px] normal-case text-ink-500">
-                  ÷ million miles
+                  %ile* · ÷ mi
                 </span>
               </th>
               <th
                 className="px-2 py-2 text-center align-bottom"
-                title="Unsafe Driving — % of driver inspections that found speeding, reckless driving, improper lane changes, inattention, etc."
+                title="Unsafe Driving — FMCSA SMS percentile (peer-ranked; ⚠ = at/above FMCSA's intervention threshold). Small number = violation rate per driver inspection."
               >
                 Unsafe driving
                 <br />
                 <span className="text-[10px] normal-case text-ink-500">
-                  ÷ driver insp
+                  SMS %ile
                 </span>
               </th>
               <th
                 className="px-2 py-2 text-center align-bottom"
-                title="HOS Compliance — % of driver inspections that found Hours-of-Service violations"
+                title="HOS Compliance — FMCSA SMS percentile (peer-ranked; ⚠ = at/above FMCSA's intervention threshold). Small number = violation rate per driver inspection."
               >
                 HOS
                 <br />
                 <span className="text-[10px] normal-case text-ink-500">
-                  ÷ driver insp
+                  SMS %ile
                 </span>
               </th>
               <th
                 className="px-2 py-2 text-center align-bottom"
-                title="Driver Out-of-Service — % of driver inspections that ended with the driver placed OOS"
+                title="Driver Fitness — FMCSA SMS percentile (peer-ranked; ⚠ = at/above FMCSA's intervention threshold). Falls back to driver OOS rate when the carrier isn't data-sufficient for a percentile."
               >
-                Driver OOS
+                Driver fitness
                 <br />
                 <span className="text-[10px] normal-case text-ink-500">
-                  ÷ driver insp
+                  SMS %ile
                 </span>
               </th>
               <th
                 className="px-2 py-2 text-center align-bottom"
-                title="Vehicle Out-of-Service — % of vehicle inspections that ended with the vehicle placed OOS"
+                title="Controlled Substances / Alcohol — FMCSA SMS percentile (peer-ranked; ⚠ = at/above FMCSA's intervention threshold). Sparse — '—' unless the carrier has enough relevant inspections."
               >
-                Vehicle OOS
+                Ctrl. subs.
                 <br />
                 <span className="text-[10px] normal-case text-ink-500">
-                  ÷ vehicle insp
+                  SMS %ile
                 </span>
               </th>
               <th
                 className="px-2 py-2 text-center align-bottom"
-                title="Hazmat Out-of-Service — % of hazmat-placarded inspections that ended OOS"
+                title="Vehicle Maintenance — FMCSA SMS percentile (peer-ranked; ⚠ = at/above FMCSA's intervention threshold). Falls back to vehicle OOS rate when the carrier isn't data-sufficient for a percentile."
               >
-                Hazmat OOS
+                Vehicle maint.
                 <br />
                 <span className="text-[10px] normal-case text-ink-500">
-                  ÷ hazmat insp
+                  SMS %ile
                 </span>
               </th>
               <th
                 className="px-2 py-2 text-center align-bottom"
+                title="Hazmat Compliance — HM* = our estimated FMCSA percentile (FMCSA doesn't publish it); see note below the table. Falls back to hazmat OOS rate when not data-sufficient. Hazmat OOS feeds the ISS estimate."
+              >
+                Hazmat
+                <br />
+                <span className="text-[10px] normal-case text-ink-500">
+                  HM* %ile
+                </span>
+              </th>
+              <th
+                className="border-l border-ink-200 px-2 py-2 text-center align-bottom"
                 title="Most recent involuntary revocation date, or chronic-revocation count"
               >
                 Revocations
@@ -260,47 +372,83 @@ export function Scorecard({
                     DOT {r.dot} · {r.peerGroupLabel}
                     {r.loadCount > 0 && ` · ${r.loadCount} load${r.loadCount === 1 ? "" : "s"}`}
                   </div>
-                  {r.hazmatLoadIds.length > 0 && (
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      <span className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-800">
-                        Hazmat
-                      </span>
-                    </div>
-                  )}
+                  <div className="flex flex-wrap gap-1">
+                    <RiskBadge score={r.riskScore} tier={r.riskTier} factors={r.riskFactors} />
+                    <IssBadge score={r.issScore} tier={r.issTier} />
+                  </div>
                 </td>
-                <Cell cell={r.axes.crash} />
+                <Cell cell={r.axes.crash} className="border-l border-ink-200" />
                 <Cell cell={r.axes.unsafeDriving} />
                 <Cell cell={r.axes.hos} />
                 <Cell cell={r.axes.driverOos} />
+                <Cell cell={r.axes.controlledSubstances} />
                 <Cell cell={r.axes.vehicleOos} />
                 <Cell cell={r.axes.hazmatOos} />
-                <Cell cell={r.axes.revocations} />
+                <Cell cell={r.axes.revocations} className="border-l border-ink-200" />
                 <Cell cell={r.axes.authority} />
                 <Cell cell={r.axes.insurance} />
               </tr>
-              {r.reasons.length > 0 && (
-                <tr className={`${rowTint[r.riskLevel]}`}>
-                  <td className="border-b border-ink-100"></td>
-                  <td className="border-b border-ink-100"></td>
-                  <td colSpan={9} className="border-b border-ink-100 px-3 pb-3 pt-0">
-                    <ul className="space-y-1.5 text-xs text-ink-700">
-                      {r.reasons.map((reason, i) => (
-                        <li key={i}>
-                          <strong className="font-semibold text-ink-900">
-                            {reason.label}
-                          </strong>{" "}
-                          <span>{reason.detail}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </td>
-                </tr>
-              )}
+              {(() => {
+                const { safety, fraud } = splitSignals(r.reasons, r.riskFactors);
+                if (safety.length === 0 && fraud.length === 0) return null;
+                const renderGroup = (
+                  title: string,
+                  items: Signal[],
+                  dot: string
+                ) =>
+                  items.length > 0 ? (
+                    <div>
+                      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-500">
+                        <span className={`inline-block h-1.5 w-1.5 rounded-full ${dot}`} />
+                        {title}
+                      </div>
+                      <ul className="mt-1 space-y-1.5 text-xs text-ink-700">
+                        {items.map((s, i) => (
+                          <li key={i}>
+                            <strong className="font-semibold text-ink-900">{s.label}</strong>
+                            {s.detail ? <span> {s.detail}</span> : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null;
+                return (
+                  <tr className={`${rowTint[r.riskLevel]}`}>
+                    <td className="border-b border-ink-100"></td>
+                    <td className="border-b border-ink-100"></td>
+                    <td colSpan={11} className="border-b border-ink-100 px-3 pb-3 pt-0">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {renderGroup("On-road safety", safety, "bg-orange-400")}
+                        {renderGroup(
+                          fraud.length && r.riskScore > 0
+                            ? `Fraud / reliability risk · ${r.riskScore}`
+                            : "Fraud / reliability risk",
+                          fraud,
+                          "bg-red-400"
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })()}
               </Fragment>
             ))}
           </tbody>
         </table>
       </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-ink-500">
+        <span className="font-medium text-ink-600">ISS*</span> — Estimated FMCSA
+        Inspection Selection System score (1–100) and tier (Inspect / Optional /
+        Pass). FMCSA does not publish ISS; this is our reproduction of the public
+        ISS-CSA algorithm from FMCSA BASIC percentiles and investigation history,
+        so treat it as an estimate. It&apos;s context only — it does not drive the
+        carrier&apos;s risk rating.{" "}
+        <span className="font-medium text-ink-600">CI*</span> (Crash, percentile
+        on top with crashes-per-million-miles below) and{" "}
+        <span className="font-medium text-ink-600">HM*</span> (Hazmat) are our
+        estimated percentiles for the two BASICs FMCSA doesn&apos;t publish; shown
+        where the carrier is data-sufficient.
+      </p>
       {gateActive && hiddenCount > 0 && result && (
         <FullReportCta
           hiddenCount={hiddenCount}

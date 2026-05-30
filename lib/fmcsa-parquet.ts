@@ -86,10 +86,10 @@ interface ParquetRow {
   cargo_on_file_flag: boolean | null;
   cargo_required_flag: boolean | null;
   physical_state: string | null;
+  phy_zip: string | null;
   // Identity / contact columns dropped from parquet — see FmcsaCarrier for re-enable path.
   // phy_street: string | null;
   // phy_city: string | null;
-  // phy_zip: string | null;
   // phone: string | null;
   // email_address: string | null;
   // company_officer_1: string | null;
@@ -109,6 +109,11 @@ interface ParquetRow {
   driver_fitness_measure: number | null;
   controlled_substances_measure: number | null;
   vehicle_maintenance_measure: number | null;
+  unsafe_driving_percentile: number | null;
+  hos_percentile: number | null;
+  driver_fitness_percentile: number | null;
+  controlled_substances_percentile: number | null;
+  vehicle_maintenance_percentile: number | null;
   unsafe_driving_alert: string | null;
   hos_alert: string | null;
   driver_fitness_alert: string | null;
@@ -135,6 +140,9 @@ interface ParquetRow {
   crash_indicator_percentile: number | null;
   crash_indicator_alert: string | null;
   crash_indicator_seg_group: string | null;
+  hm_compliance_percentile: number | null;
+  hm_compliance_alert: string | null;
+  pu_vins_inspected: number | bigint | null;
   fast_act_high_risk: boolean | null;
   fast_act_high_risk_n: number | bigint | null;
   fast_act_high_risk_basics: string | null;
@@ -225,6 +233,7 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
     cargoInsuranceOnFile: r.cargo_on_file_flag === true,
     cargoInsuranceRequired: r.cargo_required_flag === true,
     physicalState: r.physical_state,
+    physicalZip: r.phy_zip ?? null,
     // Identity/contact fields dropped from parquet:
     // phyStreet: r.phy_street, phyCity: r.phy_city, phyZip: r.phy_zip,
     // phone: r.phone, emailAddress: r.email_address,
@@ -239,6 +248,11 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
     inspectionsPerPu: r.inspections_per_pu,
     unsafeDrivingMeasure: r.unsafe_driving_measure,
     hosMeasure: r.hos_measure,
+    unsafeDrivingPercentile: r.unsafe_driving_percentile,
+    hosPercentile: r.hos_percentile,
+    driverFitnessPercentile: r.driver_fitness_percentile,
+    controlledSubstancesPercentile: r.controlled_substances_percentile,
+    vehicleMaintenancePercentile: r.vehicle_maintenance_percentile,
     driverFitnessMeasure: r.driver_fitness_measure,
     controlledSubstancesMeasure: r.controlled_substances_measure,
     vehicleMaintenanceMeasure: r.vehicle_maintenance_measure,
@@ -271,10 +285,20 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
     bipdDaysToLapse: r.bipd_days_to_lapse == null ? null : asInt(r.bipd_days_to_lapse),
     // DuckDB returns DATE as a JS Date; normalize to a plain YYYY-MM-DD string.
     bipdPendingCancelDate: asDateStr(r.bipd_pending_cancel_date),
-    // crash_indicator_* columns added by /tmp/add_crash_indicator.py — not
-    // yet wired into FmcsaCarrier because the scraped Avg-PU data is still
-    // being collected. Will be plumbed through once scrape finishes and we
-    // compute the final BASIC measure + percentile per FMCSA methodology.
+    // Estimated Crash Indicator BASIC. FMCSA does not publish CI percentiles;
+    // these are our reproduction (severity/time-weighted crashes ÷ Avg-PU×UF),
+    // populated only for the ~21k crash-sufficient carriers we have the scraped
+    // Avg-PU/utilization factor for. Null elsewhere → the crash axis falls back
+    // to crashes-per-million-miles.
+    crashIndicatorPercentile: r.crash_indicator_percentile,
+    crashIndicatorAlert: r.crash_indicator_alert,
+    // Estimated Hazmat Compliance BASIC (FMCSA doesn't publish it either).
+    // Populated only for carriers with enough hazmat inspections; null elsewhere.
+    hmCompliancePercentile: r.hm_compliance_percentile,
+    hmComplianceAlert: r.hm_compliance_alert,
+    // Distinct power-unit VINs seen in inspections — phantom-fleet / rented-
+    // authority signal (compared against reported power units in the analyzer).
+    puVinsInspected: asInt(r.pu_vins_inspected),
   };
 }
 
@@ -331,15 +355,17 @@ export async function fetchCarriersFromParquet(
       crash_measure, peer_group, crashes_per_million_miles, annual_mileage,
       unsafe_driving_violations_24mo, hos_violations_24mo,
       cargo_on_file_flag, cargo_required_flag,
-      physical_state,
+      physical_state, phy_zip,
       -- Identity/contact columns omitted to keep the parquet under 100MB:
-      -- phy_street, phy_city, phy_zip, phone, email_address,
+      -- phy_street, phy_city, phone, email_address,
       -- company_officer_1, company_officer_2
       dot_add_date, mcs150_date, review_date, review_type,
       prior_revoke_flag, prior_revoke_dot_number, recordable_crash_rate,
       fleet_size_flag, inspections_per_pu,
       unsafe_driving_measure, hos_measure, driver_fitness_measure,
       controlled_substances_measure, vehicle_maintenance_measure,
+      unsafe_driving_percentile, hos_percentile, driver_fitness_percentile,
+      controlled_substances_percentile, vehicle_maintenance_percentile,
       unsafe_driving_alert, hos_alert, driver_fitness_alert,
       controlled_substances_alert, vehicle_maintenance_alert,
       address_dupe_active_count, address_dupe_oos_count,
@@ -351,7 +377,10 @@ export async function fetchCarriersFromParquet(
       fast_act_high_risk, fast_act_high_risk_n, fast_act_high_risk_basics,
       iss_score, iss_tier, iss_group,
       has_serious_violation, serious_violation_count, serious_violation_basics,
-      bipd_imminent_lapse, bipd_days_to_lapse, bipd_pending_cancel_date
+      bipd_imminent_lapse, bipd_days_to_lapse, bipd_pending_cancel_date,
+      crash_indicator_percentile, crash_indicator_alert,
+      hm_compliance_percentile, hm_compliance_alert,
+      pu_vins_inspected
     FROM read_parquet('${PARQUET_PATH.replace(/'/g, "''")}')
     WHERE DOT_NUMBER IN (${placeholders})
   `;

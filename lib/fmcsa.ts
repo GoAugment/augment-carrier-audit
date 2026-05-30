@@ -90,6 +90,9 @@ export interface FmcsaCarrier {
   mcs150Date: string | null;
   /** Physical state from FMCSA Census (2-letter abbreviation), e.g. "TX", "NJ". */
   physicalState: string | null;
+  /** Physical-address ZIP (5-digit) from FMCSA Census. Feeds the ZIP-risk fraud
+   *  marker (per-ZIP carrier shutdown rate vs national base). */
+  physicalZip: string | null;
   // -- Identity / contact fields, dropped from the parquet to keep the file
   //    under GitHub's 100MB blob limit. The data is still in source CSVs;
   //    re-enable by uncommenting these + adding back to scripts/build_aggregates.py
@@ -152,6 +155,14 @@ export interface FmcsaCarrier {
   // carrier is over the intervention threshold for this BASIC."
   unsafeDrivingMeasure: number | null;
   hosMeasure: number | null;
+  /** FMCSA SMS BASIC percentiles (0-100, peer-ranked; higher = worse). Computed
+   *  from the measure within the Safety Event Group. UD/HOS/VM/DF/CS validated
+   *  against FMCSA's published percentiles. */
+  unsafeDrivingPercentile: number | null;
+  hosPercentile: number | null;
+  driverFitnessPercentile: number | null;
+  controlledSubstancesPercentile: number | null;
+  vehicleMaintenancePercentile: number | null;
   driverFitnessMeasure: number | null;
   controlledSubstancesMeasure: number | null;
   vehicleMaintenanceMeasure: number | null;
@@ -160,6 +171,18 @@ export interface FmcsaCarrier {
   driverFitnessAlert: string | null;
   controlledSubstancesAlert: string | null;
   vehicleMaintenanceAlert: string | null;
+  /** Estimated Crash Indicator BASIC — our reproduction (FMCSA does not publish
+   *  CI). Populated only for crash-sufficient carriers we have the scraped
+   *  Avg-PU/utilization factor for; null otherwise. Treat as an estimate. */
+  crashIndicatorPercentile: number | null;
+  crashIndicatorAlert: string | null;
+  /** Estimated Hazmat Compliance BASIC — our reproduction (FMCSA doesn't publish
+   *  it). Populated only for carriers with enough hazmat inspections; null else. */
+  hmCompliancePercentile: number | null;
+  hmComplianceAlert: string | null;
+  /** Distinct power-unit VINs seen in 24mo of inspections. Phantom-fleet signal:
+   *  pu_vins ≫ reported power units ⇒ rented/shared authority. */
+  puVinsInspected: number;
   /** # of OTHER active-status DOTs sharing this carrier's normalized
    *  physical address. Context for the chameleon-address-cluster rule. */
   addressDupeActiveCount: number;

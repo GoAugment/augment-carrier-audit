@@ -24,6 +24,7 @@ Window: trailing 24 months from SNAPSHOT_DATE.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import polars as pl
@@ -33,10 +34,32 @@ import polars as pl
 SNAPSHOT_DATE = 20260514  # YYYYMMDD int — used to derive 24-mo window
 WINDOW_START = 20240514   # 24 months before snapshot
 
-INPUT_DIR = Path("/Users/art/Downloads")
+# Non-API feeds (PassProperty, Crash_File, Carrier auth, ActPendInsur) live here.
+# Override with FMCSA_INPUT_DIR for a candidate build from a staging dir.
+INPUT_DIR = Path(os.environ.get("FMCSA_INPUT_DIR", "/Users/art/Downloads"))
+# The 5 Socrata-refreshable feeds resolve from REFRESH_DIR when set (files use
+# the un-dated refresh_sms_data.py names); otherwise they fall back to INPUT_DIR
+# with the original dated filenames. Lets us refresh inspection/violation/crash/
+# census while holding PassProperty et al. at the current vintage.
+_REFRESH_DIR = os.environ.get("FMCSA_REFRESH_DIR")
+REFRESH_DIR = Path(_REFRESH_DIR) if _REFRESH_DIR else None
+
+
+def _refreshable(refresh_name: str, fallback: Path) -> Path:
+    """Prefer REFRESH_DIR/<refresh_name> when a refresh dir is configured."""
+    if REFRESH_DIR is not None:
+        p = REFRESH_DIR / refresh_name
+        if p.exists():
+            return p
+    return fallback
+
+
 OUTPUT_DIR = Path(__file__).parent
 
-CENSUS_PATH = INPUT_DIR / "SMS_Input_-_Motor_Carrier_Census_Information_20260514.csv"
+CENSUS_PATH = _refreshable(
+    "SMS_Input_-_Motor_Carrier_Census_Information.csv",
+    INPUT_DIR / "SMS_Input_-_Motor_Carrier_Census_Information_20260514.csv",
+)
 PASSPROP_PATH = INPUT_DIR / "SMS_AB_PassProperty_20260514.csv"
 CRASH_PATH = INPUT_DIR / "Crash_File.csv"
 # Hazmat counts source: SMS_Input_-_Inspection (NOT the raw Vehicle_Inspection_File).
@@ -45,9 +68,13 @@ CRASH_PATH = INPUT_DIR / "Crash_File.csv"
 # approach (raw inspection file with HAZMAT_PLACARD_REQ='Y') produced 86 — way
 # under SAFER, because PLACARD_REQ is the strict regulatory-placard subset
 # while SAFER counts any inspection where hazmat was being transported.
-INSPECTION_PATH = INPUT_DIR / "SMS_Input_-_Inspection_20260518.csv"
+INSPECTION_PATH = _refreshable(
+    "SMS_Input_-_Inspection.csv", INPUT_DIR / "SMS_Input_-_Inspection_20260518.csv"
+)
 # Critical-tier data sources (DOT Open Data Portal bulk extracts)
-COMPANY_CENSUS_PATH = INPUT_DIR / "Company_Census_File.csv"
+COMPANY_CENSUS_PATH = _refreshable(
+    "Company_Census_File.csv", INPUT_DIR / "Company_Census_File.csv"
+)
 CARRIER_AUTH_PATH = INPUT_DIR / "Carrier_All_With_History.csv"
 ACTPEND_INSUR_PATH = INPUT_DIR / "ActPendInsur_All_With_History.csv"
 

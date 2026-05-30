@@ -2,7 +2,7 @@
   "dot": 3048377,
   "reasonNote": "HIGH: crashes per million miles",
   "carrierName": "REGIONAL INDUSTRIES LLC",
-  "riskLevel": "Severe",
+  "riskLevel": "Critical",
   "reasonLabels": [
     "Crashes"
   ],
@@ -11,6 +11,7 @@
     "unsafeDriving": "na",
     "hos": "na",
     "driverOos": "na",
+    "controlledSubstances": "na",
     "vehicleOos": "na",
     "hazmatOos": "na",
     "revocations": "clean",

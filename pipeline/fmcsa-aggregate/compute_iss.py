@@ -54,13 +54,17 @@ Validation: spot-check 20 random DOTs against FMCSA's per-DOT ISS value.
 """
 from __future__ import annotations
 
+import os
 import random
 from pathlib import Path
 import polars as pl
 
 PARQUET = Path(
-    "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
-    "data/carrier_aggregates.parquet"
+    os.environ.get(
+        "FMCSA_PARQUET",
+        "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
+        "data/carrier_aggregates.parquet",
+    )
 )
 
 # Random selection percentage for Insufficient Data Algorithm.

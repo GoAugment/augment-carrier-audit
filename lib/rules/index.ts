@@ -72,7 +72,7 @@ export const RULES: Rule[] = [
       critical: "Safety rating = Unsatisfactory.",
     },
     fixtures: {
-      critical: { dot: 4004854, reason: "BLACK HILLS TRENCHING & BORING LLC: Unsatisfactory rated 2026-04-20." },
+      critical: { dot: 3173438, reason: "MECCA TRUCKING LLC: Unsatisfactory rated 2026-05-05." },
       none: { dot: 53467, reason: "Werner: Satisfactory." },
     },
   },
@@ -237,26 +237,11 @@ export const RULES: Rule[] = [
       none: { dot: 53467, reason: "Werner: no prior-revoke flag." },
     },
   },
-  {
-    id: "chameleon-cluster",
-    category: "chameleon",
-    label: "Chameleon-pattern cluster",
-    definition:
-      "Two or more independent chameleon signals fire on the same carrier — combinations like prior-revoke flag + insurance rapid-replace + new authority + low activity. Any single signal is already flagged by its own rule; this is the combined-signal escalator that pushes the carrier to Severe minimum because multiple unrelated indicators agree.",
-    thresholds: {
-      high: "≥2 of {prior-revoke flag, rapid replace, ≥2 cancellations, new authority + low activity, ≥3 OOS DOTs at same address} fire together.",
-    },
-    fixtures: {
-      // Needs ≥2 TRULY INDEPENDENT chameleon signals. Insurance sub-signals
-      // (rapid-replace + cancellation count) now count as ONE bucket — they
-      // describe the same evidence. So a DOT firing only insurance won't
-      // trigger chameleon-cluster anymore. DK MAX TRUCKING has insurance
-      // churn (5 cancellations) AND fleet-sharing with DK MAX PRIME — two
-      // genuinely independent kinds of evidence corroborating each other.
-      high: { dot: 3621624, reason: "DK MAX TRUCKING INC: insurance churn + fleet-shared with DK MAX PRIME = 2 independent chameleon signals." },
-      none: { dot: 53467, reason: "Werner: no chameleon signals." },
-    },
-  },
+  // chameleon-cluster REMOVED: the "2+ independent signals → Critical" escalator
+  // over-called on weak combos (e.g. 2 cancellations + 33% diffuse on an insured,
+  // established carrier → false Critical). Carriers now flag on their strongest
+  // INDIVIDUAL chameleon signal (shared-fleet / diffuse-equipment / address-
+  // cluster, each PU/VIN-gated) plus the hard regulatory/fraud signals.
 
   // ---------------------------------------------------------------------
   // IDENTITY COHERENCE — email-only rules comparing what the email claims
@@ -670,7 +655,7 @@ export const RULES: Rule[] = [
   {
     id: "fast-act-high-risk",
     category: "smsBasic",
-    label: "Meets FMCSA High-Risk investigation threshold",
+    label: "FAST Act High-Risk — triggered",
     definition:
       "Two or more of the four crash-correlated BASICs — Unsafe Driving, Crash Indicator, Hours-of-Service, Vehicle Maintenance — are at or above the 90th percentile. This is the threshold FMCSA uses under the FAST Act (§5305) to prioritize a carrier for an onsite safety investigation. Computed from the current monthly SMS snapshot's percentiles; FMCSA's non-passenger rule additionally requires the condition to persist two consecutive months and excludes carriers investigated in the last 18 months, so this flags carriers that meet the percentile bar (a superset). Crash Indicator percentile is only available for carriers with sufficient crash data, so CI-driven high-risk is undercounted.",
     thresholds: {
@@ -754,7 +739,7 @@ export const RULES: Rule[] = [
       caution:  "≥25% of own VINs run under any other active DOT, spread across ≥2 distinct siblings, AND top sibling shares ≥10% of fleet (≥5% when corroborated by another chameleon signal).",
     },
     fixtures: {
-      critical: { dot: 3374454, reason: "BRAWLEY TRANSPORT INC: 85% of 13 VINs run under 9 other active DOTs, top sibling 23% concentration." },
+      critical: { dot: 3621624, reason: "DK MAX TRUCKING INC: 86% of its 140 inspected VINs run under 24 other active DOTs (rich sample, 60 PU)." },
       high:     { dot: 4198159, reason: "ALAKE LOGISTICS INC: 43% of 7 VINs run under 3 other active DOTs, top sibling 14% concentration." },
       caution:  { dot: 3432788, reason: "PUNIA TRANS INC (relaxed-floor): 27% diffuse / 3 siblings, top sibling 9% — fires only because other chameleon signals (lapsed BIPD + revoke + all-cancel) relax the concentration floor from 10% to 5%." },
       none: [

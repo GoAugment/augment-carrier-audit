@@ -2,17 +2,18 @@
   "dot": 53467,
   "reasonNote": "CLEAN-BIG: Werner Enterprises",
   "carrierName": "WERNER ENTERPRISES INC",
-  "riskLevel": "Clean",
+  "riskLevel": "Low",
   "reasonLabels": [
-    "Estimated FMCSA ISS — Inspect (top inspection priority)"
+    "ISS — Inspect (top inspection priority)"
   ],
   "axes": {
     "crash": "clean",
     "unsafeDriving": "clean",
     "hos": "clean",
     "driverOos": "clean",
+    "controlledSubstances": "clean",
     "vehicleOos": "clean",
-    "hazmatOos": "clean",
+    "hazmatOos": "elevated",
     "revocations": "clean",
     "authority": "info",
     "insurance": "clean"

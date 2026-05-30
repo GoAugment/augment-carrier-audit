@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
       (body.brokerage ? ` (${body.brokerage})` : "") +
       (body.summary
         ? `\n${body.summary.totalLoads} loads · ${body.summary.totalCarriers} carriers · ${body.summary.flaggedCarriers} flagged ` +
-          `(${body.summary.bySeverity.Critical ?? 0}C / ${body.summary.bySeverity.Severe ?? 0}S / ${body.summary.bySeverity.High ?? 0}H / ${body.summary.bySeverity.Elevated ?? 0}E)`
+          `(${body.summary.bySeverity.Critical ?? 0}C / ${body.summary.bySeverity.High ?? 0}H / ${body.summary.bySeverity.Medium ?? 0}M)`
         : "");
     try {
       const res = await fetch(webhook, {

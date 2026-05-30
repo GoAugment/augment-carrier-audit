@@ -26,11 +26,13 @@ it easy to inspect them as a unit when debugging false positives. Could
 later be split: insurance half → add_inshist.py, diffuse half →
 add_fleet_sharing.py.
 """
+import os
 from pathlib import Path
 import polars as pl
 
-PARQUET = Path("/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/carrier_aggregates.parquet")
-INSP = Path("/Users/art/Downloads/SMS_Input_-_Inspection_20260518.csv")
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/carrier_aggregates.parquet"))
+_RD = os.environ.get("FMCSA_REFRESH_DIR")
+INSP = Path(_RD) / "SMS_Input_-_Inspection.csv" if _RD else Path("/Users/art/Downloads/SMS_Input_-_Inspection_20260518.csv")
 INSHIST = Path("/Users/art/Downloads/inshist_allwithhistory.txt")
 SNAPSHOT_DATE = "2026-05-14"
 

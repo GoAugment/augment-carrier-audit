@@ -5,13 +5,15 @@
   "riskLevel": "Critical",
   "reasonLabels": [
     "Insurance lapsed",
-    "Recent revocation"
+    "Recent revocation",
+    "Why the FMCSA SMS scores look clean"
   ],
   "axes": {
     "crash": "clean",
     "unsafeDriving": "na",
     "hos": "na",
     "driverOos": "na",
+    "controlledSubstances": "na",
     "vehicleOos": "na",
     "hazmatOos": "na",
     "revocations": "high",

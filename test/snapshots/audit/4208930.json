@@ -5,13 +5,15 @@
   "riskLevel": "High",
   "reasonLabels": [
     "Insurance churn",
-    "Recent revocation"
+    "Recent revocation",
+    "Why the FMCSA SMS scores look clean"
   ],
   "axes": {
     "crash": "na",
     "unsafeDriving": "clean",
     "hos": "clean",
     "driverOos": "clean",
+    "controlledSubstances": "na",
     "vehicleOos": "clean",
     "hazmatOos": "na",
     "revocations": "high",

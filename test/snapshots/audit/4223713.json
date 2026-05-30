@@ -2,13 +2,17 @@
   "dot": 4223713,
   "reasonNote": "CRITICAL: rapid replace + ≥3 cancellations",
   "carrierName": "DJI EXPRESS LLC",
-  "riskLevel": "Clean",
-  "reasonLabels": [],
+  "riskLevel": "High",
+  "reasonLabels": [
+    "High-risk insurer",
+    "Why the FMCSA SMS scores look clean"
+  ],
   "axes": {
     "crash": "na",
     "unsafeDriving": "clean",
     "hos": "clean",
     "driverOos": "clean",
+    "controlledSubstances": "na",
     "vehicleOos": "clean",
     "hazmatOos": "na",
     "revocations": "clean",

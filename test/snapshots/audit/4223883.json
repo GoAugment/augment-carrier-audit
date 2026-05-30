@@ -4,17 +4,19 @@
   "carrierName": "LBLMX LOGISTICS LLC",
   "riskLevel": "Critical",
   "reasonLabels": [
-    "Estimated FMCSA ISS — Inspect (top inspection priority)",
+    "ISS — Inspect (top inspection priority)",
     "Safety rating: Conditional",
     "Acute/critical violations from FMCSA investigation",
+    "HOS Compliance",
     "Recent enforcement",
     "Equipment spread across multiple active DOTs"
   ],
   "axes": {
     "crash": "na",
     "unsafeDriving": "clean",
-    "hos": "clean",
+    "hos": "high",
     "driverOos": "clean",
+    "controlledSubstances": "na",
     "vehicleOos": "clean",
     "hazmatOos": "na",
     "revocations": "clean",

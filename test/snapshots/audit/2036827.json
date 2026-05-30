@@ -2,16 +2,18 @@
   "dot": 2036827,
   "reasonNote": "ENFORCEMENT: closed enforcement case",
   "carrierName": "NADIA ALICIA GRIMALDO YANEZ",
-  "riskLevel": "Severe",
+  "riskLevel": "Critical",
   "reasonLabels": [
     "Acute/critical violations from FMCSA investigation",
+    "Driver OOS",
     "Recent enforcement"
   ],
   "axes": {
     "crash": "na",
     "unsafeDriving": "clean",
     "hos": "clean",
-    "driverOos": "clean",
+    "driverOos": "high",
+    "controlledSubstances": "na",
     "vehicleOos": "clean",
     "hazmatOos": "na",
     "revocations": "clean",

@@ -146,6 +146,37 @@ STEPS: list[Step] = [
         description="Peer-group P85/P95/P99 cutoffs for analyzer.ts",
         runtime_estimate_min=0.5,
     ),
+    # --- Risk-axis derived data (previously run by hand; now part of the refresh) ---
+    Step(
+        name="add_phantom_fleet",
+        script="add_phantom_fleet.py",
+        description="Phantom-fleet signal: distinct inspected VINs vs reported PU",
+        runtime_estimate_min=2.0,
+    ),
+    Step(
+        name="add_phy_zip",
+        script="add_phy_zip.py",
+        description="Physical-address ZIP (from carrier_identity) for the ZIP-risk marker",
+        runtime_estimate_min=0.5,
+    ),
+    Step(
+        name="add_geo_mismatch",
+        script="add_geo_mismatch.py",
+        description="Home-state inspection share (registration vs where cited)",
+        runtime_estimate_min=2.0,
+    ),
+    Step(
+        name="build_insurer_risk",
+        script="build_insurer_risk.py",
+        description="Insurer-reputation lift table -> lib/data/insurer-risk.json",
+        runtime_estimate_min=0.5,
+    ),
+    Step(
+        name="build_zip_risk",
+        script="build_zip_risk.py",
+        description="Per-ZIP shutdown-lift table -> lib/data/zip-risk.json",
+        runtime_estimate_min=0.5,
+    ),
 ]
 
 

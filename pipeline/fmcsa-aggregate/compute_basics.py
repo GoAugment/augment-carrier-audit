@@ -42,17 +42,33 @@ after scrape_fmcsa_basics.py finishes to populate Crash Indicator.
 from __future__ import annotations
 
 import argparse
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 import polars as pl
 
-PARQUET = Path(
+# Candidate builds override the parquet target (FMCSA_PARQUET) so they never
+# clobber the committed data/carrier_aggregates.parquet, and source the 3
+# SMS_Input feeds from a refresh dir (FMCSA_REFRESH_DIR, un-dated names).
+PARQUET = Path(os.environ.get(
+    "FMCSA_PARQUET",
     "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
-    "data/carrier_aggregates.parquet"
-)
-INSP_CSV = Path("/Users/art/Downloads/SMS_Input_-_Inspection_20260518.csv")
-VIOL_CSV = Path("/Users/art/Downloads/SMS_Input_-_Violation_20260518.csv")
-CRASH_CSV = Path("/Users/art/Downloads/SMS_Input_-_Crash_20260518.csv")
+    "data/carrier_aggregates.parquet",
+))
+_REFRESH_DIR = os.environ.get("FMCSA_REFRESH_DIR")
+
+
+def _src(refresh_name: str, fallback: str) -> Path:
+    if _REFRESH_DIR:
+        p = Path(_REFRESH_DIR) / refresh_name
+        if p.exists():
+            return p
+    return Path(fallback)
+
+
+INSP_CSV = _src("SMS_Input_-_Inspection.csv", "/Users/art/Downloads/SMS_Input_-_Inspection_20260518.csv")
+VIOL_CSV = _src("SMS_Input_-_Violation.csv", "/Users/art/Downloads/SMS_Input_-_Violation_20260518.csv")
+CRASH_CSV = _src("SMS_Input_-_Crash.csv", "/Users/art/Downloads/SMS_Input_-_Crash_20260518.csv")
 SCRAPE_DIR = Path(
     "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
     "data/fmcsa_scrape"

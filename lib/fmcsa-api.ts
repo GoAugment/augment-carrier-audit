@@ -86,6 +86,7 @@ async function fetchOne(
     cargoInsuranceOnFile: false,
     cargoInsuranceRequired: false,
     physicalState: null,
+    physicalZip: null,
     // Identity/contact fields dropped from FmcsaCarrier — see lib/fmcsa.ts.
     // phyStreet: null, phyCity: null, phyZip: null,
     // phone: null, emailAddress: null,
@@ -119,6 +120,11 @@ async function fetchOne(
     inspectionsPerPu: null,
     unsafeDrivingMeasure: null,
     hosMeasure: null,
+    unsafeDrivingPercentile: null,
+    hosPercentile: null,
+    driverFitnessPercentile: null,
+    controlledSubstancesPercentile: null,
+    vehicleMaintenancePercentile: null,
     driverFitnessMeasure: null,
     controlledSubstancesMeasure: null,
     vehicleMaintenanceMeasure: null,
@@ -127,6 +133,11 @@ async function fetchOne(
     driverFitnessAlert: null,
     controlledSubstancesAlert: null,
     vehicleMaintenanceAlert: null,
+    crashIndicatorPercentile: null,
+    crashIndicatorAlert: null,
+    hmCompliancePercentile: null,
+    hmComplianceAlert: null,
+    puVinsInspected: 0,
     // SAFER API fallback has no address dedup or fleet-sharing data; treat
     // as "nothing to flag." These are only computed during the parquet build.
     addressDupeActiveCount: 0,

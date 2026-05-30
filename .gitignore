@@ -9,3 +9,8 @@ out
 *.log
 .DS_Store
 *.tsbuildinfo
+
+# pipeline build artifacts (the committed copy lives at data/)
+pipeline/fmcsa-aggregate/*.parquet
+pipeline/fmcsa-aggregate/national_thresholds.json
+_shot*.mjs

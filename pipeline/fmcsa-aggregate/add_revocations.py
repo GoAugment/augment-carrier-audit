@@ -89,7 +89,12 @@ def main() -> None:
     merged.write_parquet(PARQUET, compression="zstd")
     print(f"Wrote {PARQUET}")
 
-    # T1 cross-reference
+    # T1 cross-reference — legacy diagnostic output (CSV/MD of booked T1 carriers
+    # with revocation history). Optional; skip when the T1 carriers.json isn't
+    # present (e.g. a fresh rebuild that didn't run the old T1 scoring step).
+    if not CARRIERS_JSON.exists():
+        print("(skipping legacy T1 cross-reference — carriers.json not present)")
+        return
     t1 = json.loads(CARRIERS_JSON.read_text())
     t1_dots = {int(c["dotNumber"]): c["name"] for c in t1}
     t1_loads = {int(c["dotNumber"]): c["loadsToday"] for c in t1}

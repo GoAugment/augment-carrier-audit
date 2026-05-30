@@ -50,12 +50,16 @@ Columns added to carrier_aggregates.parquet:
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import polars as pl
 
 PARQUET = Path(
-    "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
-    "data/carrier_aggregates.parquet"
+    os.environ.get(
+        "FMCSA_PARQUET",
+        "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
+        "data/carrier_aggregates.parquet",
+    )
 )
 
 # The four crash-correlated BASICs FMCSA uses for High-Risk identification,

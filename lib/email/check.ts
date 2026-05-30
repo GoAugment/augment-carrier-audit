@@ -156,34 +156,25 @@ function evalAuditTier(carrier: FmcsaCarrier, dot: number): Signal[] {
           detail: `Existing carrier audit flags this DOT as Critical: ${reasonsText}.`,
         },
       ];
-    case "Severe":
-      return [
-        {
-          category: "audit_tier",
-          tier: "high",
-          label: "Carrier in Severe tier",
-          detail: `Existing carrier audit flags this DOT as Severe: ${reasonsText}.`,
-        },
-      ];
     case "High":
       return [
         {
           category: "audit_tier",
-          tier: "caution",
+          tier: "high",
           label: "Carrier in High tier",
           detail: `Existing carrier audit flags this DOT as High: ${reasonsText}.`,
         },
       ];
-    case "Elevated":
+    case "Medium":
       return [
         {
           category: "audit_tier",
-          tier: "info",
-          label: "Carrier in Elevated tier",
-          detail: `Existing carrier audit flags this DOT as Elevated: ${reasonsText}. Context only.`,
+          tier: "caution",
+          label: "Carrier in Medium tier",
+          detail: `Existing carrier audit flags this DOT as Medium: ${reasonsText}. Context only.`,
         },
       ];
-    case "Clean":
+    case "Low":
     default:
       return [];
   }

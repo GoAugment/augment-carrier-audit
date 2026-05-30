@@ -4,13 +4,15 @@
   "carrierName": "PURPLE HEART TRANSPORTATION LLC",
   "riskLevel": "High",
   "reasonLabels": [
-    "Address shared with out-of-service DOTs"
+    "Address shared with out-of-service DOTs",
+    "Why the FMCSA SMS scores look clean"
   ],
   "axes": {
     "crash": "na",
     "unsafeDriving": "na",
     "hos": "na",
     "driverOos": "na",
+    "controlledSubstances": "na",
     "vehicleOos": "na",
     "hazmatOos": "na",
     "revocations": "clean",

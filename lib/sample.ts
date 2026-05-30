@@ -1,18 +1,19 @@
-// Sample input — a curated mix where most carriers show ONE clear, specific
-// pattern (more realistic than carriers that trip every rule), with a couple of
-// multi-signal and clean carriers for contrast. Real DOTs from public FMCSA data.
+// Sample input. The point of the demo: most of these carriers PASS the obvious
+// checks — active authority, insurance on file — yet are high-risk on the
+// non-obvious axes (safety outliers, FMCSA investigation findings, fraud
+// signals). "$0 insurance" is the trivial case, so we show just ONE insurance-
+// lapse example; the rest are "insured but high-risk." Real DOTs, public data.
 export const SAMPLE_INPUT = `# Sample carrier-load list. Format: DOT, optional load id, optional HAZMAT flag
 # Click "Audit now" to see each carrier scored against FMCSA safety data.
-1388780, L-1001                 # FOX TRANSPORTATION — elevated crash rate only (~2.3/million mi), BASICs otherwise clean
-1448431, L-1002                 # STANDARD LOGISTIC SERVICES — single Hours-of-Service alert, nothing else
-2438425, L-1003                 # ALL PRO LOGISTICS — single Vehicle Maintenance alert (360-unit fleet)
-2642590, L-1004                 # TEX-Q EXPRESS — one Driver Fitness acute/critical violation from an FMCSA investigation
-2196912, L-1005                 # TEXAS INTERNATIONAL ENERGY — meets FMCSA High-Risk (HOS + Vehicle Maint ≥90th), not yet investigated
-3610811, L-1006                 # MYKTYBEK EXPRESS — shared-fleet chameleon: 63% of its VINs run under another DOT
-3293950, L-1007                 # LUMY MOVING — BIPD insurance cancels in ~15 days with no replacement on file
-1162977, L-1008                 # UNIVERSAL INTERMODAL — fleet shed + very high per-mile crash rate (stale MCS-150 mileage)
-3501896, L-1009, HAZMAT         # VOXSER — small hazmat carrier with 3 BASIC alerts (ISS is alert-pattern-driven, not size)
-53467,   L-1010                 # WERNER — clean per-mile crash rate, but estimated ISS=Inspect via the hidden HM + Crash Indicator BASICs
-80806,   L-1011                 # J.B. HUNT — clean large fleet (contrast)
-74432,   L-1012                 # MARTEN TRANSPORT — clean large fleet (contrast)
+1388780, L-1001                 # FOX TRANSPORTATION — insured, but elevated crash rate (~2.3/million mi)
+1448431, L-1002                 # STANDARD LOGISTIC SERVICES — fully insured, but FMCSA-rated Conditional + ISS Inspect
+3501896, L-1003, HAZMAT         # VOXSER — insured hazmat carrier, 3 BASIC alerts (ISS 98 / Inspect)
+1162977, L-1004                 # UNIVERSAL INTERMODAL — insured ($1M), but extreme per-mile crash rate + fleet shed
+2244717, L-1005                 # QFS TRANSPORTATION — large 665-truck fleet, fully insured, yet meets FMCSA FAST-Act High-Risk
+2642590, L-1006                 # TEX-Q EXPRESS — insured, but an acute/critical Driver Fitness violation from an FMCSA investigation
+4436542, L-1007                 # NIMBUS 2000 — phantom fleet / rented authority: 207 trucks under a 1-power-unit DOT (Fraud High)
+2524661, L-1008                 # STATE WIDE TRANS — the one insurance example: 189-truck freight carrier, BIPD cancels in ~11 days, no replacement filed
+53467,   L-1009                 # WERNER — clean per-mile crash rate; estimated ISS=Inspect via the hidden HM + Crash Indicator BASICs
+80806,   L-1010                 # J.B. HUNT — clean large fleet (contrast)
+74432,   L-1011                 # MARTEN TRANSPORT — clean large fleet (contrast)
 `;

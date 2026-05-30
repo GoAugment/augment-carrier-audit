@@ -25,10 +25,11 @@ compute_iss.py (which reads them).
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import polars as pl
 
-PARQUET = Path("/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/carrier_aggregates.parquet")
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/carrier_aggregates.parquet"))
 SV = Path("/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/fmcsa_scrape/serious_violations_20260514.parquet")
 
 # Map the XLSX BASIC label → our column prefix + a short code.
