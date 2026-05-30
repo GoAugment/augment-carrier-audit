@@ -37,16 +37,16 @@ const barColor: Record<RiskLevel, string> = {
 // Tier section-header styling (the "● CRITICAL · N carriers" divider rows that
 // group the matrix by verdict, replacing the per-row verdict pill).
 const tierDot: Record<RiskLevel, string> = {
-  Critical: "bg-red-500",
-  High: "bg-orange-400",
-  Medium: "bg-amber-400",
-  Low: "bg-augment-500",
+  Critical: "bg-[#D7453C]",
+  High: "bg-[#E89432]",
+  Medium: "bg-[#D4AA28]",
+  Low: "bg-[#2EB873]",
 };
 const tierText: Record<RiskLevel, string> = {
-  Critical: "text-red-700",
-  High: "text-orange-700",
-  Medium: "text-amber-700",
-  Low: "text-augment-700",
+  Critical: "text-[#7E1A14]",
+  High: "text-[#8A4A0E]",
+  Medium: "text-[#92400E]",
+  Low: "text-[#0F5A41]",
 };
 
 const rowTint: Record<RiskLevel, string> = {
@@ -327,32 +327,32 @@ export function Scorecard({
 
       <div className="rounded-lg border border-ink-200 bg-white">
         <table className="w-full text-left text-sm">
-          <thead className="sticky top-0 z-10 bg-ink-50 text-[11px] uppercase tracking-wide text-ink-600 shadow-sm">
+          <thead className="sticky top-0 z-10 bg-white text-[11px] font-semibold uppercase tracking-wide text-[#596560] shadow-sm">
             {/* Group band: makes explicit that the verdict, the FMCSA SMS
                 safety percentiles, and regulatory standing are three different
                 lenses — they answer different questions and can legitimately
                 disagree (e.g. a chameleon shell with clean inspection scores). */}
             <tr className="text-[10px] tracking-wide text-ink-500">
-              <th colSpan={2} className="whitespace-nowrap px-3 pt-2 pb-1 text-left font-semibold text-augment-800">
+              <th colSpan={2} className="whitespace-nowrap px-3 pt-2 pb-1 text-left font-semibold text-[#0F5A41]">
                 Carrier
               </th>
               <th
                 colSpan={2}
-                className="whitespace-nowrap border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-ink-700"
+                className="whitespace-nowrap border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-[#596560]"
                 title="The two Augie headline scores: estimated FMCSA ISS-CSA on-road inspection priority, and the Augie fraud / reliability risk index."
               >
                 Headline scores
               </th>
               <th
                 colSpan={7}
-                className="whitespace-nowrap border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-orange-700"
+                className="whitespace-nowrap border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-[#E89432]"
                 title="FMCSA Safety Measurement System — all 7 BASICs, peer-ranked within the carrier's fleet-size group. Higher percentile = worse than more peers. CI* (crash) and HM* (hazmat) are our estimates; FMCSA doesn't publish them."
               >
                 On-road safety — 7 BASICs, peer-ranked
               </th>
               <th
                 colSpan={3}
-                className="whitespace-nowrap border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-red-700"
+                className="whitespace-nowrap border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-[#D7453C]"
                 title="Fraud / reliability standing — the regulatory signals (revocations, operating authority, insurance) that don't show up in the safety percentiles but speak to whether the carrier is who it claims and will still be operating when the load runs."
               >
                 Fraud / reliability — standing
@@ -362,22 +362,22 @@ export function Scorecard({
               <th className="px-3 py-2 align-bottom">#</th>
               <th className="px-3 py-2 align-bottom">Carrier</th>
               <th
-                className="border-l border-ink-200 px-2 py-2 text-center align-bottom text-orange-700"
+                className="border-l border-ink-200 px-2 py-2 text-center align-bottom text-[#E89432]"
                 title="ISS-CSA Inspection Selection System score (1–100). Higher = FMCSA recommends inspection. ≥75 Inspect · 50–74 Optional · &lt;50 Pass."
               >
                 ISS
                 <br />
-                <span className="text-[10px] normal-case text-ink-500">
+                <span className="text-[10px] font-normal normal-case text-[#7D8883]">
                   on-road
                 </span>
               </th>
               <th
-                className="px-2 py-2 text-center align-bottom text-red-700"
+                className="px-2 py-2 text-center align-bottom text-[#D7453C]"
                 title="Augie fraud score (0–100, higher = worse) — additive identity/deception, financial-distress, tenure & location index calibrated to revocation lift (not a probability)."
               >
                 Fraud
                 <br />
-                <span className="text-[10px] normal-case text-ink-500">risk</span>
+                <span className="text-[10px] font-normal normal-case text-[#7D8883]">risk</span>
               </th>
               <th
                 className="border-l border-ink-200 px-2 py-2 text-center align-bottom"
@@ -385,7 +385,7 @@ export function Scorecard({
               >
                 Crash
                 <br />
-                <span className="text-[10px] normal-case text-ink-500">
+                <span className="text-[10px] font-normal normal-case text-[#7D8883]">
                   %ile* · ÷ mi
                 </span>
               </th>
@@ -395,7 +395,7 @@ export function Scorecard({
               >
                 Unsafe driving
                 <br />
-                <span className="text-[10px] normal-case text-ink-500">
+                <span className="text-[10px] font-normal normal-case text-[#7D8883]">
                   SMS %ile
                 </span>
               </th>
@@ -405,7 +405,7 @@ export function Scorecard({
               >
                 HOS
                 <br />
-                <span className="text-[10px] normal-case text-ink-500">
+                <span className="text-[10px] font-normal normal-case text-[#7D8883]">
                   SMS %ile
                 </span>
               </th>
@@ -415,7 +415,7 @@ export function Scorecard({
               >
                 Driver fitness
                 <br />
-                <span className="text-[10px] normal-case text-ink-500">
+                <span className="text-[10px] font-normal normal-case text-[#7D8883]">
                   SMS %ile
                 </span>
               </th>
@@ -425,7 +425,7 @@ export function Scorecard({
               >
                 Ctrl. subs.
                 <br />
-                <span className="text-[10px] normal-case text-ink-500">
+                <span className="text-[10px] font-normal normal-case text-[#7D8883]">
                   SMS %ile
                 </span>
               </th>
@@ -435,7 +435,7 @@ export function Scorecard({
               >
                 Vehicle maint.
                 <br />
-                <span className="text-[10px] normal-case text-ink-500">
+                <span className="text-[10px] font-normal normal-case text-[#7D8883]">
                   SMS %ile
                 </span>
               </th>
@@ -445,7 +445,7 @@ export function Scorecard({
               >
                 Hazmat
                 <br />
-                <span className="text-[10px] normal-case text-ink-500">
+                <span className="text-[10px] font-normal normal-case text-[#7D8883]">
                   HM* %ile
                 </span>
               </th>
@@ -455,7 +455,7 @@ export function Scorecard({
               >
                 Revocations
                 <br />
-                <span className="text-[10px] normal-case text-ink-500">recent / chronic</span>
+                <span className="text-[10px] font-normal normal-case text-[#7D8883]">recent / chronic</span>
               </th>
               <th
                 className="px-2 py-2 text-center align-bottom"
@@ -463,7 +463,7 @@ export function Scorecard({
               >
                 Authority
                 <br />
-                <span className="text-[10px] normal-case text-ink-500">active?</span>
+                <span className="text-[10px] font-normal normal-case text-[#7D8883]">active?</span>
               </th>
               <th
                 className="px-2 py-2 text-center align-bottom"
@@ -471,7 +471,7 @@ export function Scorecard({
               >
                 Insurance
                 <br />
-                <span className="text-[10px] normal-case text-ink-500">BIPD on file</span>
+                <span className="text-[10px] font-normal normal-case text-[#7D8883]">BIPD on file</span>
               </th>
             </tr>
           </thead>
@@ -488,12 +488,12 @@ export function Scorecard({
               return (
               <Fragment key={r.dot}>
               {startsTier && (
-                <tr className="bg-ink-50/70">
-                  <td colSpan={14} className="border-t border-ink-200 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide">
-                    <span className="inline-flex items-center gap-1.5">
+                <tr>
+                  <td colSpan={14} className="border-t border-ink-200 px-3 pb-1.5 pt-2.5 text-[12px] font-semibold uppercase tracking-wider">
+                    <span className="inline-flex items-center gap-2">
                       <span className={`h-2 w-2 rounded-full ${tierDot[r.riskLevel]}`} />
                       <span className={tierText[r.riskLevel]}>{verdictLabel[r.riskLevel]}</span>
-                      <span className="font-normal normal-case text-ink-400">
+                      <span className="font-normal normal-case tracking-normal text-ink-400">
                         · {n} carrier{n === 1 ? "" : "s"}
                       </span>
                     </span>
