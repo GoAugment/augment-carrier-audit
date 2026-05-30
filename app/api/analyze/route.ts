@@ -43,6 +43,33 @@ export async function POST(req: NextRequest) {
   const t1 = Date.now();
 
   const result = analyze(loads, carriers);
+
+  // Second pass: score each carrier's named shared-fleet sibling so the UI can
+  // show the linked authority's OWN verdict (a carrier sharing 53% of its VINs
+  // with another DOT is far more alarming if that sibling is itself Critical).
+  // Most siblings aren't in the broker's pasted list, so fetch + score the ones
+  // we don't already have; reuse the first pass for any that are.
+  const alreadyScored = new Map(result.rows.map((r) => [r.dot, r.riskLevel]));
+  const siblingDots = Array.from(
+    new Set(
+      result.rows
+        .map((r) => r.siblingDot)
+        .filter((d): d is number => d != null && !alreadyScored.has(d))
+    )
+  );
+  if (siblingDots.length) {
+    const siblingCarriers = await fetchCarriers(siblingDots);
+    const siblingResult = analyze(
+      siblingDots.map((dot) => ({ dot, isHazmat: false })),
+      siblingCarriers
+    );
+    for (const sr of siblingResult.rows) alreadyScored.set(sr.dot, sr.riskLevel);
+  }
+  for (const r of result.rows) {
+    if (r.siblingDot != null) {
+      r.siblingTier = alreadyScored.get(r.siblingDot) ?? null;
+    }
+  }
   const t2 = Date.now();
 
   const ipHash = await hashIp(

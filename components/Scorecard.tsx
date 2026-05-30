@@ -101,57 +101,62 @@ function Cell({ cell, className = "" }: { cell: AxisCell; className?: string }) 
   );
 }
 
-/** Estimated FMCSA ISS badge — context, colored by tier. */
-const issTierStyle: Record<string, string> = {
-  Inspect: "border-orange-300 bg-orange-50 text-orange-800",
-  Optional: "border-amber-300 bg-amber-50 text-amber-800",
-  Pass: "border-augment-200 bg-augment-50 text-augment-700",
-};
-function IssBadge({ score, tier }: { score: number | null; tier: string | null }) {
-  if (score == null || tier == null) return null;
-  return (
-    <span
-      className={`mt-1 inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${issTierStyle[tier] ?? issTierStyle.Pass}`}
-      title="Estimated FMCSA Inspection Selection System score (reproduced from public BASIC/investigation data — FMCSA does not publish ISS). See note below the table."
-    >
-      ISS* {score} · {tier}
-    </span>
-  );
+// Risk and ISS render as ordinary grid columns (same colored-Cell presentation
+// as the BASIC axes), not pills — they're two more lenses, so they read like the
+// rest of the row. Each maps its tier to a Cell status so the color scale stays
+// consistent (red = worst → green = clean).
+
+/** Augie Risk Score → AxisCell (verdict-group column). */
+function riskCellOf(r: CarrierRow): AxisCell {
+  // Tier color matches the cell scale: High→severe(red), Moderate→high(orange),
+  // Low→elevated(amber), None→clean(green).
+  const status: AxisStatus =
+    r.riskTier === "High"
+      ? "severe"
+      : r.riskTier === "Moderate"
+        ? "high"
+        : r.riskTier === "Low"
+          ? "elevated"
+          : "clean";
+  const factorBody =
+    r.riskFactors.length > 0
+      ? `\n\nFactors:\n• ${r.riskFactors.join("\n• ")}`
+      : "\n\nNo identity / financial-distress / location signals detected.";
+  return {
+    status,
+    display: String(r.riskScore),
+    sub: r.riskTier,
+    detail: `Augie Risk Score (0-100, higher = worse): a composite of identity/deception, financial-distress, tenure, and location signals, weighted by measured lift on future authority loss. A heuristic index, not a probability. FMCSA has no equivalent.${factorBody}`,
+  };
 }
 
 // NB: the Augie Safety Score is still computed (CarrierRow.safetyScore / CSV) but
-// no longer badged — ISS is the safety lens, the Risk score is the differentiator.
-// The badge was a third, overlapping safety number; dropped for clarity.
+// not shown as its own column — ISS is the safety lens, the Risk score is the
+// differentiator. A third overlapping safety number was dropped for clarity.
 
-/** Augie Risk Score badge — always shown (paired with ISS as the two-axis read),
- *  colored by tier; contributing factors listed inline below the score. */
-const riskTierStyle: Record<string, string> = {
-  High: "border-red-400 bg-red-100 text-red-900 font-semibold",
-  Moderate: "border-orange-300 bg-orange-50 text-orange-800",
-  Low: "border-amber-300 bg-amber-50 text-amber-800",
-  None: "border-augment-200 bg-augment-50 text-augment-700",
-};
-function RiskBadge({
-  score,
-  tier,
-  factors,
-}: {
-  score: number;
-  tier: string;
-  factors: string[];
-}) {
-  const body =
-    factors.length > 0
-      ? `\n\nFactors:\n• ${factors.join("\n• ")}`
-      : "\n\nNo identity / financial-distress / location signals detected.";
-  return (
-    <span
-      className={`mt-1 inline-flex rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${riskTierStyle[tier] ?? riskTierStyle.None}`}
-      title={`Augie Risk Score (0-100, higher = worse): a composite of identity/deception, financial-distress, tenure, and location signals, weighted by measured lift on future authority loss. A heuristic index, not a probability. FMCSA has no equivalent.${body}`}
-    >
-      Risk {score} · {tier}
-    </span>
-  );
+/** Estimated FMCSA ISS score → AxisCell (verdict-group column). */
+function issCellOf(r: CarrierRow): AxisCell {
+  if (r.issScore == null || r.issTier == null) {
+    return {
+      status: "na",
+      display: "—",
+      detail: "Not enough inspection/investigation data for an ISS estimate.",
+    };
+  }
+  // Inspect→high(orange), Optional→elevated(amber), Pass→clean(green).
+  const status: AxisStatus =
+    r.issTier === "Inspect"
+      ? "high"
+      : r.issTier === "Optional"
+        ? "elevated"
+        : "clean";
+  return {
+    status,
+    display: String(r.issScore),
+    sub: r.issTier,
+    detail:
+      "Estimated FMCSA Inspection Selection System score (1-100, higher = FMCSA more likely to inspect). Reproduced from public BASIC/investigation data — FMCSA does not publish ISS. See note below the table.",
+  };
 }
 
 // Split a carrier's signals into the two buckets we show inline: on-road SAFETY
@@ -199,33 +204,46 @@ export function Scorecard({
   rows: CarrierRow[];
   result?: AuditResult;
 }) {
-  const [showClean, setShowClean] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
-  const allFlagged = rows.filter((r) => r.riskLevel !== "Low");
-  const allRows = showClean ? rows : allFlagged;
+  // Triage view: the default queue is Critical + High ("review these"). Medium
+  // (awareness/FYI) and Low (clean) collapse behind a toggle so a big arrive
+  // list doesn't bury the carriers that actually need a decision.
+  const review = rows.filter(
+    (r) => r.riskLevel === "Critical" || r.riskLevel === "High"
+  );
+  const mediumCount = rows.filter((r) => r.riskLevel === "Medium").length;
   const cleanCount = rows.filter((r) => r.riskLevel === "Low").length;
+  const extraCount = mediumCount + cleanCount;
+  // If nothing needs review, fall back to showing everything (don't render blank).
+  const allRows = showAll || review.length === 0 ? rows : review;
   const gateActive = !isLocalDev() && allRows.length > PREVIEW_ROWS && !unlocked;
   const visibleRows = gateActive ? allRows.slice(0, PREVIEW_ROWS) : allRows;
   const hiddenCount = allRows.length - visibleRows.length;
   return (
     <div className="mt-6">
-      {cleanCount > 0 && (
-        <div className="mb-3 flex items-center justify-between text-sm">
-          <span className="text-ink-600">
-            {visibleRows.length} of {rows.length} carriers shown
-            {!showClean && cleanCount > 0
-              ? ` · ${cleanCount} clean carriers hidden`
-              : ""}
-          </span>
+      <div className="mb-3 flex items-center justify-between text-sm">
+        <span className="text-ink-600">
+          <strong className="font-semibold text-ink-900">{review.length}</strong>{" "}
+          need review <span className="text-ink-400">(Critical + High)</span>
+          {extraCount > 0 && (
+            <span className="text-ink-400">
+              {" · "}
+              {mediumCount} Medium · {cleanCount} clean
+              {!showAll && review.length > 0 ? " (hidden)" : ""}
+            </span>
+          )}
+        </span>
+        {extraCount > 0 && review.length > 0 && (
           <button
             type="button"
-            onClick={() => setShowClean((v) => !v)}
+            onClick={() => setShowAll((v) => !v)}
             className="text-augment-700 underline decoration-augment-300 underline-offset-2 hover:decoration-augment-700"
           >
-            {showClean ? "Hide clean carriers" : `Show all ${rows.length} carriers`}
+            {showAll ? "Show review queue only" : `Show all ${rows.length} carriers`}
           </button>
-        </div>
-      )}
+        )}
+      </div>
       <ReadingNote />
 
       <div className="rounded-lg border border-ink-200 bg-white">
@@ -236,7 +254,7 @@ export function Scorecard({
                 lenses — they answer different questions and can legitimately
                 disagree (e.g. a chameleon shell with clean inspection scores). */}
             <tr className="text-[10px] tracking-wide text-ink-500">
-              <th colSpan={3} className="px-3 pt-2 pb-1 text-left font-semibold">
+              <th colSpan={5} className="px-3 pt-2 pb-1 text-left font-semibold">
                 Augie verdict
               </th>
               <th
@@ -252,8 +270,24 @@ export function Scorecard({
             </tr>
             <tr>
               <th className="px-3 py-2 align-bottom">#</th>
-              <th className="px-3 py-2 align-bottom">Risk</th>
+              <th className="px-3 py-2 align-bottom">Verdict</th>
               <th className="px-3 py-2 align-bottom">Carrier</th>
+              <th
+                className="px-2 py-2 text-center align-bottom"
+                title="Augie risk score (0–100) — additive fraud/reliability index calibrated to revocation lift (not a probability). None &lt;10 · Low 10–29 · Moderate 30–59 · High 60+."
+              >
+                Risk
+                <br />
+                <span className="text-[10px] normal-case text-ink-500">
+                  score
+                </span>
+              </th>
+              <th
+                className="px-2 py-2 text-center align-bottom"
+                title="ISS-CSA Inspection Selection System score (1–100). Higher = FMCSA recommends inspection. ≥75 Inspect · 50–74 Optional · &lt;50 Pass."
+              >
+                ISS
+              </th>
               <th
                 className="border-l border-ink-200 px-2 py-2 text-center align-bottom"
                 title="Crashes per million miles — raw crash count over 24 months ÷ annual VMT × 2 ÷ 1,000,000. CI* = our estimated FMCSA Crash Indicator percentile (peer-ranked) where available; see note below the table."
@@ -266,7 +300,7 @@ export function Scorecard({
               </th>
               <th
                 className="px-2 py-2 text-center align-bottom"
-                title="Unsafe Driving — FMCSA SMS percentile (peer-ranked; ⚠ = at/above FMCSA's intervention threshold). Small number = violation rate per driver inspection."
+                title="Unsafe Driving — FMCSA SMS percentile (peer-ranked; cell color flags at/above FMCSA's intervention threshold). Small number = violation rate per driver inspection."
               >
                 Unsafe driving
                 <br />
@@ -276,7 +310,7 @@ export function Scorecard({
               </th>
               <th
                 className="px-2 py-2 text-center align-bottom"
-                title="HOS Compliance — FMCSA SMS percentile (peer-ranked; ⚠ = at/above FMCSA's intervention threshold). Small number = violation rate per driver inspection."
+                title="HOS Compliance — FMCSA SMS percentile (peer-ranked; cell color flags at/above FMCSA's intervention threshold). Small number = violation rate per driver inspection."
               >
                 HOS
                 <br />
@@ -286,7 +320,7 @@ export function Scorecard({
               </th>
               <th
                 className="px-2 py-2 text-center align-bottom"
-                title="Driver Fitness — FMCSA SMS percentile (peer-ranked; ⚠ = at/above FMCSA's intervention threshold). Falls back to driver OOS rate when the carrier isn't data-sufficient for a percentile."
+                title="Driver Fitness — FMCSA SMS percentile (peer-ranked; cell color flags at/above FMCSA's intervention threshold). Falls back to driver OOS rate when the carrier isn't data-sufficient for a percentile."
               >
                 Driver fitness
                 <br />
@@ -296,7 +330,7 @@ export function Scorecard({
               </th>
               <th
                 className="px-2 py-2 text-center align-bottom"
-                title="Controlled Substances / Alcohol — FMCSA SMS percentile (peer-ranked; ⚠ = at/above FMCSA's intervention threshold). Sparse — '—' unless the carrier has enough relevant inspections."
+                title="Controlled Substances / Alcohol — FMCSA SMS percentile (peer-ranked; cell color flags at/above FMCSA's intervention threshold). Sparse — '—' unless the carrier has enough relevant inspections."
               >
                 Ctrl. subs.
                 <br />
@@ -306,7 +340,7 @@ export function Scorecard({
               </th>
               <th
                 className="px-2 py-2 text-center align-bottom"
-                title="Vehicle Maintenance — FMCSA SMS percentile (peer-ranked; ⚠ = at/above FMCSA's intervention threshold). Falls back to vehicle OOS rate when the carrier isn't data-sufficient for a percentile."
+                title="Vehicle Maintenance — FMCSA SMS percentile (peer-ranked; cell color flags at/above FMCSA's intervention threshold). Falls back to vehicle OOS rate when the carrier isn't data-sufficient for a percentile."
               >
                 Vehicle maint.
                 <br />
@@ -372,11 +406,9 @@ export function Scorecard({
                     DOT {r.dot} · {r.peerGroupLabel}
                     {r.loadCount > 0 && ` · ${r.loadCount} load${r.loadCount === 1 ? "" : "s"}`}
                   </div>
-                  <div className="flex flex-wrap gap-1">
-                    <RiskBadge score={r.riskScore} tier={r.riskTier} factors={r.riskFactors} />
-                    <IssBadge score={r.issScore} tier={r.issTier} />
-                  </div>
                 </td>
+                <Cell cell={riskCellOf(r)} />
+                <Cell cell={issCellOf(r)} />
                 <Cell cell={r.axes.crash} className="border-l border-ink-200" />
                 <Cell cell={r.axes.unsafeDriving} />
                 <Cell cell={r.axes.hos} />
@@ -394,9 +426,10 @@ export function Scorecard({
                 const renderGroup = (
                   title: string,
                   items: Signal[],
-                  dot: string
+                  dot: string,
+                  extra?: React.ReactNode
                 ) =>
-                  items.length > 0 ? (
+                  items.length > 0 || extra ? (
                     <div>
                       <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-500">
                         <span className={`inline-block h-1.5 w-1.5 rounded-full ${dot}`} />
@@ -410,13 +443,35 @@ export function Scorecard({
                           </li>
                         ))}
                       </ul>
+                      {extra}
+                    </div>
+                  ) : null;
+                // When a concentrated shared-fleet sibling was named, show that
+                // linked authority's OWN Augie verdict — a 53%-VIN-overlap partner
+                // that is itself Critical is the real tell.
+                const siblingNote =
+                  r.siblingDot != null ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-600">
+                      <span>
+                        Linked authority
+                        {r.siblingName ? ` ${r.siblingName}` : ""} (DOT {r.siblingDot}):
+                      </span>
+                      {r.siblingTier ? (
+                        <span
+                          className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-medium ${riskStyles[r.siblingTier]}`}
+                        >
+                          {r.siblingTier}
+                        </span>
+                      ) : (
+                        <span className="text-ink-400">not scored</span>
+                      )}
                     </div>
                   ) : null;
                 return (
                   <tr className={`${rowTint[r.riskLevel]}`}>
                     <td className="border-b border-ink-100"></td>
                     <td className="border-b border-ink-100"></td>
-                    <td colSpan={11} className="border-b border-ink-100 px-3 pb-3 pt-0">
+                    <td colSpan={13} className="border-b border-ink-100 px-3 pb-3 pt-0">
                       <div className="grid gap-3 sm:grid-cols-2">
                         {renderGroup("On-road safety", safety, "bg-orange-400")}
                         {renderGroup(
@@ -424,7 +479,8 @@ export function Scorecard({
                             ? `Fraud / reliability risk · ${r.riskScore}`
                             : "Fraud / reliability risk",
                           fraud,
-                          "bg-red-400"
+                          "bg-red-400",
+                          siblingNote
                         )}
                       </div>
                     </td>

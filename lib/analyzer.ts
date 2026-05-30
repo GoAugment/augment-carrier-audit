@@ -162,6 +162,14 @@ export interface CarrierRow {
   riskScore: number;
   riskTier: string;
   riskFactors: string[];
+  /** Top named shared-fleet sibling (the single largest cross-DOT VIN-overlap
+   *  partner), surfaced when the chameleon-shared-fleet reason fires. `siblingTier`
+   *  is its own Augie verdict — filled in by the API route via a second scoring
+   *  pass so the broker can see at a glance whether the linked authority is itself
+   *  Critical/High. All three null when no concentrated sibling was named. */
+  siblingDot: number | null;
+  siblingName: string | null;
+  siblingTier: RiskLevel | null;
   /** Underlying FMCSA record — carried so the CSV export can emit the full FMCSA
    *  (BASIC percentiles) + regulatory (insurance/revocation/authority) columns
    *  beyond what the on-screen axes show. Not serialized into snapshots. */
@@ -293,13 +301,16 @@ function basicPctCell(
   const countsMatch = rateCell.detail?.match(/^\d[\d,]* of [\d,]+ inspections/);
   const counts = countsMatch ? countsMatch[0] : null;
   const standing = alerted
-    ? " — at/above FMCSA's intervention threshold ⚠"
+    ? " — at/above FMCSA's intervention threshold"
     : p >= 75
       ? " — elevated, below FMCSA's alert threshold"
       : "";
   return {
     status,
-    display: `${ordinal(p)}${star}${alerted ? " ⚠" : ""}`,
+    // Just the percentile — the cell color already encodes the alert/elevated
+    // standing, so a ⚠ glyph next to the number was redundant noise. The
+    // intervention-threshold wording stays in the hover detail.
+    display: `${ordinal(p)}${star}`,
     // Single number per cell (the peer percentile); the supporting counts live
     // in the hover detail.
     detail:
@@ -797,12 +808,13 @@ function classifyRevocation(c: FmcsaCarrier): {
       detail: `${c.mostRecentInvoluntaryDate} — FMCSA pulled authority within the last 24 months.`,
     });
   } else if (c.revocationsTotal > 0) {
-    // Historical revocations only — surface as context (amber/info) without
-    // contributing to the carrier's overall risk tier. The "chronic" lifetime
-    // check that used to bump these to High has been dropped: a carrier with
-    // 6 involuntary revocations from 20 years ago who's been clean since is
-    // not a current risk. Brokers see the history in the tooltip.
-    status = "info";
+    // Historical revocations only — surface the count as neutral context (grey,
+    // no highlight) without contributing to the carrier's overall risk tier.
+    // Only a RECENT involuntary revocation (≤24mo, handled above) earns a cell
+    // color; a carrier with 6 involuntary revocations from 20 years ago who's
+    // been clean since is not a current risk, so the cell shouldn't draw the eye.
+    // The count + dates still render (display + tooltip) for anyone who looks.
+    status = "na";
     display =
       c.involuntaryRevocations > 0
         ? `${c.involuntaryRevocations}× hist.`
@@ -1181,11 +1193,8 @@ function scoreCarrier(
     }
     const crashPct = cpmPct ?? ci;
     if (crashPct != null) {
-      // ⚠ from the reliable cpm-based status; or the CI alert only when no cpm.
-      const alerted =
-        ["high", "severe", "critical"].includes(crash.cell.status) ||
-        (noCpm && c.crashIndicatorAlert === "Y");
-      crash.cell.display = `${ordinal(Math.round(crashPct))}*${alerted ? " ⚠" : ""}`;
+      // Cell color encodes the alert standing — no ⚠ glyph in the number.
+      crash.cell.display = `${ordinal(Math.round(crashPct))}*`;
       crash.cell.sub = cpm != null ? `${cpm.toFixed(2)} /mi` : undefined;
     }
     crash.cell.detail = `${crash.cell.detail ?? ""} Crash %ile* is our estimate (FMCSA does not publish Crash Indicator)${
@@ -1737,6 +1746,10 @@ function scoreCarrier(
   // separate reasons (they tell different stories to the broker), but only
   // one of them counts toward the cluster threshold.
   let firedFleetSharingClusterSignal = false;
+  // The single named shared-fleet sibling (top concentrated VIN-overlap partner),
+  // captured when the chameleon-shared-fleet reason fires so the API route can
+  // score it and show its own verdict alongside this carrier's.
+  let siblingRef: { dot: number; name: string | null } | null = null;
 
   // D10c. Chameleon shared-fleet — % of inspected VINs that also appear under
   // another active DOT. Per the chameleon-shared-fleet rule in the registry:
@@ -1800,6 +1813,7 @@ function scoreCarrier(
         reasons.push({ label: fleetRule.label, detail });
         chameleonSignals.push(`${pct.toFixed(0)}% VIN overlap with active DOT ${siblingDot}`);
         firedFleetSharingClusterSignal = true;
+        siblingRef = { dot: siblingDot, name: siblingName };
         if (fleetTier === "critical") {
           level = "Critical";
         } else if (fleetTier === "high" && level !== "Critical") {
@@ -1866,9 +1880,19 @@ function scoreCarrier(
             : diffuseTier === "high"
               ? "Operator likely controls multiple authorities sharing the same fleet."
               : "Worth verifying which authority each truck operates under.";
+        // Name the single largest of the N siblings (the only one we store) so
+        // the broker has a concrete authority to check — and set siblingRef so
+        // the UI can show ITS own verdict. The other N-1 siblings aren't stored
+        // individually (would need a top-N pipeline column); this is the biggest.
+        const topSib = c.largestSiblingDot
+          ? ` Largest overlap: ${c.largestSiblingLegalName ?? `DOT ${c.largestSiblingDot}`} (DOT ${c.largestSiblingDot}).`
+          : "";
         const detail =
-          `${diffPct.toFixed(0)}% of this carrier's VINs also run under ${nSibs} other active DOTs. ${read}`;
+          `${diffPct.toFixed(0)}% of this carrier's VINs also run under ${nSibs} other active DOTs. ${read}${topSib}`;
         reasons.push({ label: diffuseRule.label, detail });
+        if (!siblingRef && c.largestSiblingDot) {
+          siblingRef = { dot: c.largestSiblingDot, name: c.largestSiblingLegalName };
+        }
         if (!firedFleetSharingClusterSignal) {
           chameleonSignals.push(`${diffPct.toFixed(0)}% diffuse VIN overlap across ${nSibs} DOTs`);
         }
@@ -2044,6 +2068,9 @@ function scoreCarrier(
     riskScore: risk.score,
     riskTier: risk.tier,
     riskFactors: risk.factors,
+    siblingDot: siblingRef?.dot ?? null,
+    siblingName: siblingRef?.name ?? null,
+    siblingTier: null,
     carrier: c,
     axes: {
       crash: crash.cell,
@@ -2107,25 +2134,27 @@ export function analyze(
   }
 
   const SORT_ORDER: RiskLevel[] = ["Critical", "High", "Medium", "Low"];
-  // Sort: tier first, then within tier put statistical-signal carriers
-  // (drivers/trucks doing dangerous things on the road) above pattern-only
-  // carriers (regulatory/admin history). Within statistical-signal: rank by
-  // worst axis severity, then by magnitude (how far above P95 cutoff).
+  // Sort: tier first, then WITHIN tier by a worst-first severity composite so
+  // the review queue (Critical + High) surfaces the most-actionable carriers at
+  // the top. Severity = Risk score (fraud/distress, 0–100) + ISS (safety
+  // inspection priority, 1–100) — a carrier extreme on EITHER axis floats up.
+  // Remaining ties broken by on-road axis magnitude, then load count.
+  const severity = (r: CarrierRow) => r.riskScore + (r.issScore ?? 0);
   rows.sort((a, b) => {
     const td =
       SORT_ORDER.indexOf(a.riskLevel) - SORT_ORDER.indexOf(b.riskLevel);
     if (td !== 0) return td;
-    // Statistical-signal carriers first
+    // Worst-first within tier: Risk + ISS composite.
+    const sv = severity(b) - severity(a);
+    if (sv !== 0) return sv;
+    // Tiebreak: statistical-signal carriers, then worst axis rank / magnitude.
     if (a.sortMeta.hasStatSignal !== b.sortMeta.hasStatSignal) {
       return a.sortMeta.hasStatSignal ? -1 : 1;
     }
-    // Among statistical-signal carriers, higher axis rank first
     const ar = b.sortMeta.worstAxisRank - a.sortMeta.worstAxisRank;
     if (ar !== 0) return ar;
-    // Same axis rank — higher magnitude first
     const am = b.sortMeta.worstAxisMagnitude - a.sortMeta.worstAxisMagnitude;
     if (am !== 0) return am;
-    // Fall back to load count desc
     return b.loadCount - a.loadCount;
   });
   rows.forEach((r, i) => (r.rank = i + 1));
