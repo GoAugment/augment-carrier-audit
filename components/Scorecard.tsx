@@ -16,6 +16,15 @@ const riskStyles: Record<RiskLevel, string> = {
   Low: "bg-augment-50 text-augment-900 border-augment-200",
 };
 
+// The "Low" tier is shown as "Clean" — for a broker, the bottom tier means
+// "nothing flagged," which reads more clearly than "Low".
+const verdictLabel: Record<RiskLevel, string> = {
+  Critical: "Critical",
+  High: "High",
+  Medium: "Medium",
+  Low: "Clean",
+};
+
 const rowTint: Record<RiskLevel, string> = {
   Critical: "bg-red-50/80",
   High: "bg-orange-50/40",
@@ -106,16 +115,18 @@ function Cell({ cell, className = "" }: { cell: AxisCell; className?: string }) 
 // rest of the row. Each maps its tier to a Cell status so the color scale stays
 // consistent (red = worst → green = clean).
 
-/** Augie Risk Score → AxisCell (verdict-group column). */
+/** Augie Fraud Score → AxisCell (the lead column of the fraud / reliability
+ *  group). Just the number, color-banded by score severity (the tier word lives
+ *  in the hover detail, not the cell). */
 function riskCellOf(r: CarrierRow): AxisCell {
-  // Tier color matches the cell scale: High→severe(red), Moderate→high(orange),
-  // Low→elevated(amber), None→clean(green).
+  // Score-banded color (matches the design): ≥85 severe(red), 60–84 high(orange),
+  // 30–59 elevated(amber), <30 clean(green).
   const status: AxisStatus =
-    r.riskTier === "High"
+    r.riskScore >= 85
       ? "severe"
-      : r.riskTier === "Moderate"
+      : r.riskScore >= 60
         ? "high"
-        : r.riskTier === "Low"
+        : r.riskScore >= 30
           ? "elevated"
           : "clean";
   const factorBody =
@@ -125,8 +136,7 @@ function riskCellOf(r: CarrierRow): AxisCell {
   return {
     status,
     display: String(r.riskScore),
-    sub: r.riskTier,
-    detail: `Augie Risk Score (0-100, higher = worse): a composite of identity/deception, financial-distress, tenure, and location signals, weighted by measured lift on future authority loss. A heuristic index, not a probability. FMCSA has no equivalent.${factorBody}`,
+    detail: `Augie Fraud Score (0-100, higher = worse) — tier ${r.riskTier}: a composite of identity/deception, financial-distress, tenure, and location signals, weighted by measured lift on future authority loss. A heuristic index, not a probability. FMCSA has no equivalent.${factorBody}`,
   };
 }
 
@@ -212,9 +222,13 @@ export function Scorecard({
   const review = rows.filter(
     (r) => r.riskLevel === "Critical" || r.riskLevel === "High"
   );
+  const criticalCount = rows.filter((r) => r.riskLevel === "Critical").length;
+  const highCount = rows.filter((r) => r.riskLevel === "High").length;
   const mediumCount = rows.filter((r) => r.riskLevel === "Medium").length;
   const cleanCount = rows.filter((r) => r.riskLevel === "Low").length;
   const extraCount = mediumCount + cleanCount;
+  const totalCarriers = rows.length;
+  const totalLoads = result?.totalLoads ?? rows.reduce((a, r) => a + r.loadCount, 0);
   // If nothing needs review, fall back to showing everything (don't render blank).
   const allRows = showAll || review.length === 0 ? rows : review;
   const gateActive = !isLocalDev() && allRows.length > PREVIEW_ROWS && !unlocked;
@@ -222,26 +236,47 @@ export function Scorecard({
   const hiddenCount = allRows.length - visibleRows.length;
   return (
     <div className="mt-6">
-      <div className="mb-3 flex items-center justify-between text-sm">
-        <span className="text-ink-600">
-          <strong className="font-semibold text-ink-900">{review.length}</strong>{" "}
-          need review <span className="text-ink-400">(Critical + High)</span>
-          {extraCount > 0 && (
-            <span className="text-ink-400">
-              {" · "}
-              {mediumCount} Medium · {cleanCount} clean
-              {!showAll && review.length > 0 ? " (hidden)" : ""}
+      <div className="mb-1 flex items-start justify-between gap-3">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="text-base font-semibold text-ink-900">
+            {totalLoads} load{totalLoads === 1 ? "" : "s"} · {totalCarriers} carrier
+            {totalCarriers === 1 ? "" : "s"}
+          </span>
+          <span className="inline-flex items-center rounded-full bg-ink-100 px-2 py-0.5 text-xs font-medium text-ink-700">
+            {review.length} flagged
+          </span>
+          {criticalCount > 0 && (
+            <span className="inline-flex items-center gap-1 text-xs text-ink-600">
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+              {criticalCount} Critical
             </span>
           )}
-        </span>
+          {highCount > 0 && (
+            <span className="inline-flex items-center gap-1 text-xs text-ink-600">
+              <span className="h-1.5 w-1.5 rounded-full bg-orange-400" />
+              {highCount} High
+            </span>
+          )}
+        </div>
         {extraCount > 0 && review.length > 0 && (
           <button
             type="button"
             onClick={() => setShowAll((v) => !v)}
-            className="text-augment-700 underline decoration-augment-300 underline-offset-2 hover:decoration-augment-700"
+            className="shrink-0 text-sm text-augment-700 underline decoration-augment-300 underline-offset-2 hover:decoration-augment-700"
           >
             {showAll ? "Show review queue only" : `Show all ${rows.length} carriers`}
           </button>
+        )}
+      </div>
+      <div className="mb-3 text-xs text-ink-500">
+        <strong className="font-medium text-ink-700">{review.length}</strong> need
+        review <span className="text-ink-400">(Critical + High)</span>
+        {extraCount > 0 && (
+          <>
+            {" · "}
+            {mediumCount} Medium · {cleanCount} clean
+            {!showAll && review.length > 0 ? " (hidden)" : ""}
+          </>
         )}
       </div>
       <ReadingNote />
@@ -254,18 +289,22 @@ export function Scorecard({
                 lenses — they answer different questions and can legitimately
                 disagree (e.g. a chameleon shell with clean inspection scores). */}
             <tr className="text-[10px] tracking-wide text-ink-500">
-              <th colSpan={5} className="px-3 pt-2 pb-1 text-left font-semibold">
+              <th colSpan={3} className="px-3 pt-2 pb-1 text-left font-semibold">
                 Augie verdict
               </th>
               <th
-                colSpan={7}
-                className="border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-augment-700"
-                title="FMCSA Safety Measurement System — all 7 BASICs, peer-ranked within the carrier's fleet-size group. Higher percentile = worse than more peers. CI* (crash) and HM* (hazmat) are our estimates; FMCSA doesn't publish them."
+                colSpan={8}
+                className="border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-orange-700"
+                title="On-road safety — our estimated FMCSA ISS-CSA inspection score plus all 7 SMS BASICs, peer-ranked within the carrier's fleet-size group. Higher percentile = worse than more peers. CI* (crash) and HM* (hazmat) are our estimates; FMCSA doesn't publish them."
               >
-                FMCSA SMS — on-road safety (all 7 BASICs, peer-ranked)
+                On-road safety — FMCSA SMS · ISS + all 7 BASICs, peer-ranked
               </th>
-              <th colSpan={3} className="border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold">
-                Regulatory standing
+              <th
+                colSpan={4}
+                className="border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-red-700"
+                title="Fraud / reliability risk — the Augie fraud score plus the regulatory-standing signals (revocations, operating authority, insurance) that don't show up in the safety percentiles."
+              >
+                Fraud / reliability risk
               </th>
             </tr>
             <tr>
@@ -273,23 +312,17 @@ export function Scorecard({
               <th className="px-3 py-2 align-bottom">Verdict</th>
               <th className="px-3 py-2 align-bottom">Carrier</th>
               <th
-                className="px-2 py-2 text-center align-bottom"
-                title="Augie risk score (0–100) — additive fraud/reliability index calibrated to revocation lift (not a probability). None &lt;10 · Low 10–29 · Moderate 30–59 · High 60+."
+                className="border-l border-ink-200 px-2 py-2 text-center align-bottom"
+                title="ISS-CSA Inspection Selection System score (1–100). Higher = FMCSA recommends inspection. ≥75 Inspect · 50–74 Optional · &lt;50 Pass."
               >
-                Risk
+                ISS
                 <br />
                 <span className="text-[10px] normal-case text-ink-500">
-                  score
+                  Inspect?
                 </span>
               </th>
               <th
                 className="px-2 py-2 text-center align-bottom"
-                title="ISS-CSA Inspection Selection System score (1–100). Higher = FMCSA recommends inspection. ≥75 Inspect · 50–74 Optional · &lt;50 Pass."
-              >
-                ISS
-              </th>
-              <th
-                className="border-l border-ink-200 px-2 py-2 text-center align-bottom"
                 title="Crashes per million miles — raw crash count over 24 months ÷ annual VMT × 2 ÷ 1,000,000. CI* = our estimated FMCSA Crash Indicator percentile (peer-ranked) where available; see note below the table."
               >
                 Crash
@@ -360,6 +393,14 @@ export function Scorecard({
               </th>
               <th
                 className="border-l border-ink-200 px-2 py-2 text-center align-bottom"
+                title="Augie fraud score (0–100, higher = worse) — additive identity/deception, financial-distress, tenure & location index calibrated to revocation lift (not a probability)."
+              >
+                Fraud
+                <br />
+                <span className="text-[10px] normal-case text-ink-500">score</span>
+              </th>
+              <th
+                className="px-2 py-2 text-center align-bottom"
                 title="Most recent involuntary revocation date, or chronic-revocation count"
               >
                 Revocations
@@ -395,7 +436,7 @@ export function Scorecard({
                   <span
                     className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${riskStyles[r.riskLevel]}`}
                   >
-                    {r.riskLevel}
+                    {verdictLabel[r.riskLevel]}
                   </span>
                 </td>
                 <td className="px-3 py-2">
@@ -407,16 +448,16 @@ export function Scorecard({
                     {r.loadCount > 0 && ` · ${r.loadCount} load${r.loadCount === 1 ? "" : "s"}`}
                   </div>
                 </td>
-                <Cell cell={riskCellOf(r)} />
-                <Cell cell={issCellOf(r)} />
-                <Cell cell={r.axes.crash} className="border-l border-ink-200" />
+                <Cell cell={issCellOf(r)} className="border-l border-ink-200" />
+                <Cell cell={r.axes.crash} />
                 <Cell cell={r.axes.unsafeDriving} />
                 <Cell cell={r.axes.hos} />
                 <Cell cell={r.axes.driverOos} />
                 <Cell cell={r.axes.controlledSubstances} />
                 <Cell cell={r.axes.vehicleOos} />
                 <Cell cell={r.axes.hazmatOos} />
-                <Cell cell={r.axes.revocations} className="border-l border-ink-200" />
+                <Cell cell={riskCellOf(r)} className="border-l border-ink-200" />
+                <Cell cell={r.axes.revocations} />
                 <Cell cell={r.axes.authority} />
                 <Cell cell={r.axes.insurance} />
               </tr>
@@ -460,7 +501,7 @@ export function Scorecard({
                         <span
                           className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-medium ${riskStyles[r.siblingTier]}`}
                         >
-                          {r.siblingTier}
+                          {verdictLabel[r.siblingTier]}
                         </span>
                       ) : (
                         <span className="text-ink-400">not scored</span>
