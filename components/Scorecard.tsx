@@ -34,6 +34,21 @@ const barColor: Record<RiskLevel, string> = {
   Low: "border-l-augment-400",
 };
 
+// Tier section-header styling (the "● CRITICAL · N carriers" divider rows that
+// group the matrix by verdict, replacing the per-row verdict pill).
+const tierDot: Record<RiskLevel, string> = {
+  Critical: "bg-red-500",
+  High: "bg-orange-400",
+  Medium: "bg-amber-400",
+  Low: "bg-augment-500",
+};
+const tierText: Record<RiskLevel, string> = {
+  Critical: "text-red-700",
+  High: "text-orange-700",
+  Medium: "text-amber-700",
+  Low: "text-augment-700",
+};
+
 const rowTint: Record<RiskLevel, string> = {
   Critical: "bg-red-50/80",
   High: "bg-orange-50/40",
@@ -259,6 +274,9 @@ export function Scorecard({
   const gateActive = !isLocalDev() && allRows.length > PREVIEW_ROWS && !unlocked;
   const visibleRows = gateActive ? allRows.slice(0, PREVIEW_ROWS) : allRows;
   const hiddenCount = allRows.length - visibleRows.length;
+  // Count carriers per tier within the visible set, for the section dividers.
+  const tierCount = (level: RiskLevel) =>
+    visibleRows.filter((r) => r.riskLevel === level).length;
   return (
     <div className="mt-6">
       <div className="mb-1 flex items-start justify-between gap-3">
@@ -315,40 +333,54 @@ export function Scorecard({
                 lenses — they answer different questions and can legitimately
                 disagree (e.g. a chameleon shell with clean inspection scores). */}
             <tr className="text-[10px] tracking-wide text-ink-500">
-              <th colSpan={3} className="px-3 pt-2 pb-1 text-left font-semibold">
-                Augie verdict
+              <th colSpan={2} className="whitespace-nowrap px-3 pt-2 pb-1 text-left font-semibold text-augment-800">
+                Carrier
               </th>
               <th
-                colSpan={8}
-                className="border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-orange-700"
-                title="On-road safety — our estimated FMCSA ISS-CSA inspection score plus all 7 SMS BASICs, peer-ranked within the carrier's fleet-size group. Higher percentile = worse than more peers. CI* (crash) and HM* (hazmat) are our estimates; FMCSA doesn't publish them."
+                colSpan={2}
+                className="whitespace-nowrap border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-ink-700"
+                title="The two Augie headline scores: estimated FMCSA ISS-CSA on-road inspection priority, and the Augie fraud / reliability risk index."
               >
-                On-road safety — FMCSA SMS · ISS + all 7 BASICs, peer-ranked
+                Headline scores
               </th>
               <th
-                colSpan={4}
-                className="border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-red-700"
-                title="Fraud / reliability risk — the Augie fraud score plus the regulatory-standing signals (revocations, operating authority, insurance) that don't show up in the safety percentiles."
+                colSpan={7}
+                className="whitespace-nowrap border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-orange-700"
+                title="FMCSA Safety Measurement System — all 7 BASICs, peer-ranked within the carrier's fleet-size group. Higher percentile = worse than more peers. CI* (crash) and HM* (hazmat) are our estimates; FMCSA doesn't publish them."
               >
-                Fraud / reliability risk
+                On-road safety — 7 BASICs, peer-ranked
+              </th>
+              <th
+                colSpan={3}
+                className="whitespace-nowrap border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-red-700"
+                title="Fraud / reliability standing — the regulatory signals (revocations, operating authority, insurance) that don't show up in the safety percentiles but speak to whether the carrier is who it claims and will still be operating when the load runs."
+              >
+                Fraud / reliability — standing
               </th>
             </tr>
             <tr>
               <th className="px-3 py-2 align-bottom">#</th>
-              <th className="px-3 py-2 align-bottom">Verdict</th>
               <th className="px-3 py-2 align-bottom">Carrier</th>
               <th
-                className="border-l border-ink-200 px-2 py-2 text-center align-bottom"
+                className="border-l border-ink-200 px-2 py-2 text-center align-bottom text-orange-700"
                 title="ISS-CSA Inspection Selection System score (1–100). Higher = FMCSA recommends inspection. ≥75 Inspect · 50–74 Optional · &lt;50 Pass."
               >
                 ISS
                 <br />
                 <span className="text-[10px] normal-case text-ink-500">
-                  Inspect?
+                  on-road
                 </span>
               </th>
               <th
-                className="px-2 py-2 text-center align-bottom"
+                className="px-2 py-2 text-center align-bottom text-red-700"
+                title="Augie fraud score (0–100, higher = worse) — additive identity/deception, financial-distress, tenure & location index calibrated to revocation lift (not a probability)."
+              >
+                Fraud
+                <br />
+                <span className="text-[10px] normal-case text-ink-500">risk</span>
+              </th>
+              <th
+                className="border-l border-ink-200 px-2 py-2 text-center align-bottom"
                 title="Crashes per million miles — raw crash count over 24 months ÷ annual VMT × 2 ÷ 1,000,000. CI* = our estimated FMCSA Crash Indicator percentile (peer-ranked) where available; see note below the table."
               >
                 Crash
@@ -419,14 +451,6 @@ export function Scorecard({
               </th>
               <th
                 className="border-l border-ink-200 px-2 py-2 text-center align-bottom"
-                title="Augie fraud score (0–100, higher = worse) — additive identity/deception, financial-distress, tenure & location index calibrated to revocation lift (not a probability)."
-              >
-                Fraud
-                <br />
-                <span className="text-[10px] normal-case text-ink-500">score</span>
-              </th>
-              <th
-                className="px-2 py-2 text-center align-bottom"
                 title="Most recent involuntary revocation date, or chronic-revocation count"
               >
                 Revocations
@@ -452,13 +476,30 @@ export function Scorecard({
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map((r) => {
+            {visibleRows.map((r, i) => {
               const { safety, fraud } = splitSignals(r.reasons, r.riskFactors);
               const hasDetail =
                 safety.length > 0 || fraud.length > 0 || r.siblingDot != null;
               const open = hasDetail && expandedDots.has(r.dot);
+              // Section divider whenever the tier changes (rows are tier-sorted).
+              const startsTier =
+                i === 0 || visibleRows[i - 1].riskLevel !== r.riskLevel;
+              const n = tierCount(r.riskLevel);
               return (
               <Fragment key={r.dot}>
+              {startsTier && (
+                <tr className="bg-ink-50/70">
+                  <td colSpan={14} className="border-t border-ink-200 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={`h-2 w-2 rounded-full ${tierDot[r.riskLevel]}`} />
+                      <span className={tierText[r.riskLevel]}>{verdictLabel[r.riskLevel]}</span>
+                      <span className="font-normal normal-case text-ink-400">
+                        · {n} carrier{n === 1 ? "" : "s"}
+                      </span>
+                    </span>
+                  </td>
+                </tr>
+              )}
               <tr
                 className={`border-t border-ink-100 align-top ${rowTint[r.riskLevel]} ${
                   hasDetail ? "cursor-pointer hover:brightness-[0.985]" : ""
@@ -466,13 +507,6 @@ export function Scorecard({
                 onClick={hasDetail ? () => toggleExpanded(r.dot) : undefined}
               >
                 <td className="px-3 py-2 text-ink-500">{r.rank}</td>
-                <td className="px-3 py-2">
-                  <span
-                    className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${riskStyles[r.riskLevel]}`}
-                  >
-                    {verdictLabel[r.riskLevel]}
-                  </span>
-                </td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-1.5">
                     {hasDetail && (
@@ -496,15 +530,15 @@ export function Scorecard({
                   </div>
                 </td>
                 <Cell cell={issCellOf(r)} className="border-l border-ink-200" />
-                <Cell cell={r.axes.crash} />
+                <Cell cell={riskCellOf(r)} />
+                <Cell cell={r.axes.crash} className="border-l border-ink-200" />
                 <Cell cell={r.axes.unsafeDriving} />
                 <Cell cell={r.axes.hos} />
                 <Cell cell={r.axes.driverOos} />
                 <Cell cell={r.axes.controlledSubstances} />
                 <Cell cell={r.axes.vehicleOos} />
                 <Cell cell={r.axes.hazmatOos} />
-                <Cell cell={riskCellOf(r)} className="border-l border-ink-200" />
-                <Cell cell={r.axes.revocations} />
+                <Cell cell={r.axes.revocations} className="border-l border-ink-200" />
                 <Cell cell={r.axes.authority} />
                 <Cell cell={r.axes.insurance} />
               </tr>
@@ -555,11 +589,12 @@ export function Scorecard({
                   ) : null;
                 return (
                   <tr className={`${rowTint[r.riskLevel]}`}>
-                    <td className="border-b border-ink-100"></td>
-                    <td className="border-b border-ink-100"></td>
+                    <td
+                      className={`border-b border-ink-100 border-l-[3px] ${barColor[r.riskLevel]}`}
+                    ></td>
                     <td
                       colSpan={13}
-                      className={`border-b border-ink-100 border-l-[3px] ${barColor[r.riskLevel]} pl-4 pr-3 pb-3 pt-1`}
+                      className="border-b border-ink-100 px-3 pb-3 pt-1"
                     >
                       <div className="grid gap-3 sm:grid-cols-2">
                         {renderGroup("On-road safety", safety, "bg-orange-400")}
