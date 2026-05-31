@@ -3,6 +3,12 @@
   "reasonNote": "CRITICAL: 66 OOS DOTs at same address",
   "carrierName": "ARNOLDO BELTRAN",
   "riskLevel": "Critical",
+  "riskScore": 26,
+  "riskTier": "Low",
+  "riskContributions": [
+    "+8 [Safety / compliance] Elevated safety context",
+    "+18 [Identity / chameleon] Address OOS cluster"
+  ],
   "reasonLabels": [
     "Address shared with out-of-service DOTs",
     "Why the FMCSA SMS scores look clean"

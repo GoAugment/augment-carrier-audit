@@ -14,8 +14,36 @@
  */
 import path from "node:path";
 import type { Database } from "duckdb";
+import type { CarrierIdentityRiskSignals } from "./analyzer";
 
 const PARQUET_PATH = path.join(process.cwd(), "data", "carrier_identity.parquet");
+const AGGREGATE_PARQUET_PATH = path.join(process.cwd(), "data", "carrier_aggregates.parquet");
+
+const FREE_EMAIL_DOMAINS = new Set([
+  "gmail.com",
+  "yahoo.com",
+  "hotmail.com",
+  "outlook.com",
+  "aol.com",
+  "icloud.com",
+  "me.com",
+  "msn.com",
+  "live.com",
+  "comcast.net",
+  "sbcglobal.net",
+  "att.net",
+  "ymail.com",
+  "proton.me",
+  "protonmail.com",
+  "mail.com",
+]);
+
+function residentialAddressMarker(street: string | null): string | null {
+  if (!street) return null;
+  const upper = street.toUpperCase();
+  const m = upper.match(/(^|[^A-Z])(APT|APARTMENT|TRLR|TRAILER|LOT|SPC|SPACE|MOBILE HOME)([^A-Z]|$)/);
+  return m?.[2] ?? null;
+}
 
 // Lazy-load duckdb — see fmcsa-parquet.ts for the Vercel-build rationale.
 let _db: Database | null = null;
@@ -290,6 +318,113 @@ export async function fetchIdentity(
     const identity = rowToIdentity(r);
     out.set(identity.dotNumber, identity);
   }
+  return out;
+}
+
+interface ShutdownIdentityLinkRow {
+  target_dot: number | bigint;
+  link_type: string;
+  linked_dot: number | bigint;
+  legal_name: string | null;
+}
+
+/**
+ * Lightweight scoring signals derived from the identity parquet. These remain
+ * optional in analyzer.ts so callers that only load carrier_aggregates.parquet
+ * still get a complete score from aggregate-level factors.
+ */
+export async function fetchIdentityRiskSignals(
+  dots: number[]
+): Promise<Map<number, CarrierIdentityRiskSignals>> {
+  const unique = Array.from(new Set(dots));
+  const out = new Map<number, CarrierIdentityRiskSignals>();
+  if (unique.length === 0) return out;
+
+  const identities = await fetchIdentity(unique);
+  for (const dot of unique) {
+    const identity = identities.get(dot);
+    const domain = identity?.emailDomain?.toLowerCase().trim() ?? null;
+    out.set(dot, {
+      freeEmailDomain: domain && FREE_EMAIL_DOMAINS.has(domain) ? domain : null,
+      residentialAddressMarker: residentialAddressMarker(identity?.phyStreet ?? null),
+      shutdownIdentityLinks: [],
+    });
+  }
+
+  const placeholders = unique.map(() => "?").join(",");
+  const identityPath = PARQUET_PATH.replace(/'/g, "''");
+  const aggregatePath = AGGREGATE_PARQUET_PATH.replace(/'/g, "''");
+  const sql = `
+    WITH targets AS (
+      SELECT
+        DOT_NUMBER AS target_dot,
+        lower(trim(coalesce(email_address, ''))) AS email,
+        regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') AS phone_norm,
+        upper(trim(coalesce(company_officer_1, ''))) AS officer_norm
+      FROM read_parquet('${identityPath}')
+      WHERE DOT_NUMBER IN (${placeholders})
+    ),
+    identities AS (
+      SELECT
+        DOT_NUMBER,
+        lower(trim(coalesce(email_address, ''))) AS email,
+        regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') AS phone_norm,
+        upper(trim(coalesce(company_officer_1, ''))) AS officer_norm
+      FROM read_parquet('${identityPath}')
+    ),
+    shutdowns AS (
+      SELECT DOT_NUMBER, LEGAL_NAME
+      FROM read_parquet('${aggregatePath}')
+      WHERE (status_code <> 'A' OR status_code IS NULL)
+        AND coalesce(involuntary_revocations, 0) > 0
+    ),
+    links AS (
+      SELECT t.target_dot, 'email' AS link_type, s.DOT_NUMBER AS linked_dot, s.LEGAL_NAME AS legal_name
+      FROM targets t
+      JOIN identities i ON t.email <> '' AND t.email = i.email AND i.DOT_NUMBER <> t.target_dot
+      JOIN shutdowns s ON s.DOT_NUMBER = i.DOT_NUMBER
+
+      UNION ALL
+
+      SELECT t.target_dot, 'phone' AS link_type, s.DOT_NUMBER AS linked_dot, s.LEGAL_NAME AS legal_name
+      FROM targets t
+      JOIN identities i ON length(t.phone_norm) >= 10
+        AND t.phone_norm NOT IN ('0000000000','9999999999','1111111111','1234567890')
+        AND t.phone_norm = i.phone_norm
+        AND i.DOT_NUMBER <> t.target_dot
+      JOIN shutdowns s ON s.DOT_NUMBER = i.DOT_NUMBER
+
+      UNION ALL
+
+      SELECT t.target_dot, 'officer' AS link_type, s.DOT_NUMBER AS linked_dot, s.LEGAL_NAME AS legal_name
+      FROM targets t
+      JOIN identities i ON length(t.officer_norm) >= 5
+        AND t.officer_norm NOT IN ('OWNER','UNKNOWN','NONE','N/A','NA')
+        AND t.officer_norm = i.officer_norm
+        AND i.DOT_NUMBER <> t.target_dot
+      JOIN shutdowns s ON s.DOT_NUMBER = i.DOT_NUMBER
+    )
+    SELECT DISTINCT target_dot, link_type, linked_dot, legal_name
+    FROM links
+    ORDER BY target_dot, link_type, linked_dot
+  `;
+  const rows = await runQuery<ShutdownIdentityLinkRow>(sql, unique);
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const target = asInt(r.target_dot);
+    const linked = asInt(r.linked_dot);
+    const key = `${target}:${r.link_type}:${linked}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const signals = out.get(target);
+    if (!signals || signals.shutdownIdentityLinks.length >= 5) continue;
+    signals.shutdownIdentityLinks.push(
+      `${r.link_type} matches shut-down revoked DOT ${linked}${
+        r.legal_name ? ` (${r.legal_name})` : ""
+      }`
+    );
+  }
+
   return out;
 }
 

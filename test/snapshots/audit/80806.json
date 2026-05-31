@@ -3,6 +3,9 @@
   "reasonNote": "CLEAN-BIG: J B Hunt",
   "carrierName": "J B HUNT TRANSPORT INC",
   "riskLevel": "Low",
+  "riskScore": 0,
+  "riskTier": "None",
+  "riskContributions": [],
   "reasonLabels": [],
   "axes": {
     "crash": "clean",

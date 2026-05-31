@@ -3,6 +3,12 @@
   "reasonNote": "CLEAN: active interstate, no flags",
   "carrierName": "CHRISTENSEN TRUCKING INC",
   "riskLevel": "Critical",
+  "riskScore": 43,
+  "riskTier": "Medium",
+  "riskContributions": [
+    "+35 [Safety / compliance] Conditional safety rating",
+    "+8 [Safety / compliance] Elevated safety context"
+  ],
   "reasonLabels": [
     "Safety rating: Conditional",
     "Why the FMCSA SMS scores look clean"

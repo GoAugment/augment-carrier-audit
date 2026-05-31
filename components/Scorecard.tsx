@@ -135,38 +135,38 @@ function Cell({ cell, className = "" }: { cell: AxisCell; className?: string }) 
 }
 
 // Risk and ISS render as ordinary grid columns (same colored-Cell presentation
-// as the BASIC axes), not pills — they're two more lenses, so they read like the
-// rest of the row. Each maps its tier to a Cell status so the color scale stays
-// consistent (red = worst → green = clean).
+// as the BASIC axes). ISS remains visible because customers recognize it; the
+// carrier risk score is the product score that includes safety, authority,
+// insurance, identity/chameleon, operations, and corroborating context.
 
-/** Augie Fraud Score → AxisCell (the lead column of the fraud / reliability
- *  group). Just the number, color-banded by score severity (the tier word lives
- *  in the hover detail, not the cell). */
+/** Carrier Risk Score → AxisCell. Just the number, color-banded by score
+ *  severity; the contribution math lives in hover detail and expanded rows. */
 function riskCellOf(r: CarrierRow): AxisCell {
-  // Score-banded color (matches the design): ≥85 severe(red), 60–84 high(orange),
-  // 30–59 elevated(amber), <30 clean(green).
   const status: AxisStatus =
-    r.riskScore >= 85
+    r.riskScore >= 80
       ? "severe"
-      : r.riskScore >= 60
-        ? "high"
-        : r.riskScore >= 30
-          ? "elevated"
-          : "clean";
+    : r.riskScore >= 60
+      ? "high"
+      : r.riskScore >= 35
+        ? "elevated"
+        : "clean";
   const factorBody =
-    r.riskFactors.length > 0
-      ? `\n\nFactors:\n• ${r.riskFactors.join("\n• ")}`
-      : "\n\nNo identity / financial-distress / location signals detected.";
+    r.riskContributions.length > 0
+      ? `\n\nContributions:\n• ${r.riskContributions
+          .map((f) => `+${f.points} [${f.category}] ${f.label}: ${f.detail}`)
+          .join("\n• ")}`
+      : "\n\nNo scored carrier-risk factors detected.";
   return {
     status,
     display: String(r.riskScore),
-    detail: `Augie Fraud Score (0-100, higher = worse) — tier ${r.riskTier}: a composite of identity/deception, financial-distress, tenure, and location signals, weighted by measured lift on future authority loss. A heuristic index, not a probability. FMCSA has no equivalent.${factorBody}`,
+    sub: r.riskTier === "None" ? undefined : r.riskTier,
+    detail: `Carrier Risk Score (0-100, higher = worse) — tier ${r.riskTier}: transparent additive score across safety, authority/insurance, identity/chameleon, operations, and corroborating context. A heuristic index, not a probability.${factorBody}`,
   };
 }
 
 // NB: the Augie Safety Score is still computed (CarrierRow.safetyScore / CSV) but
-// not shown as its own column — ISS is the safety lens, the Risk score is the
-// differentiator. A third overlapping safety number was dropped for clarity.
+// not shown as its own column. ISS stays visible as the government-style estimate;
+// safety also contributes to the single carrier risk score.
 
 /** Estimated FMCSA ISS score → AxisCell (verdict-group column). */
 function issCellOf(r: CarrierRow): AxisCell {
@@ -193,33 +193,34 @@ function issCellOf(r: CarrierRow): AxisCell {
   };
 }
 
-// Split a carrier's signals into the two buckets we show inline: on-road SAFETY
-// (crash + the SMS BASICs + FAST-Act + serious violations + ISS) vs FRAUD /
-// reliability risk (insurance, revocation, chameleon, enforcement, + the
-// insurer/ZIP/tenure risk-score markers that have no axis cell of their own).
+// Split a carrier's signals into the two buckets we show inline: on-road safety
+// findings vs the scored carrier-risk contributions and non-safety standing
+// findings.
 const SAFETY_RE =
   /crash|unsafe driving|hos compliance|driver oos|vehicle oos|hazmat|fast.?act|acute|serious viol|iss —|multiple basic|safety rating/i;
-// Risk-score markers to surface as fraud-side reasons (they live only in the
-// risk factors — no rule/axis pushes them as a reason).
-const RISK_MARKER_RE =
-  /^(high-risk insurer|high-shutdown zip|very new authority|new authority|limited tenure|phantom fleet)/i;
 
-type Signal = { label: string; detail: string };
-function splitSignals(reasons: Signal[], riskFactors: string[]): {
+type Signal = { label: string; detail: string; points?: number; category?: string };
+function splitSignals(r: CarrierRow): {
   safety: Signal[];
-  fraud: Signal[];
+  risk: Signal[];
 } {
   const safety: Signal[] = [];
-  const fraud: Signal[] = [];
-  for (const r of reasons) (SAFETY_RE.test(r.label) ? safety : fraud).push(r);
-  const seen = new Set(fraud.map((f) => f.label.toLowerCase()));
-  for (const f of riskFactors) {
-    if (!RISK_MARKER_RE.test(f)) continue;
-    const [label, ...rest] = f.split(" — ");
-    if (seen.has(label.toLowerCase())) continue;
-    fraud.push({ label, detail: rest.join(" — ") });
+  const risk: Signal[] = r.riskContributions.map((f) => ({
+    label: f.label,
+    detail: f.detail,
+    points: f.points,
+    category: f.category,
+  }));
+  const seen = new Set(risk.map((f) => f.label.toLowerCase()));
+  for (const reason of r.reasons) {
+    if (SAFETY_RE.test(reason.label)) {
+      safety.push(reason);
+      continue;
+    }
+    if (seen.has(reason.label.toLowerCase())) continue;
+    risk.push(reason);
   }
-  return { safety, fraud };
+  return { safety, risk };
 }
 
 const PREVIEW_ROWS = 10;
@@ -339,7 +340,7 @@ export function Scorecard({
               <th
                 colSpan={2}
                 className="whitespace-nowrap border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-[#596560]"
-                title="The two Augie headline scores: estimated FMCSA ISS-CSA on-road inspection priority, and the Augie fraud / reliability risk index."
+                title="Headline risk score plus the estimated FMCSA ISS-CSA on-road inspection priority."
               >
                 Headline scores
               </th>
@@ -353,9 +354,9 @@ export function Scorecard({
               <th
                 colSpan={3}
                 className="whitespace-nowrap border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-[#D7453C]"
-                title="Fraud / reliability standing — the regulatory signals (revocations, operating authority, insurance) that don't show up in the safety percentiles but speak to whether the carrier is who it claims and will still be operating when the load runs."
+                title="Risk standing — regulatory, authority, insurance, and identity signals that may not show up in safety percentiles but affect whether the carrier can safely take the load."
               >
-                Fraud / reliability — standing
+                Risk standing
               </th>
             </tr>
             <tr>
@@ -373,9 +374,9 @@ export function Scorecard({
               </th>
               <th
                 className="px-2 py-2 text-center align-bottom text-[#D7453C]"
-                title="Augie fraud score (0–100, higher = worse) — additive identity/deception, financial-distress, tenure & location index calibrated to revocation lift (not a probability)."
+                title="Carrier risk score (0–100, higher = worse) — additive safety, authority/insurance, identity/chameleon, operations, and context factors. A heuristic index, not a probability."
               >
-                Fraud
+                Risk
                 <br />
                 <span className="text-[10px] font-normal normal-case text-[#7D8883]">risk</span>
               </th>
@@ -477,9 +478,9 @@ export function Scorecard({
           </thead>
           <tbody>
             {visibleRows.map((r, i) => {
-              const { safety, fraud } = splitSignals(r.reasons, r.riskFactors);
+              const { safety, risk } = splitSignals(r);
               const hasDetail =
-                safety.length > 0 || fraud.length > 0 || r.siblingDot != null;
+                safety.length > 0 || risk.length > 0 || r.siblingDot != null;
               const open = hasDetail && expandedDots.has(r.dot);
               // Section divider whenever the tier changes (rows are tier-sorted).
               const startsTier =
@@ -558,7 +559,17 @@ export function Scorecard({
                       <ul className="mt-1 space-y-1.5 text-xs text-ink-700">
                         {items.map((s, i) => (
                           <li key={i}>
+                            {s.points != null && (
+                              <span className="mr-1.5 inline-flex rounded bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-ink-700">
+                                +{s.points}
+                              </span>
+                            )}
                             <strong className="font-semibold text-ink-900">{s.label}</strong>
+                            {s.category ? (
+                              <span className="ml-1 text-[10px] text-ink-400">
+                                {s.category}
+                              </span>
+                            ) : null}
                             {s.detail ? <span> {s.detail}</span> : null}
                           </li>
                         ))}
@@ -608,10 +619,10 @@ export function Scorecard({
                       <div className="grid gap-3 sm:grid-cols-2">
                         {renderGroup("On-road safety", safety, "bg-orange-400")}
                         {renderGroup(
-                          fraud.length && r.riskScore > 0
-                            ? `Fraud / reliability risk · ${r.riskScore}`
-                            : "Fraud / reliability risk",
-                          fraud,
+                          risk.length && r.riskScore > 0
+                            ? `Carrier risk · ${r.riskScore}`
+                            : "Carrier risk",
+                          risk,
                           "bg-red-400",
                           siblingNote
                         )}
@@ -631,8 +642,8 @@ export function Scorecard({
         Inspection Selection System score (1–100) and tier (Inspect / Optional /
         Pass). FMCSA does not publish ISS; this is our reproduction of the public
         ISS-CSA algorithm from FMCSA BASIC percentiles and investigation history,
-        so treat it as an estimate. It&apos;s context only — it does not drive the
-        carrier&apos;s risk rating.{" "}
+        so treat it as an estimate. ISS is also one input into the carrier risk
+        score when it reaches Optional or Inspect.{" "}
         <span className="font-medium text-ink-600">CI*</span> (Crash, percentile
         on top with crashes-per-million-miles below) and{" "}
         <span className="font-medium text-ink-600">HM*</span> (Hazmat) are our

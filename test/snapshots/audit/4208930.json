@@ -3,6 +3,13 @@
   "reasonNote": "FATAL: ≥1 fatal crash in 24mo",
   "carrierName": "KP MARTIN ENTERPRISE LLC",
   "riskLevel": "High",
+  "riskScore": 62,
+  "riskTier": "High",
+  "riskContributions": [
+    "+30 [Authority / insurance] Recent involuntary revocation",
+    "+24 [Authority / insurance] Insurance churn",
+    "+8 [Safety / compliance] Elevated safety context"
+  ],
   "reasonLabels": [
     "Insurance churn",
     "Recent revocation",

@@ -119,6 +119,30 @@ export interface Reason {
   detail: string;
 }
 
+export type RiskFactorCategory =
+  | "Authority / insurance"
+  | "Identity / chameleon"
+  | "Operations"
+  | "Safety / compliance"
+  | "Context";
+
+export type RiskFactorKind = "core" | "context";
+
+export interface RiskFactorContribution {
+  category: RiskFactorCategory;
+  label: string;
+  points: number;
+  detail: string;
+  /** Core factors are allowed to unlock weak corroborators like free email. */
+  kind: RiskFactorKind;
+}
+
+export interface CarrierIdentityRiskSignals {
+  freeEmailDomain: string | null;
+  residentialAddressMarker: string | null;
+  shutdownIdentityLinks: string[];
+}
+
 /** One cell in the scorecard — covers one axis for one carrier. */
 export interface AxisCell {
   status: AxisStatus;
@@ -154,14 +178,13 @@ export interface CarrierRow {
    *  spot). + tier (High/Moderate/Low). Null if data-insufficient. */
   safetyScore: number | null;
   safetyTier: string | null;
-  /** Augie Risk Score (0-100, higher=worse) — composite of identity/deception,
-   *  financial-distress, tenure, and location signals (phantom fleet, insurance
-   *  churn/lapse, chameleon, prior revoke, new authority, insurer & ZIP
-   *  reputation). + tier (High/Moderate/Low/None) + the contributing factor
-   *  strings. FMCSA has no equivalent — this is the differentiated axis. */
+  /** Carrier Risk Score (0-100, higher=worse) — transparent additive score across
+   *  authority/insurance, identity/chameleon, operations, safety/compliance, and
+   *  contextual corroborators. It is a heuristic index, not a probability. */
   riskScore: number;
   riskTier: string;
   riskFactors: string[];
+  riskContributions: RiskFactorContribution[];
   /** Top named shared-fleet sibling (the single largest cross-DOT VIN-overlap
    *  partner), surfaced when the chameleon-shared-fleet reason fires. `siblingTier`
    *  is its own Augie verdict — filled in by the API route via a second scoring
@@ -394,25 +417,80 @@ function computeSafetyScore(
   return { score, tier };
 }
 
-/** Augie Risk Score (0-100, higher = worse): a composite of identity/deception,
- *  financial-distress, tenure, and location signals, point weights calibrated to
- *  each signal's measured lift on future involuntary revocation. Points are
- *  additive because the signals compound (backtest: phantom + sub-ins → 73%
- *  revocation; + new-authority → 82%), capped at 100. Chameleon facets
- *  (shared-VIN, successor-revoke, address cluster) are correlated, so only the
- *  strongest one counts (no double-count). It's a heuristic index, NOT a
- *  calibrated probability. FMCSA has no equivalent — this is the differentiated
- *  axis. Validated against future revocation; eventual target is customer
- *  fraud/loss data. */
+type RiskScoreResult = {
+  score: number;
+  tier: string;
+  factors: string[];
+  contributions: RiskFactorContribution[];
+};
+
+function formatRiskContribution(f: RiskFactorContribution): string {
+  return `+${f.points} ${f.label} — ${f.detail}`;
+}
+
+function refreshRiskScore(risk: RiskScoreResult): void {
+  risk.score = Math.min(
+    100,
+    risk.contributions.reduce((sum, f) => sum + f.points, 0)
+  );
+  risk.tier = riskTierOf(risk.score);
+  risk.factors = risk.contributions.map(formatRiskContribution);
+}
+
+function addRiskContribution(
+  risk: RiskScoreResult,
+  contribution: RiskFactorContribution
+): void {
+  if (contribution.points <= 0) return;
+  risk.contributions.push(contribution);
+  refreshRiskScore(risk);
+}
+
+function hasCoreRiskContribution(risk: RiskScoreResult): boolean {
+  return risk.contributions.some((f) => f.kind === "core");
+}
+
+function parseDateishMs(value: string | null): number | null {
+  if (!value) return null;
+  const s = value.trim();
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const ms = m
+    ? Date.UTC(Number(m[3]), Number(m[1]) - 1, Number(m[2]))
+    : Date.parse(s.slice(0, 10));
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function daysAgoDateish(value: string | null): number | null {
+  const ms = parseDateishMs(value);
+  if (ms == null) return null;
+  return (Date.now() - ms) / (1000 * 60 * 60 * 24);
+}
+
+/** Carrier Risk Score (0-100, higher = worse): one transparent score across
+ *  regulatory standing, identity/chameleon evidence, operating evidence, safety,
+ *  and weak corroborators. We use the "balanced" point schedule from the May
+ *  2026 shutdown/revocation review: strong signals move the score directly;
+ *  soft markers such as ZIP, insurer, free email, or residential address stay
+ *  low-weight and cannot create a high-risk call on their own. This is a
+ *  heuristic index, not a calibrated probability. */
 function computeRiskScore(
-  c: FmcsaCarrier
-): { score: number; tier: string; factors: string[] } {
-  let pts = 0;
-  const factors: string[] = [];
-  const add = (p: number, label: string) => {
-    pts += p;
-    factors.push(label);
+  c: FmcsaCarrier,
+  safetyScore: number | null,
+  identitySignals?: CarrierIdentityRiskSignals
+): RiskScoreResult {
+  const risk: RiskScoreResult = {
+    score: 0,
+    tier: "None",
+    factors: [],
+    contributions: [],
   };
+  const add = (
+    points: number,
+    category: RiskFactorCategory,
+    label: string,
+    detail: string,
+    kind: RiskFactorKind = "core"
+  ) => addRiskContribution(risk, { category, label, points, detail, kind });
 
   // Phantom fleet (13.5x lift) — "claims tiny, runs hundreds": distinct power-unit
   // VINs ≫ reported PU. Gated to reported PU ≤ 5 so it targets shells, not legit
@@ -422,50 +500,131 @@ function computeRiskScore(
   // / new-authority — the backtest's phantom+sub-ins (73%) / +new-auth (82%) combo.
   const phantom =
     c.totalPowerUnits <= 5 && c.puVinsInspected >= 10 && c.puVinsInspected >= 4 * Math.max(c.totalPowerUnits, 1);
+  const bipdRelevant = c.bipdInsuranceRequired === "Y" || c.bipdRequiredAmount > 0;
   const subMin =
-    c.bipdInsuranceOnFile === 0 ||
-    (c.bipdRequiredAmount > 0 && c.bipdInsuranceOnFile < c.bipdRequiredAmount);
-  const insChurn = c.rapidReplaceFlag || c.insuranceCancellations24mo >= 3;
+    bipdRelevant &&
+    (c.bipdInsuranceOnFile === 0 ||
+      (c.bipdRequiredAmount > 0 && c.bipdInsuranceOnFile < c.bipdRequiredAmount));
+  const insChurn =
+    c.rapidReplaceFlag ||
+    c.insuranceCancellations24mo >= 2 ||
+    c.insuranceDistinctPolicies24mo >= 3;
   const newAuthDays = daysSinceAuthorityIssued(c.dotAddDate);
-  const newAuth = newAuthDays != null && newAuthDays < 730;
-  if (phantom) {
+  const newAuth = newAuthDays != null && newAuthDays < 365;
+  const code = (c.statusCode ?? "").toUpperCase();
+  const allowed = (c.allowedToOperate ?? "").toUpperCase();
+  if (code && code !== "A" && allowed !== "Y") {
     add(
-      22,
-      `Phantom fleet — ${c.puVinsInspected} distinct trucks inspected vs ${c.totalPowerUnits} reported power unit(s) (rented/shared authority)`
+      35,
+      "Authority / insurance",
+      "Operating authority not active",
+      `FMCSA status_code=${code}; carrier is not currently active.`
     );
-    if (subMin || insChurn || newAuth)
-      add(20, `Phantom fleet corroborated by financial distress / new authority`);
   }
-  // Insurance churn (9.1x)
-  if (insChurn) {
+  const rating = (c.safetyRating ?? "").trim().toUpperCase();
+  if (rating === "U" || rating === "UNSATISFACTORY") {
+    add(
+      35,
+      "Safety / compliance",
+      "Unsatisfactory safety rating",
+      "FMCSA safety rating is Unsatisfactory."
+    );
+  } else if (rating === "C" || rating === "CONDITIONAL") {
+    add(
+      35,
+      "Safety / compliance",
+      "Conditional safety rating",
+      "FMCSA safety rating is Conditional."
+    );
+  }
+  const involDaysAgo = daysAgo(c.mostRecentInvoluntaryDate);
+  if (involDaysAgo != null && involDaysAgo <= 730) {
+    add(
+      30,
+      "Authority / insurance",
+      "Recent involuntary revocation",
+      `Own authority was involuntarily revoked within 24 months (${c.mostRecentInvoluntaryDate}).`
+    );
+  } else if (
+    c.priorRevokeFlag &&
+    c.priorRevokeDotNumber != null &&
+    c.priorRevokeDotNumber !== c.dotNumber
+  ) {
+    add(
+      24,
+      "Identity / chameleon",
+      "FMCSA predecessor-revoke flag",
+      c.priorRevokeDotNumber > 0
+        ? `FMCSA links this carrier to previously revoked DOT ${c.priorRevokeDotNumber}.`
+        : "FMCSA links this carrier to a previously revoked predecessor."
+    );
+  } else if (c.priorRevokeFlag) {
+    add(
+      12,
+      "Authority / insurance",
+      "Historical revocation context",
+      "FMCSA prior-revoke flag is present, but no separate predecessor DOT is recorded.",
+      "context"
+    );
+  }
+  if (subMin) {
+    add(
+      30,
+      "Authority / insurance",
+      "$0/sub-minimum BIPD",
+      c.bipdInsuranceOnFile === 0
+        ? `$0 BIPD on file vs ${fmtMoney(c.bipdRequiredAmount)} FMCSA-required.`
+        : `${fmtMoney(c.bipdInsuranceOnFile)} BIPD on file vs ${fmtMoney(c.bipdRequiredAmount)} FMCSA-required.`
+    );
+  } else if (c.bipdImminentLapse) {
     add(
       28,
-      `Insurance churn — ${c.insuranceCancellations24mo} cancellation(s) in 24mo${
-        c.rapidReplaceFlag ? " incl. rapid cancel+replace" : ""
+      "Authority / insurance",
+      "Imminent BIPD lapse",
+      `Terminal BIPD cancellation filed${
+        c.bipdPendingCancelDate ? ` for ${c.bipdPendingCancelDate}` : ""
+      } with no replacement${
+        c.bipdDaysToLapse != null
+          ? c.bipdDaysToLapse < 0
+            ? "; lapse is already past due"
+            : `; ${c.bipdDaysToLapse} day(s) to lapse`
+          : ""
+      }.`
+    );
+  }
+  if (phantom) {
+    add(
+      phantom && (subMin || insChurn || newAuth) ? 42 : 28,
+      "Identity / chameleon",
+      "Phantom fleet",
+      `${c.puVinsInspected} distinct trucks inspected vs ${c.totalPowerUnits} reported power unit(s)${
+        subMin || insChurn || newAuth ? "; corroborated by insurance distress or new authority." : "."
       }`
     );
   }
-  // Enforcement history (7.5x)
+  if (insChurn) {
+    const bits: string[] = [];
+    if (c.insuranceCancellations24mo >= 2)
+      bits.push(`${c.insuranceCancellations24mo} cancellation(s) in 24mo`);
+    if (c.insuranceDistinctPolicies24mo >= 3)
+      bits.push(`${c.insuranceDistinctPolicies24mo} distinct policies in 24mo`);
+    if (c.rapidReplaceFlag) bits.push("rapid cancel+replace");
+    add(
+      24,
+      "Authority / insurance",
+      "Insurance churn",
+      bits.join("; ")
+    );
+  }
   if (c.enforcementCasesCount >= 1) {
-    add(22, `FMCSA enforcement — ${c.enforcementCasesCount} case(s) on record`);
-  }
-  // Insurance below required (7.1x) OR, if currently covered, imminent lapse (3.0x).
-  if (subMin) {
-    add(26, `Insurance below FMCSA-required level`);
-  } else if (c.bipdImminentLapse) {
-    add(14, `BIPD coverage lapsing soon with no replacement filed`);
-  }
-  // Involuntary revocation. Two distinct fields: priorRevokeFlag is FMCSA's
-  // chameleon flag against a PREDECESSOR DOT; mostRecentInvoluntaryDate is THIS
-  // carrier's own authority being pulled. A recent own-revocation (≤24mo) is the
-  // stronger reincarnation/distress signal and was previously missed entirely —
-  // the score only read the predecessor flag, so e.g. ALAKE (revoked 3 weeks
-  // ago, $0 insurance, 4 cancellations) scored a misleadingly-moderate 54.
-  const involDaysAgo = daysAgo(c.mostRecentInvoluntaryDate);
-  if (involDaysAgo != null && involDaysAgo <= 730) {
-    add(22, `Own authority involuntarily revoked in the last 24 months (${c.mostRecentInvoluntaryDate})`);
-  } else if (c.priorRevokeFlag) {
-    add(18, `Prior involuntary authority revocation`);
+    add(
+      16,
+      "Safety / compliance",
+      "FMCSA enforcement case",
+      `${c.enforcementCasesCount} closed enforcement case(s)${
+        c.enforcementRecentDate ? `, latest ${c.enforcementRecentDate}` : ""
+      }.`
+    );
   }
   // Chameleon contribution is added in scoreCarrier from the carrier-tier
   // chameleon results (shared-fleet / diffuse-equipment / address-cluster tiers
@@ -476,58 +635,158 @@ function computeRiskScore(
   // different chameleon thresholds disagreeing (score said Low, tier said
   // Critical). See applyChameleonRisk below.
 
-  // Limited operating tenure — an industry-standard vetting gate, not a fraud
-  // accusation. Highway flags carriers under 180 days; ATG under 90. The
-  // temporal backtest puts new authority at ~2.05× future involuntary
-  // revocation. A cross-sectional snapshot UNDERSTATES this (revocation lags
-  // 1–2yr behind the violations that cause it), which is exactly why the gate
-  // has to be forward-looking. Tiered to those breakpoints: <90d/<180d badge
-  // on their own (matching ATG/Highway); 180d–2yr only sharpen another signal.
   const months = newAuthDays != null ? Math.floor(newAuthDays / 30) : null;
   if (newAuthDays != null) {
     if (newAuthDays < 90)
-      add(18, `Very new authority — ${months}mo old (below ATG's 90-day tenure floor)`);
+      add(
+        10,
+        "Operations",
+        "Very new authority",
+        `${months}mo old; below the 90-day industry tenure floor.`,
+        "context"
+      );
     else if (newAuthDays < 180)
-      add(12, `New authority — ${months}mo old (below Highway's 180-day tenure floor)`);
+      add(
+        6,
+        "Operations",
+        "New authority",
+        `${months}mo old; below the 180-day vetting breakpoint.`,
+        "context"
+      );
     else if (newAuthDays < 365)
-      add(6, `New authority — ${months}mo old (under 1 year)`);
-    else if (newAuthDays < 730)
-      add(3, `Limited tenure — ${months}mo old (under 2 years)`);
+      add(3, "Operations", "Authority under 1 year", `${months}mo old.`, "context");
   }
-  // Insurer reputation — a real, backtested risk marker (specialty/surplus-lines
-  // insurers' books revoke 2–5× more), surfaced on its own and called out. Modest
-  // weight by design: insurer (≤14) + ZIP (≤10) can't on their own clear the
-  // Moderate bar (30), so circumstantial markers never manufacture a fraud
-  // verdict — they only sharpen a carrier that already has a real signal.
-  const insr = lookupInsurerRisk(c.bipdInsurerName);
-  if (insr) {
+
+  if (c.cargoInsuranceRequired && !c.cargoInsuranceOnFile) {
     add(
-      insr.tier === "high" ? 14 : 7,
-      `High-risk insurer — ${c.bipdInsurerName} (its carriers revoke ${insr.lift}× more often than average)`
-    );
-  }
-  // ZIP reputation — physical-address ZIP's carrier shutdown rate vs national
-  // base (revoked/OOS authorities ÷ total). Same lift approach as insurer;
-  // independently reproduces the FreightWaves new-authority-surge hotspots
-  // (Fresno/Bakersfield/Manteca/Laredo at 2–3×). Soft marker — these are also
-  // legitimate freight hubs, so it's deliberately light and never flags alone.
-  const zipRisk = lookupZipRisk(c.physicalZip);
-  if (zipRisk) {
-    add(
-      zipRisk.tier === "high" ? 10 : 7,
-      `High-shutdown ZIP ${c.physicalZip} — carriers based here are revoked ${zipRisk.lift}× more often than average`
+      14,
+      "Authority / insurance",
+      "Cargo filing missing when required",
+      "FMCSA marks cargo insurance as required, but no cargo filing is on record."
     );
   }
 
-  const score = Math.min(100, pts);
-  return { score, tier: riskTierOf(score), factors };
+  const mcs150AgeDays = daysAgo(c.mcs150Date);
+  const bipdAgeDays = daysAgoDateish(c.bipdPolicyEffectiveDate);
+  const shelfActivation =
+    c.statusCode === "A" &&
+    c.hasPropertyAuthority &&
+    c.totalPowerUnits >= 3 &&
+    newAuthDays != null &&
+    newAuthDays >= 730 &&
+    mcs150AgeDays != null &&
+    mcs150AgeDays <= 365 &&
+    bipdAgeDays != null &&
+    bipdAgeDays <= 365 &&
+    c.fleetSizeFlag === "low-activity";
+  if (shelfActivation) {
+    add(
+      14,
+      "Operations",
+      "Dormant authority reactivation pattern",
+      `DOT is ${Math.floor(newAuthDays / 365)}y old, but has fresh MCS-150/insurance activity and low inspection activity for ${c.totalPowerUnits} PU.`
+    );
+  }
+
+  const safetyHard =
+    c.fastActHighRisk ||
+    c.hasSeriousViolation ||
+    c.issTier === "Inspect" ||
+    (c.crashesPerMillionMiles != null && c.crashesPerMillionMiles >= 5 && c.crashTotal >= 2);
+  const safetyContext =
+    !safetyHard &&
+    (c.issTier === "Optional" ||
+      (c.crashesPerMillionMiles != null && c.crashesPerMillionMiles >= 2 && c.crashTotal >= 2) ||
+      (safetyScore != null && safetyScore >= 65));
+  if (safetyHard) {
+    const bits: string[] = [];
+    if (c.issTier === "Inspect" && c.issScore != null) bits.push(`ISS ${c.issScore} Inspect`);
+    if (c.fastActHighRisk) bits.push("FAST Act high-risk");
+    if (c.hasSeriousViolation) bits.push(`${c.seriousViolationCount} acute/critical serious violation(s)`);
+    if (c.crashesPerMillionMiles != null && c.crashesPerMillionMiles >= 5)
+      bits.push(`${c.crashesPerMillionMiles.toFixed(2)} crashes per million miles`);
+    add(18, "Safety / compliance", "Hard safety signal", bits.join("; "));
+  } else if (safetyContext) {
+    const bits: string[] = [];
+    if (c.issTier === "Optional" && c.issScore != null) bits.push(`ISS ${c.issScore} Optional`);
+    if (c.crashesPerMillionMiles != null && c.crashesPerMillionMiles >= 2)
+      bits.push(`${c.crashesPerMillionMiles.toFixed(2)} crashes per million miles`);
+    if (safetyScore != null && safetyScore >= 65) bits.push(`safety score ${safetyScore}`);
+    add(8, "Safety / compliance", "Elevated safety context", bits.join("; "), "context");
+  }
+
+  const insr = lookupInsurerRisk(c.bipdInsurerName);
+  const zipRisk = lookupZipRisk(c.physicalZip);
+  const contextParts: string[] = [];
+  let contextPoints = 0;
+  if (insr) {
+    contextPoints = Math.max(contextPoints, insr.tier === "high" ? 8 : 4);
+    contextParts.push(
+      `${c.bipdInsurerName} insurer book revokes ${insr.lift}x average (${insr.tier})`
+    );
+  }
+  if (zipRisk) {
+    contextPoints = Math.max(contextPoints, zipRisk.tier === "high" ? 8 : 4);
+    contextParts.push(
+      `${c.physicalZip} ZIP shutdown/revoke lift ${zipRisk.lift}x (${zipRisk.tier})`
+    );
+  }
+  if (contextPoints > 0) {
+    add(
+      contextPoints,
+      "Context",
+      "Insurer / ZIP risk context",
+      contextParts.join("; "),
+      "context"
+    );
+  }
+
+  if (identitySignals?.shutdownIdentityLinks.length) {
+    add(
+      24,
+      "Identity / chameleon",
+      "Identity tied to shut-down revoked DOT",
+      identitySignals.shutdownIdentityLinks.slice(0, 3).join("; ")
+    );
+  }
+
+  return risk;
 }
 
-/** Risk-score tier. Low requires ≥10 (the <180-day tenure floor or any single
- *  real signal); milder tenure (3–6 pts) stays None so an established carrier
- *  with nothing else reads None, not a noisy Low. */
+function addWeakIdentityContext(
+  risk: RiskScoreResult,
+  identitySignals?: CarrierIdentityRiskSignals
+): void {
+  if (!identitySignals || !hasCoreRiskContribution(risk)) return;
+  const markers: string[] = [];
+  if (identitySignals.freeEmailDomain) {
+    markers.push(`free email domain ${identitySignals.freeEmailDomain}`);
+  }
+  if (identitySignals.residentialAddressMarker) {
+    markers.push(`address marker ${identitySignals.residentialAddressMarker}`);
+  }
+  if (!markers.length) return;
+  addRiskContribution(risk, {
+    category: "Context",
+    label: "Personal contact/address corroborator",
+    points: 5,
+    detail: markers.join("; "),
+    kind: "context",
+  });
+}
+
+/** Risk-score tier. Bands match the balanced proposal:
+ *  80+ Critical, 60-79 High, 35-59 Medium, 15-34 Low/context, else None. */
 function riskTierOf(score: number): string {
-  return score >= 60 ? "High" : score >= 30 ? "Moderate" : score >= 10 ? "Low" : "None";
+  return score >= 80
+    ? "Critical"
+    : score >= 60
+      ? "High"
+      : score >= 35
+        ? "Medium"
+        : score >= 15
+          ? "Low"
+          : "None";
 }
 
 function bumpUp(t: RiskLevel): RiskLevel {
@@ -1179,22 +1438,28 @@ export function siblingStatusOf(c: FmcsaCarrier): SiblingStatus {
 function scoreCarrier(
   c: FmcsaCarrier,
   loadInfo: { loadIds: Set<string>; hazmatLoadIds: Set<string> },
-  siblingStatusMap: Map<number, SiblingStatus> = new Map()
+  siblingStatusMap: Map<number, SiblingStatus> = new Map(),
+  identitySignalsMap: Map<number, CarrierIdentityRiskSignals> = new Map()
 ): CarrierRow {
   const peer = peerGroupForPU(c.totalPowerUnits);
 
   const safety = computeSafetyScore(c, peer);
-  const risk = computeRiskScore(c);
+  const identitySignals = c.dotNumber == null ? undefined : identitySignalsMap.get(c.dotNumber);
+  const risk = computeRiskScore(c, safety.score, identitySignals);
   // Chameleon contribution to the risk score, derived from the carrier-tier
   // chameleon findings computed below (so the score and the verdict agree).
   // Strongest single facet, with the multi-signal cluster as a 30-pt floor;
   // folded into the risk score just before the risk-score floor bump.
-  let chamRiskPts = 0;
-  let chamRiskLabel = "";
-  const setCham = (p: number, label: string) => {
-    if (p > chamRiskPts) {
-      chamRiskPts = p;
-      chamRiskLabel = label;
+  let fleetRiskContribution: RiskFactorContribution | null = null;
+  const setFleetRisk = (p: number, label: string, detail: string) => {
+    if (!fleetRiskContribution || p > fleetRiskContribution.points) {
+      fleetRiskContribution = {
+        category: "Identity / chameleon",
+        label,
+        points: p,
+        detail,
+        kind: "core",
+      };
     }
   };
   const crash = classifyCrash(c, peer);
@@ -1763,10 +2028,13 @@ function scoreCarrier(
       } else if (addrTier === "high" && level !== "Critical") {
         level = "High";
       }
-      setCham(
-        addrTier === "critical" ? 16 : addrTier === "high" ? 12 : 6,
-        `${oos} out-of-service DOTs at this carrier's physical address`
-      );
+      addRiskContribution(risk, {
+        category: "Identity / chameleon",
+        label: "Address OOS cluster",
+        points: addrTier === "critical" ? 18 : addrTier === "high" ? 13 : 8,
+        detail: `${oos} out-of-service DOTs share this carrier's physical address.`,
+        kind: "core",
+      });
     }
   }
 
@@ -1856,9 +2124,10 @@ function scoreCarrier(
         } else if (fleetTier === "high" && level !== "Critical") {
           level = "High";
         }
-        setCham(
-          fleetTier === "critical" ? 22 : fleetTier === "high" ? 16 : 8,
-          `${pct.toFixed(0)}% of inspected VINs shared with active DOT ${siblingDot}`
+        setFleetRisk(
+          fleetTier === "caution" ? 8 : 28,
+          "Shared fleet with another DOT",
+          `${pct.toFixed(0)}% of inspected VINs shared with active DOT ${siblingDot}.`
         );
         // Linked-authority status: a concentrated fleet shared with a sibling
         // whose authority was involuntarily REVOKED is the chameleon-successor
@@ -1870,12 +2139,15 @@ function scoreCarrier(
           siblingRevokedDate = sStat.date;
           if (sStat.kind === "revoked") {
             level = "Critical";
-            setCham(
-              40,
-              `Runs the fleet of DOT ${siblingDot}, whose authority was involuntarily revoked${
+            addRiskContribution(risk, {
+              category: "Identity / chameleon",
+              label: "Linked authority revoked",
+              points: 24,
+              detail: `Runs the fleet of DOT ${siblingDot}, whose authority was involuntarily revoked${
                 sStat.date ? ` ${sStat.date}` : ""
-              } — chameleon-successor pattern`
-            );
+              }.`,
+              kind: "core",
+            });
           }
         }
       }
@@ -1962,9 +2234,10 @@ function scoreCarrier(
         ) {
           level = "Medium";
         }
-        setCham(
-          diffuseTier === "critical" ? 22 : diffuseTier === "high" ? 16 : 8,
-          `${diffPct.toFixed(0)}% of inspected VINs spread across ${nSibs} other active DOTs`
+        setFleetRisk(
+          diffuseTier === "caution" ? 8 : 24,
+          "Diffuse equipment sharing",
+          `${diffPct.toFixed(0)}% of inspected VINs spread across ${nSibs} other active DOTs.`
         );
         // Largest of the diffuse siblings is a revoked authority → chameleon-
         // successor tell. Milder than the concentrated case (diffuse is noisier):
@@ -1977,12 +2250,15 @@ function scoreCarrier(
             siblingRevokedDate = sStat.date;
             if (sStat.kind === "revoked") {
               if (level !== "Critical") level = "High";
-              setCham(
-                24,
-                `Largest linked authority DOT ${siblingRef.dot} was involuntarily revoked${
+              addRiskContribution(risk, {
+                category: "Identity / chameleon",
+                label: "Linked authority revoked",
+                points: 24,
+                detail: `Largest linked authority DOT ${siblingRef.dot} was involuntarily revoked${
                   sStat.date ? ` ${sStat.date}` : ""
-                } — chameleon-successor pattern`
-              );
+                }.`,
+                kind: "core",
+              });
             }
           }
         }
@@ -2006,24 +2282,27 @@ function scoreCarrier(
     }
   }
 
-  // Fold the carrier-tier chameleon contribution into the risk score so the
-  // number and the verdict agree (this is why VOXSER — 35% diffuse + cluster,
-  // Critical — no longer reads "Risk 7"). Done before the floor bump below.
-  if (chamRiskPts > 0) {
-    risk.score = Math.min(100, risk.score + chamRiskPts);
-    risk.factors.push(chamRiskLabel);
-    risk.tier = riskTierOf(risk.score);
+  // Fold the strongest equipment-sharing signal into the carrier risk score.
+  // Address clusters and revoked-linked authorities are added independently
+  // above because they are different evidence, not the same VIN-overlap facet.
+  if (fleetRiskContribution) {
+    addRiskContribution(risk, fleetRiskContribution);
   }
+  addWeakIdentityContext(risk, identitySignals);
 
-  // Risk-score floor — a strong risk profile drives the row tier even when no
-  // single axis cell crossed its own threshold (the risk score aggregates
-  // phantom-fleet, insurance churn, sub-minimum BIPD, prior revocation,
-  // chameleon, tenure, insurer, and ZIP signals). ≥60 (risk "High") → Critical;
-  // 30–59 (risk "Moderate") → at least High.
-  if (risk.score >= 60) {
+  // Risk-score floor — the balanced bands drive the row tier only upward. Hard
+  // regulatory gates can still force a row Critical even when their standalone
+  // point contribution is below 80, because a legal tendering gate is not the
+  // same thing as a learned fraud-proxy weight.
+  const hasNonSafetyCoreRisk = risk.contributions.some(
+    (f) => f.kind === "core" && f.category !== "Safety / compliance"
+  );
+  if (risk.score >= 80) {
     level = "Critical";
-  } else if (risk.score >= 30 && level !== "Critical") {
+  } else if (risk.score >= 60 && level !== "Critical") {
     level = "High";
+  } else if (risk.score >= 15 && hasNonSafetyCoreRisk && level === "Low") {
+    level = "Medium";
   }
 
   // Compute sort metadata: which statistical axis fired worst, and how badly.
@@ -2140,10 +2419,11 @@ function scoreCarrier(
     issGroup: c.issGroup,
     safetyScore: safety.score,
     safetyTier: safety.tier,
-    riskScore: risk.score,
-    riskTier: risk.tier,
-    riskFactors: risk.factors,
-    siblingDot: siblingRef?.dot ?? null,
+      riskScore: risk.score,
+      riskTier: risk.tier,
+      riskFactors: risk.factors,
+      riskContributions: risk.contributions,
+      siblingDot: siblingRef?.dot ?? null,
     siblingName: siblingRef?.name ?? null,
     siblingTier: null,
     siblingStatus: siblingStatusKind,
@@ -2182,7 +2462,8 @@ function scoreCarrier(
 export function analyze(
   loads: LoadInput[],
   carriers: Map<number, FmcsaCarrier>,
-  siblingStatusMap: Map<number, SiblingStatus> = new Map()
+  siblingStatusMap: Map<number, SiblingStatus> = new Map(),
+  identitySignalsMap: Map<number, CarrierIdentityRiskSignals> = new Map()
 ): AuditResult {
   const byCarrier = new Map<
     number,
@@ -2208,7 +2489,7 @@ export function analyze(
       unresolvedDots.push(dot);
       continue;
     }
-    rows.push(scoreCarrier(c, g, siblingStatusMap));
+    rows.push(scoreCarrier(c, g, siblingStatusMap, identitySignalsMap));
   }
 
   const SORT_ORDER: RiskLevel[] = ["Critical", "High", "Medium", "Low"];

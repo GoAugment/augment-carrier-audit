@@ -3,6 +3,9 @@
   "reasonNote": "HIGH: Unsafe Driving alert",
   "carrierName": "BOZ TRUCKING LLC",
   "riskLevel": "Low",
+  "riskScore": 0,
+  "riskTier": "None",
+  "riskContributions": [],
   "reasonLabels": [],
   "axes": {
     "crash": "clean",

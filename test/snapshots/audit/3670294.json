@@ -3,6 +3,13 @@
   "reasonNote": "CRITICAL: $0 BIPD",
   "carrierName": "ROAD EXPERTS LLC",
   "riskLevel": "Critical",
+  "riskScore": 42,
+  "riskTier": "Medium",
+  "riskContributions": [
+    "+30 [Authority / insurance] $0/sub-minimum BIPD",
+    "+8 [Safety / compliance] Elevated safety context",
+    "+4 [Context] Insurer / ZIP risk context"
+  ],
   "reasonLabels": [
     "Insurance lapsed",
     "Why the FMCSA SMS scores look clean"

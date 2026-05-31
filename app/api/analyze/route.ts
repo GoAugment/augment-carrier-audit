@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseInput, analyze, siblingStatusOf, type SiblingStatus } from "@/lib/analyzer";
+import {
+  parseInput,
+  analyze,
+  siblingStatusOf,
+  type CarrierIdentityRiskSignals,
+  type SiblingStatus,
+} from "@/lib/analyzer";
 import { fetchCarriers, type FmcsaCarrier } from "@/lib/fmcsa";
 import { nationalThresholds, maxLoadsPerSubmission } from "@/lib/thresholds";
 import { logEvent, hashIp } from "@/lib/log";
@@ -40,6 +46,13 @@ export async function POST(req: NextRequest) {
   const t0 = Date.now();
   const dots = Array.from(new Set(loads.map((l) => l.dot)));
   const carriers = await fetchCarriers(dots);
+  let identitySignals = new Map<number, CarrierIdentityRiskSignals>();
+  try {
+    const { fetchIdentityRiskSignals } = await import("@/lib/fmcsa-identity");
+    identitySignals = await fetchIdentityRiskSignals(dots);
+  } catch (err) {
+    console.warn("identity risk signals unavailable", err);
+  }
 
   // Pre-fetch every carrier's largest cross-DOT VIN-overlap sibling (a raw field
   // on the FMCSA record) so we know each sibling's authority STATUS before
@@ -64,7 +77,7 @@ export async function POST(req: NextRequest) {
     if (c.dotNumber != null) siblingStatusMap.set(c.dotNumber, siblingStatusOf(c));
   }
 
-  const result = analyze(loads, carriers, siblingStatusMap);
+  const result = analyze(loads, carriers, siblingStatusMap, identitySignals);
 
   // Score the named siblings for the DISPLAY tier chip (shown only when the
   // sibling is still active; revoked/inactive siblings show their status

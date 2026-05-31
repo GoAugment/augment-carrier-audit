@@ -3,6 +3,11 @@
   "reasonNote": "CLEAN-BIG: Schneider National",
   "carrierName": "SCHNEIDER NATIONAL CARRIERS INC",
   "riskLevel": "Low",
+  "riskScore": 8,
+  "riskTier": "None",
+  "riskContributions": [
+    "+8 [Safety / compliance] Elevated safety context"
+  ],
   "reasonLabels": [],
   "axes": {
     "crash": "clean",

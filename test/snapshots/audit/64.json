@@ -3,6 +3,11 @@
   "reasonNote": "CLEAN: active interstate, no flags",
   "carrierName": "CHEROKEE CULVERT COMPANY INC",
   "riskLevel": "Low",
+  "riskScore": 8,
+  "riskTier": "None",
+  "riskContributions": [
+    "+8 [Safety / compliance] Elevated safety context"
+  ],
   "reasonLabels": [],
   "axes": {
     "crash": "clean",

@@ -3,6 +3,11 @@
   "reasonNote": "CLEAN-BIG: Werner Enterprises",
   "carrierName": "WERNER ENTERPRISES INC",
   "riskLevel": "Low",
+  "riskScore": 18,
+  "riskTier": "Low",
+  "riskContributions": [
+    "+18 [Safety / compliance] Hard safety signal"
+  ],
   "reasonLabels": [
     "ISS — Inspect (top inspection priority)"
   ],

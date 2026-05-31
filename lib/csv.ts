@@ -4,7 +4,7 @@
  * Format mirrors the on-screen scorecard plus the prose reasoning, so a broker
  * can file the CSV as their audit trail without losing fidelity. The original
  * per-axis columns are preserved; two extra column groups are appended:
- *   - FMCSA: the Augie scores (ISS / Safety / Risk) + the raw BASIC percentiles
+ *   - FMCSA: the ISS estimate, Safety helper score, Carrier Risk score + raw BASIC percentiles
  *   - Regulatory: insurance / lapse / cancellation, revocations, enforcement,
  *     authority, MC# — the standing details behind the verdict.
  */
@@ -69,7 +69,7 @@ const HEADERS = [
   // --- Regulatory: risk + insurance + standing ---
   "Risk score",
   "Risk tier",
-  "Risk factors",
+  "Risk contributions",
   "BIPD on file ($k)",
   "BIPD required ($k)",
   "Insurer",
@@ -91,6 +91,9 @@ const HEADERS = [
 function row(r: CarrierRow): string {
   const c = r.carrier;
   const reasons = r.reasons.map((rs) => `${rs.label}: ${rs.detail}`).join(" | ");
+  const riskContributions = r.riskContributions
+    .map((f) => `+${f.points} [${f.category}] ${f.label}: ${f.detail}`)
+    .join("; ");
   return [
     r.rank,
     r.riskLevel,
@@ -135,7 +138,7 @@ function row(r: CarrierRow): string {
     // Regulatory
     r.riskScore,
     r.riskTier,
-    r.riskFactors.join("; "),
+    riskContributions || r.riskFactors.join("; "),
     c.bipdInsuranceOnFile,
     c.bipdRequiredAmount,
     c.bipdInsurerName,
@@ -168,7 +171,7 @@ export function toCsv(result: AuditResult): string {
     `# Tiers: ${result.bySeverity.Critical} Critical, ${result.bySeverity.High} High, ${result.bySeverity.Medium} Medium`
   );
   lines.push(
-    `# Methodology: FMCSA SMS BASIC percentiles (peer-ranked) + Augie ISS/Safety/Risk scores. ` +
+    `# Methodology: FMCSA SMS BASIC percentiles (peer-ranked) + ISS estimate + Carrier Risk Score. ` +
       `Crash & Hazmat percentiles (est) are our reproductions — FMCSA does not publish them. ` +
       `Crashes per million miles uses the MCS-150 VMT denominator. Insurance/revocation/authority from L&I feeds.`
   );

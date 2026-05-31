@@ -1,18 +1,20 @@
 {
-  "dot": 3048377,
-  "reasonNote": "HIGH: crashes per million miles",
-  "carrierName": "REGIONAL INDUSTRIES LLC",
+  "dot": 4572009,
+  "reasonNote": "CRITICAL: new authority under 90 days",
+  "carrierName": "VFV TRANSPORT LLC",
   "riskLevel": "Critical",
   "riskScore": 18,
   "riskTier": "Low",
   "riskContributions": [
-    "+18 [Safety / compliance] Hard safety signal"
+    "+10 [Operations] Very new authority",
+    "+8 [Safety / compliance] Elevated safety context"
   ],
   "reasonLabels": [
-    "Crashes"
+    "New authority",
+    "Why the FMCSA SMS scores look clean"
   ],
   "axes": {
-    "crash": "severe",
+    "crash": "na",
     "unsafeDriving": "na",
     "hos": "na",
     "driverOos": "na",
@@ -20,7 +22,7 @@
     "vehicleOos": "na",
     "hazmatOos": "na",
     "revocations": "clean",
-    "authority": "clean",
+    "authority": "critical",
     "insurance": "na"
   }
 }

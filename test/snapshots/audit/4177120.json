@@ -3,6 +3,13 @@
   "reasonNote": "CAUTION: 3 OOS DOTs at same address",
   "carrierName": "MARSHALLS CARGO LLC",
   "riskLevel": "Critical",
+  "riskScore": 46,
+  "riskTier": "Medium",
+  "riskContributions": [
+    "+30 [Authority / insurance] $0/sub-minimum BIPD",
+    "+8 [Safety / compliance] Elevated safety context",
+    "+8 [Identity / chameleon] Address OOS cluster"
+  ],
   "reasonLabels": [
     "Insurance lapsed",
     "Address shared with out-of-service DOTs",

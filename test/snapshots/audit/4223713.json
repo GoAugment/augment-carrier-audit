@@ -1,11 +1,16 @@
 {
   "dot": 4223713,
-  "reasonNote": "CRITICAL: rapid replace + ≥3 cancellations",
+  "reasonNote": "MEDIUM: rapid replace + 2 cancellations",
   "carrierName": "DJI EXPRESS LLC",
-  "riskLevel": "High",
+  "riskLevel": "Medium",
+  "riskScore": 32,
+  "riskTier": "Low",
+  "riskContributions": [
+    "+24 [Authority / insurance] Insurance churn",
+    "+8 [Context] Insurer / ZIP risk context"
+  ],
   "reasonLabels": [
-    "High-risk insurer",
-    "Why the FMCSA SMS scores look clean"
+    "High-risk insurer"
   ],
   "axes": {
     "crash": "na",
