@@ -3,10 +3,10 @@
   "reasonNote": "CLEAN: active interstate, no flags",
   "carrierName": "CHRISTENSEN TRUCKING INC",
   "riskLevel": "Critical",
-  "riskScore": 43,
-  "riskTier": "Medium",
+  "riskScore": 28,
+  "riskTier": "Low",
   "riskContributions": [
-    "+35 [Safety / compliance] Conditional safety rating",
+    "+20 [Safety / compliance] Conditional safety rating",
     "+8 [Safety / compliance] Elevated safety context"
   ],
   "reasonLabels": [

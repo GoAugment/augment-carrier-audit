@@ -531,10 +531,10 @@ function computeRiskScore(
     );
   } else if (rating === "C" || rating === "CONDITIONAL") {
     add(
-      35,
+      20,
       "Safety / compliance",
       "Conditional safety rating",
-      "FMCSA safety rating is Conditional."
+      "FMCSA safety rating is Conditional (milder than Unsatisfactory)."
     );
   }
   const involDaysAgo = daysAgo(c.mostRecentInvoluntaryDate);
@@ -610,7 +610,7 @@ function computeRiskScore(
       bits.push(`${c.insuranceDistinctPolicies24mo} distinct policies in 24mo`);
     if (c.rapidReplaceFlag) bits.push("rapid cancel+replace");
     add(
-      24,
+      16,
       "Authority / insurance",
       "Insurance churn",
       bits.join("; ")
@@ -742,11 +742,21 @@ function computeRiskScore(
   }
 
   if (identitySignals?.shutdownIdentityLinks.length) {
+    const links = identitySignals.shutdownIdentityLinks;
+    // Email/phone shared with a shut-down revoked DOT is the real identity tell
+    // (2.5x revoke lift); an officer-name-only match is the weak majority of
+    // volume (2.1x) and prone to common-name collisions / disparate impact, so
+    // it gets a much lower weight. See officer-reuse-deadend + the 2026-05 lift test.
+    const hasContactLink = links.some(
+      (l) => l.startsWith("email") || l.startsWith("phone")
+    );
     add(
-      24,
+      hasContactLink ? 20 : 10,
       "Identity / chameleon",
-      "Identity tied to shut-down revoked DOT",
-      identitySignals.shutdownIdentityLinks.slice(0, 3).join("; ")
+      hasContactLink
+        ? "Identity tied to shut-down revoked DOT"
+        : "Officer name shared with shut-down revoked DOT",
+      links.slice(0, 3).join("; ")
     );
   }
 
@@ -2223,10 +2233,16 @@ function scoreCarrier(
         if (!firedFleetSharingClusterSignal) {
           chameleonSignals.push(`${diffPct.toFixed(0)}% diffuse VIN overlap across ${nSibs} DOTs`);
         }
-        if (diffuseTier === "critical") {
-          level = "Critical";
-        } else if (diffuseTier === "high" && level !== "Critical") {
-          level = "High";
+        if (diffuseTier === "critical" || diffuseTier === "high") {
+          // Diffuse equipment-sharing alone caps at High. Spreading VINs across
+          // many DOTs is indistinguishable from a leasing / owner-operator pool
+          // without corroboration, so it must NOT hard-gate Critical — that
+          // over-fired on low-concentration cases (DEFUZE/SHER-TRANS at ~17-25%
+          // top overlap scored 28-29 yet were forced Critical). Critical for a
+          // diffuse carrier now comes only from corroboration: a revoked linked
+          // sibling (below), concentrated shared-fleet + name match (other rule),
+          // or the additive score reaching 80.
+          if (level !== "Critical") level = "High";
         } else if (
           diffuseTier === "caution" &&
           level !== "Critical" &&
