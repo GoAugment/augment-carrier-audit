@@ -12,12 +12,9 @@
  * Built by `augment-services/abuja/.context/fmcsa-aggregate/build_aggregates.py`
  * (see build_identity()). Refreshed monthly alongside the main parquet.
  */
-import path from "node:path";
 import type { Database } from "duckdb";
 import type { CarrierIdentityRiskSignals } from "./analyzer";
-
-const PARQUET_PATH = path.join(process.cwd(), "data", "carrier_identity.parquet");
-const AGGREGATE_PARQUET_PATH = path.join(process.cwd(), "data", "carrier_aggregates.parquet");
+import { getAggregatesParquetPath, getIdentityParquetPath } from "./parquet-source";
 
 const FREE_EMAIL_DOMAINS = new Set([
   "gmail.com",
@@ -308,9 +305,10 @@ export async function fetchIdentity(
   if (unique.length === 0) return out;
 
   const placeholders = unique.map(() => "?").join(",");
+  const idnPath = await getIdentityParquetPath();
   const sql = `
     SELECT *
-    FROM read_parquet('${PARQUET_PATH.replace(/'/g, "''")}')
+    FROM read_parquet('${idnPath.replace(/'/g, "''")}')
     WHERE DOT_NUMBER IN (${placeholders})
   `;
   const rows = await runQuery<ParquetRow>(sql, unique);
@@ -352,8 +350,8 @@ export async function fetchIdentityRiskSignals(
   }
 
   const placeholders = unique.map(() => "?").join(",");
-  const identityPath = PARQUET_PATH.replace(/'/g, "''");
-  const aggregatePath = AGGREGATE_PARQUET_PATH.replace(/'/g, "''");
+  const identityPath = (await getIdentityParquetPath()).replace(/'/g, "''");
+  const aggregatePath = (await getAggregatesParquetPath()).replace(/'/g, "''");
   const sql = `
     WITH targets AS (
       SELECT
@@ -448,9 +446,10 @@ export async function findIdentityByPhone(
   // Match against parquet by normalizing both sides. The parquet stores
   // phone as whatever FMCSA records show (typically digits, sometimes with
   // dashes/parens). REGEXP_REPLACE strips non-digits on the parquet side.
+  const idnPath = await getIdentityParquetPath();
   const sql = `
     SELECT *
-    FROM read_parquet('${PARQUET_PATH.replace(/'/g, "''")}')
+    FROM read_parquet('${idnPath.replace(/'/g, "''")}')
     WHERE REGEXP_REPLACE(phone, '[^0-9]', '', 'g') = ?
   `;
   const rows = await runQuery<ParquetRow>(sql, [normalized]);

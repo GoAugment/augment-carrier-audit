@@ -3,12 +3,10 @@
  * public bulk files (Census, Crashes, Inspections, Carrier authority,
  * Revocations, Enforcement) refreshed monthly.
  */
-import path from "node:path";
 import type { Database } from "duckdb";
 
 import type { FmcsaCarrier } from "./fmcsa";
-
-const PARQUET_PATH = path.join(process.cwd(), "data", "carrier_aggregates.parquet");
+import { getAggregatesParquetPath } from "./parquet-source";
 
 // Lazy-load duckdb so Next.js doesn't try to bind the native binary during
 // the build container's static-page-data collection (Vercel's build image
@@ -316,8 +314,9 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
 export async function fetchDotByMc(mc: string): Promise<number | null> {
   const digits = mc.replace(/\D/g, "");
   if (!digits) return null;
+  const parquet = await getAggregatesParquetPath();
   const sql = `
-    SELECT DOT_NUMBER FROM read_parquet('${PARQUET_PATH.replace(/'/g, "''")}')
+    SELECT DOT_NUMBER FROM read_parquet('${parquet.replace(/'/g, "''")}')
     WHERE REGEXP_REPLACE(mc_number, '[^0-9]', '', 'g') = ?
     LIMIT 1
   `;
@@ -334,6 +333,7 @@ export async function fetchCarriersFromParquet(
   if (unique.length === 0) return out;
 
   const placeholders = unique.map(() => "?").join(",");
+  const parquet = await getAggregatesParquetPath();
   const sql = `
     SELECT
       DOT_NUMBER, LEGAL_NAME, DBA_NAME,
@@ -381,7 +381,7 @@ export async function fetchCarriersFromParquet(
       crash_indicator_percentile, crash_indicator_alert,
       hm_compliance_percentile, hm_compliance_alert,
       pu_vins_inspected
-    FROM read_parquet('${PARQUET_PATH.replace(/'/g, "''")}')
+    FROM read_parquet('${parquet.replace(/'/g, "''")}')
     WHERE DOT_NUMBER IN (${placeholders})
   `;
 
