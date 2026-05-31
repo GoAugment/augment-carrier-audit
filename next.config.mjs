@@ -19,6 +19,11 @@ const nextConfig = {
     outputFileTracingIncludes: {
       "/api/analyze": [
         "./data/carrier_aggregates.parquet",
+        // /api/analyze now computes identity-risk signals (shut-down-DOT links,
+        // free-email, residential) which read carrier_identity.parquet. Without
+        // this include the read fails in prod and the signal silently no-ops
+        // (the route swallows the error), so FMCSA-clean chameleons stop flagging.
+        "./data/carrier_identity.parquet",
         "./data/national_thresholds.json",
         "./node_modules/duckdb/lib/**/*",
         "./node_modules/duckdb/package.json",
