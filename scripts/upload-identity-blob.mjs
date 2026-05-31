@@ -25,12 +25,13 @@ if (!process.env.BLOB_READ_WRITE_TOKEN) {
 }
 
 const body = await readFile(FILE);
-const { url } = await put("carrier_identity.parquet", body, {
-  access: "public", // public FMCSA-derived data; URL carries a random suffix
-  allowOverwrite: true,
+const { url, pathname } = await put("carrier_identity.parquet", body, {
+  access: "private", // private store; runtime reads it back with get({access:'private'})
+  addRandomSuffix: false, // stable pathname so the runtime can fetch by name
+  allowOverwrite: true, // monthly refresh overwrites in place
   multipart: true, // reliable for the ~96MB payload
   token: process.env.BLOB_READ_WRITE_TOKEN,
 });
 
-console.log("\nUploaded. Set this in Vercel env (Production + Preview):\n");
-console.log(`  BLOB_IDENTITY_URL=${url}\n`);
+console.log(`\nUploaded private blob: pathname="${pathname}"\n  url=${url}`);
+console.log("Runtime fetches it by pathname via @vercel/blob get() — no env var needed.\n");

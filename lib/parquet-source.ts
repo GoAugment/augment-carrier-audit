@@ -1,16 +1,20 @@
 /**
  * Resolves the on-disk path to a FMCSA parquet, fetching it from Vercel Blob
- * at runtime when configured.
+ * at runtime when it isn't present locally.
  *
- * Why: the two parquets are ~95MB each. Bundling them into the serverless
- * functions (via includeFiles) pushes the function past Vercel's 250MB
- * uncompressed limit once both are present. Instead we host them in Blob and
- * stream each into the function's /tmp on the first request per instance, then
- * point duckdb at the /tmp path. Fluid Compute reuses instances, so the
- * ~1-3s cold-start download amortizes across many requests.
+ * Why: the two parquets are ~95MB each. Bundling both into a serverless
+ * function (via includeFiles) + duckdb (62MB) busts Vercel's 250MB limit.
+ * So `carrier_aggregates.parquet` stays bundled (95+62 = 157MB, under cap) and
+ * `carrier_identity.parquet` is hosted in a PRIVATE Vercel Blob store, streamed
+ * to /tmp on the first request per instance and cached for the instance's life
+ * (Fluid Compute reuse amortizes the ~1-3s download).
  *
- * Local dev / pipeline: when the BLOB_*_URL env var is unset, we read the
- * committed `data/<name>.parquet` directly — no download, no Blob dependency.
+ * Resolution per file: if `data/<name>.parquet` exists locally, use it — covers
+ * local dev, tests, the pipeline, and the still-bundled aggregates on Vercel.
+ * Otherwise (identity parquet on Vercel) fetch it from Blob by pathname using
+ * `@vercel/blob get({access:'private'})` with BLOB_READ_WRITE_TOKEN (injected
+ * into every Vercel environment when the store is connected). No URL env var
+ * needed — the pathname is stable (uploaded with addRandomSuffix:false).
  */
 import path from "node:path";
 import fs from "node:fs";
@@ -18,52 +22,50 @@ import os from "node:os";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
-type ParquetSource = { localName: string; envUrl: string };
+const AGGREGATES = "carrier_aggregates.parquet";
+const IDENTITY = "carrier_identity.parquet";
 
-const AGGREGATES: ParquetSource = {
-  localName: "carrier_aggregates.parquet",
-  envUrl: "BLOB_AGGREGATES_URL",
-};
-const IDENTITY: ParquetSource = {
-  localName: "carrier_identity.parquet",
-  envUrl: "BLOB_IDENTITY_URL",
-};
-
-// One in-flight (or resolved) download per source, keyed by env var. Concurrent
-// requests on a cold instance share a single download; warm requests reuse the
-// already-resolved path. A rejected promise is evicted so a later request retries.
+// One in-flight (or resolved) download per file. Concurrent requests on a cold
+// instance share a single download; warm requests reuse the /tmp file. A
+// rejected promise is evicted so a later request can retry.
 const inflight = new Map<string, Promise<string>>();
 
-async function resolveSource(src: ParquetSource): Promise<string> {
-  const url = process.env[src.envUrl];
-  // No Blob configured → read the committed parquet (local dev, tests, pipeline).
-  if (!url) return path.join(process.cwd(), "data", src.localName);
+async function resolveSource(name: string): Promise<string> {
+  const local = path.join(process.cwd(), "data", name);
+  try {
+    if (fs.statSync(local).size > 0) return local;
+  } catch {
+    /* not bundled here — fall through to Blob */
+  }
 
-  const existing = inflight.get(src.envUrl);
+  const existing = inflight.get(name);
   if (existing) return existing;
 
   const job = (async () => {
-    const dest = path.join(os.tmpdir(), src.localName);
-    // Already downloaded on this warm instance — reuse it.
+    const dest = path.join(os.tmpdir(), name);
     try {
-      if (fs.statSync(dest).size > 0) return dest;
+      if (fs.statSync(dest).size > 0) return dest; // already pulled on this instance
     } catch {
-      /* not present yet */
+      /* not downloaded yet */
     }
-    const res = await fetch(url);
-    if (!res.ok || !res.body) {
-      throw new Error(`Blob fetch for ${src.localName} failed: HTTP ${res.status}`);
+    const { get } = await import("@vercel/blob");
+    const result = await get(name, {
+      access: "private",
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+    });
+    if (!result || result.statusCode !== 200) {
+      throw new Error(
+        `Blob get for ${name} failed (status ${result?.statusCode ?? "not found"})`
+      );
     }
-    // Stream to a per-process temp file, then atomically rename — avoids a
-    // partially-written file being read by a concurrent request.
     const partial = `${dest}.${process.pid}.part`;
-    await pipeline(Readable.fromWeb(res.body as never), fs.createWriteStream(partial));
+    await pipeline(Readable.fromWeb(result.stream as never), fs.createWriteStream(partial));
     await fs.promises.rename(partial, dest);
     return dest;
   })();
 
-  inflight.set(src.envUrl, job);
-  job.catch(() => inflight.delete(src.envUrl));
+  inflight.set(name, job);
+  job.catch(() => inflight.delete(name));
   return job;
 }
 
