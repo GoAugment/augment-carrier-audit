@@ -46,6 +46,11 @@ const nextConfig = {
     },
     outputFileTracingExcludes: {
       "/api/analyze": [
+        // carrier_identity.parquet is fetched from Vercel Blob at runtime
+        // (lib/parquet-source.ts) — must NOT be bundled or the function busts
+        // the 250MB limit. Next's tracer auto-includes it from the literal
+        // path string, so exclude it explicitly.
+        "data/carrier_identity.parquet",
         "node_modules/duckdb/src/**",
         "node_modules/duckdb/test/**",
         "node_modules/duckdb/scripts/**",
@@ -54,6 +59,7 @@ const nextConfig = {
         "node_modules/.pnpm/duckdb@*/**/scripts/**",
       ],
       "/api/email/inbound": [
+        "data/carrier_identity.parquet",
         "node_modules/duckdb/src/**",
         "node_modules/duckdb/test/**",
         "node_modules/duckdb/scripts/**",
