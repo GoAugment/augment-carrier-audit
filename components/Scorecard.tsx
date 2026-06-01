@@ -230,7 +230,7 @@ function issCellOf(r: CarrierRow): AxisCell {
 // findings vs the scored carrier-risk contributions and non-safety standing
 // findings.
 const SAFETY_RE =
-  /crash|unsafe driving|hos compliance|driver oos|vehicle oos|hazmat|fast.?act|acute|serious viol|iss,|multiple basic|safety rating/i;
+  /crash|unsafe driving|hos compliance|driver oos|vehicle oos|hazmat|fast.?act|acute|serious viol|iss,|multiple basic|safety rating|sms scores look clean/i;
 // Descriptive reasons that restate a signal already shown as a scored factor,
 // so they'd render as a duplicate bullet in the panel:
 //   • "Fleet shared with another active DOT" — same VIN overlap as the scored
