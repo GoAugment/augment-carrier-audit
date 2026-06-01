@@ -6,7 +6,7 @@
   "riskScore": 42,
   "riskTier": "Medium",
   "riskContributions": [
-    "+30 [Authority / insurance] $0/sub-minimum BIPD",
+    "+30 [Authority / insurance] Insurance lapsed",
     "+8 [Safety / compliance] Elevated safety context",
     "+4 [Context] Insurer / ZIP risk context"
   ],
