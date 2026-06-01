@@ -32,8 +32,12 @@ import polars as pl
 
 PARQUET = Path(os.environ.get("FMCSA_PARQUET", "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/carrier_aggregates.parquet"))
 _RD = os.environ.get("FMCSA_REFRESH_DIR")
-INSP = Path(_RD) / "SMS_Input_-_Inspection.csv" if _RD else Path("/Users/art/Downloads/SMS_Input_-_Inspection_20260518.csv")
-INSHIST = Path("/Users/art/Downloads/inshist_allwithhistory.txt")
+INSP = (
+    Path(os.environ["FMCSA_INSPECTION_FILE"]) if os.environ.get("FMCSA_INSPECTION_FILE")
+    else Path(_RD) / "SMS_Input_-_Inspection.csv" if _RD
+    else Path("/Users/art/Downloads/SMS_Input_-_Inspection_20260518.csv")
+)
+INSHIST = Path(os.environ.get("FMCSA_INSHIST", "/Users/art/Downloads/inshist_allwithhistory.txt"))
 SNAPSHOT_DATE = "2026-05-14"
 
 def log(m): print(f"[add_new_signals] {m}", flush=True)

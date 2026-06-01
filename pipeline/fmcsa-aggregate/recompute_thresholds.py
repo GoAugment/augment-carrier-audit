@@ -16,13 +16,14 @@ Outputs:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import polars as pl
 
 HERE = Path(__file__).parent
-PARQUET = HERE / "carrier_aggregates.parquet"
-OUT = HERE / "national_thresholds_v2.json"
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", HERE / "carrier_aggregates.parquet"))
+OUT = Path(os.environ.get("FMCSA_THRESHOLDS_V2_OUT", HERE / "national_thresholds_v2.json"))
 
 
 def pcts(series: pl.Series, n: int) -> dict:

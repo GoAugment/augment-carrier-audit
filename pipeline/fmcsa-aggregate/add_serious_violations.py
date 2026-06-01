@@ -30,7 +30,7 @@ from pathlib import Path
 import polars as pl
 
 PARQUET = Path(os.environ.get("FMCSA_PARQUET", "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/carrier_aggregates.parquet"))
-SV = Path("/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/fmcsa_scrape/serious_violations_20260514.parquet")
+SV = Path(os.environ.get("FMCSA_SERIOUS_VIOLATIONS", "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/fmcsa_scrape/serious_violations_20260514.parquet"))
 
 # Map the XLSX BASIC label → our column prefix + a short code.
 BASIC_MAP = {

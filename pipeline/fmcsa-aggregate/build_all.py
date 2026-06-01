@@ -26,13 +26,41 @@ Designed to be the only command needed for a monthly refresh.
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
-HERE = Path(__file__).parent
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent.parent
+DATA_DIR = ROOT / "data"
+SOURCES_DIR = DATA_DIR / "sources"
+SCRAPE_DIR = DATA_DIR / "fmcsa_scrape"
+LIB_DATA_DIR = ROOT / "lib" / "data"
+
+DEFAULT_ENV = {
+    "FMCSA_OUTPUT_DIR": DATA_DIR,
+    "FMCSA_PARQUET": DATA_DIR / "carrier_aggregates.parquet",
+    "FMCSA_IDENTITY_PARQUET": DATA_DIR / "carrier_identity.parquet",
+    "FMCSA_THRESHOLDS_OUT": DATA_DIR / "national_thresholds.json",
+    "FMCSA_THRESHOLDS_V2_OUT": DATA_DIR / "national_thresholds_v2.json",
+    "FMCSA_SCRAPE_DIR": SCRAPE_DIR,
+    "FMCSA_SERIOUS_VIOLATIONS": SCRAPE_DIR / "serious_violations_20260514.parquet",
+    "FMCSA_REVOCATION": SOURCES_DIR / "Revocation_-_All_With_History_20260514.csv",
+    "FMCSA_INSHIST": SOURCES_DIR / "inshist_allwithhistory.txt",
+    "FMCSA_ENFORCEMENT_XLSX": SOURCES_DIR / "closed_enforcement_cases_20260515005306.xlsx",
+    "FMCSA_ACTPEND": SOURCES_DIR / "ActPendInsur_All_With_History.csv",
+    "FMCSA_PASSPROP": SOURCES_DIR / "SMS_AB_PassProperty_20260514.csv",
+    "FMCSA_CARRIER_AUTH": SOURCES_DIR / "Carrier_All_With_History.csv",
+    "FMCSA_INSPECTION_FILE": SOURCES_DIR / "SMS_Input_-_Inspection_20260518.csv",
+    "FMCSA_VIOLATION_FILE": SOURCES_DIR / "SMS_Input_-_Violation_20260518.csv",
+    "FMCSA_CRASH_FILE": SOURCES_DIR / "SMS_Input_-_Crash_20260518.csv",
+    "FMCSA_COMPANY_CENSUS": SOURCES_DIR / "Company_Census_File.csv",
+    "FMCSA_ZIP_RISK_OUT": LIB_DATA_DIR / "zip-risk.json",
+    "FMCSA_INSURER_RISK_OUT": LIB_DATA_DIR / "insurer-risk.json",
+}
 
 
 @dataclass
@@ -177,6 +205,12 @@ STEPS: list[Step] = [
         description="Per-ZIP shutdown-lift table -> lib/data/zip-risk.json",
         runtime_estimate_min=0.5,
     ),
+    Step(
+        name="prune_app_parquet",
+        script="prune_app_parquet.py",
+        description="Drop build-only columns; keep the checked-in aggregate at the app contract",
+        runtime_estimate_min=0.5,
+    ),
 ]
 
 
@@ -197,13 +231,16 @@ def run_step(step: Step) -> int:
         print(f"  ✗ {step.name}: script not found at {script_path}")
         return 1
     cmd = ["uv", "run", str(script_path), *step.extra_args]
+    env = os.environ.copy()
+    for key, value in DEFAULT_ENV.items():
+        env.setdefault(key, str(value))
     start = time.monotonic()
     print(f"\n{'=' * 78}")
     print(f"STEP: {step.name}  (~{step.runtime_estimate_min:.0f}m)")
     print(f"  {step.description}")
     print(f"  cmd: {' '.join(cmd)}")
     print('=' * 78)
-    rc = subprocess.run(cmd, cwd=HERE).returncode
+    rc = subprocess.run(cmd, cwd=ROOT, env=env).returncode
     elapsed = (time.monotonic() - start) / 60
     if rc == 0:
         print(f"\n  ✓ {step.name} ok ({elapsed:.1f}m)")

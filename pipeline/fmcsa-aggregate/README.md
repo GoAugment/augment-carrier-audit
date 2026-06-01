@@ -1,8 +1,8 @@
 # FMCSA Aggregation Pipeline
 
-Monthly batch pipeline that turns FMCSA bulk data files into
-`carrier_aggregates.parquet` — the single carrier-row dataset consumed by the
-Next.js audit application at request time.
+Monthly batch pipeline that turns FMCSA bulk data files into the canonical
+`data/carrier_aggregates.parquet` — the single carrier-row dataset consumed by
+the Next.js audit application at request time.
 
 The web app reads this parquet via DuckDB; nothing in this directory runs
 inside the API request path. All scripts here are Python (Polars), invoked
@@ -18,12 +18,12 @@ SMS_Input_-_Crash              ─┤
 SMS_Input_-_Inspection         ─┤      [build_aggregates.py]
 SMS_Input_-_Violation          ─┼──►   [add_*.py]            ──►  carrier_
 SMS_Input_-_Motor_Carrier_      │       [compute_*.py]            aggregates
-   Census_Information          ─┤      [scrape_fmcsa_basics.py]   .parquet
+   Census_Information          ─┤      [scrape_pu_history.py]     .parquet
 Carrier_All_With_History       ─┤
 ActPendInsur                   ─┤
 inshist_allwithhistory         ─┘
 
-FMCSA SMS website (per-DOT)    ─────► [scrape_fmcsa_basics.py] ──►  crash_
+FMCSA SMS website (per-DOT)    ─────► [scrape_pu_history.py] ───►  crash_
                                                                    indicator
                                                                    _<vintage>
                                                                    .parquet
@@ -31,11 +31,19 @@ FMCSA SMS website (per-DOT)    ─────► [scrape_fmcsa_basics.py] ─�
 
 ## Output schema
 
-`carrier_aggregates.parquet` — one row per active DOT. ~2M rows, ~100 columns.
+`data/carrier_aggregates.parquet` — one row per DOT. ~2M rows, pruned to the
+app-facing column contract from `lib/fmcsa-parquet.ts`.
 
 Read by `lib/fmcsa-parquet.ts` at audit time. New columns added here must be
 projected through `FmcsaCarrier` type + the SQL SELECT in that file before
 they're usable by the analyzer.
+
+`build_all.py` sets `FMCSA_PARQUET`, `FMCSA_OUTPUT_DIR`, and related source /
+sidecar paths so every refresh step mutates the same canonical `data/` parquet.
+The ignored `pipeline/fmcsa-aggregate/*.parquet` files are local scratch outputs
+only and should not be treated as publishable artifacts.
+The final `prune_app_parquet.py` step drops build-only/intermediate columns after
+thresholds and sidecar risk tables have been generated.
 
 ## Run order
 
@@ -56,22 +64,32 @@ uv run build_all.py --only add_inshist      # run a single step
  3.  add_inshist.py             # insurance cancellation history
                                 #   (distinct policies, rapid-replace)
  4.  add_enforcement.py         # enforcement case counts
- 5.  add_fleet_sharing.py       # VIN cross-DOT (concentrated overlap)
- 6.  add_plausibility.py        # inflated-PU detection / fleet sanity
- 7.  add_chameleon_signals.py   # diffuse VIN sharing + insurance
+ 5.  add_pending_lapse.py       # imminent BIPD lapse
+ 6.  add_fleet_sharing.py       # VIN cross-DOT (concentrated overlap)
+ 7.  add_plausibility.py        # inflated-PU detection / fleet sanity
+ 8.  add_chameleon_signals.py   # diffuse VIN sharing + insurance
                                 #   replaces/distinct policies
- 8.  scrape_pu_history.py       # per-DOT historical PU snapshots
+ 9.  scrape_pu_history.py       # per-DOT historical PU snapshots
                                 #   (~25k crash-sufficiency carriers)
- 9.  compute_basics.py          # measure + percentile + alert for all 7
+ 10. compute_basics.py          # measure + percentile + alert for all 7
                                 #   BASICs (UD/HOS/VM/DF/CS from bulk;
                                 #   HM from violation file; Crash from
                                 #   crash file + scraped Avg PU)
- 10. compute_iss.py             # ISS-CSA score (1-100, three tiers)
- 11. recompute_thresholds.py    # peer-group P85/P95/P99 cutoffs
+ 11. add_high_risk.py           # FAST Act high-risk flag
+ 12. fetch_serious_violations.py # scrape serious violation sidecar
+ 13. add_serious_violations.py  # apply serious violations to BASICs
+ 14. compute_iss.py             # ISS-CSA score (1-100, three tiers)
+ 15. recompute_thresholds.py    # peer-group P85/P95/P99 cutoffs
+ 16. add_phantom_fleet.py       # inspected VINs vs reported PU
+ 17. add_phy_zip.py             # physical ZIP for ZIP-risk lookup
+ 18. add_geo_mismatch.py        # home-state inspection share
+ 19. build_insurer_risk.py      # insurer shutdown-lift sidecar
+ 20. build_zip_risk.py          # ZIP shutdown-lift sidecar
+ 21. prune_app_parquet.py       # drop build-only columns from checked-in aggregate
 ```
 
-Each script reads the parquet, mutates a subset of columns, writes back.
-The scripts are idempotent — re-running produces identical results.
+Each script reads the canonical parquet, mutates a subset of columns, writes
+back. The scripts are idempotent — re-running produces identical results.
 
 Typical full-refresh runtime: ~2-3 hours, dominated by the per-DOT scrape
 (step 8). With `--no-scrape`: ~15 minutes.
@@ -195,7 +213,7 @@ Flags:
 - **Output:** updates parquet
 - **Runtime:** ~5 min full, ~1 min with `--skip-hm --skip-crash`
 
-### `scrape_fmcsa_basics.py`
+### `scrape_pu_history.py`
 **NEW (May 2026).** Polite per-DOT scraper for FMCSA SMS website data that
 isn't in the bulk feed. Currently extracts the Crash Indicator BASIC page:
 historical PU snapshots (current / 6mo ago / 18mo ago), UF, VMT, segment.
@@ -236,15 +254,6 @@ analyzer.ts. Run when the parquet is refreshed.
 - **Output:** `thresholds.json` consumed by `lib/thresholds.ts`
 - **Runtime:** ~30 sec
 
-### `validate_against_api.py`
-QA script — picks ~12 carriers we have manually-verified SAFER data for,
-runs them through the pipeline, asserts our parquet values match SAFER.
-Catches regressions when a script's logic changes.
-
-### `score_t1*.py`, `chameleon_check.py`, `validate_t1.py`
-Legacy / exploratory scripts from earlier iterations. Not part of the
-production pipeline; kept for reference / experimentation.
-
 ## Conventions
 
 - **Polars** for all data manipulation (faster than pandas on 2M-row parquet).
@@ -268,6 +277,8 @@ san-antonio/` consumes the parquet via DuckDB:
 - `lib/analyzer.ts`: scoring + classification logic per audit request
 - `lib/rules/index.ts`: rule registry (single source of truth for rule
   labels, thresholds, fixtures)
+- `scripts/check_parquet_schema.mjs`: verifies the checked-in aggregate exactly
+  matches the app adapter projection
 - `scripts/test_rules.ts`, `scripts/snapshot_audit.ts`: regression tests
   against known-good DOT fixtures
 

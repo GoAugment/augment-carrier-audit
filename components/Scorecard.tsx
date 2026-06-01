@@ -9,13 +9,6 @@ import type {
 } from "@/lib/analyzer";
 import { toCsv } from "@/lib/csv";
 
-const riskStyles: Record<RiskLevel, string> = {
-  Critical: "bg-red-200 text-red-950 border-red-400 font-semibold",
-  High: "bg-orange-100 text-orange-900 border-orange-200",
-  Medium: "bg-amber-50 text-amber-900 border-amber-200",
-  Low: "bg-augment-50 text-augment-900 border-augment-200",
-};
-
 // The "Low" tier is shown as "Clean", for a broker, the bottom tier means
 // "nothing flagged," which reads more clearly than "Low".
 const verdictLabel: Record<RiskLevel, string> = {
@@ -36,16 +29,19 @@ const barColor: Record<RiskLevel, string> = {
 
 // Tier section-header styling (the "● CRITICAL · N carriers" divider rows that
 // group the matrix by verdict, replacing the per-row verdict pill).
+// Four hues only — red (Critical), orange (High), amber (Medium), green (Clean).
+// Medium uses the same amber as the cell tints so the matrix never shows a
+// second yellow/gold.
 const tierDot: Record<RiskLevel, string> = {
   Critical: "bg-[#D7453C]",
   High: "bg-[#E89432]",
-  Medium: "bg-[#D4AA28]",
+  Medium: "bg-amber-400",
   Low: "bg-[#2EB873]",
 };
 const tierText: Record<RiskLevel, string> = {
   Critical: "text-[#7E1A14]",
   High: "text-[#8A4A0E]",
-  Medium: "text-[#92400E]",
+  Medium: "text-amber-700",
   Low: "text-[#0F5A41]",
 };
 
@@ -61,9 +57,10 @@ const cellStyles: Record<AxisStatus, string> = {
   severe: "bg-red-100 text-red-900",
   high: "bg-orange-100 text-orange-900",
   elevated: "bg-amber-100/60 text-amber-900",
-  /** info = contextual signal (e.g. old revocations), amber, lighter than elevated.
-   *  Does NOT contribute to overall risk tier; just surfaces in the cell. */
-  info: "bg-amber-50 text-amber-800",
+  /** info = contextual signal (e.g. old revocations). Same single amber as
+   *  `elevated` (we keep the palette to four hues); it just doesn't contribute
+   *  to the overall risk tier. */
+  info: "bg-amber-100/60 text-amber-900",
   clean: "bg-augment-50 text-augment-800",
   na: "bg-ink-50 text-ink-400",
 };
@@ -369,7 +366,11 @@ export function Scorecard({
       </div>
       <ReadingNote />
 
-      <div className="rounded-lg border border-ink-200 bg-white">
+      {/* overflow-x-auto clips the table to the rounded corners and keeps the
+          border wrapped around the full content: if the 14 columns ever exceed
+          the container they scroll inside the bordered box instead of spilling
+          past the right edge. */}
+      <div className="overflow-x-auto rounded-lg border border-ink-200 bg-white">
         <table className="w-full text-left text-sm">
           <thead className="sticky top-0 z-10 bg-white text-[11px] font-semibold uppercase tracking-wide text-[#596560] shadow-sm">
             {/* Group band: makes explicit that the verdict, the FMCSA SMS
@@ -568,7 +569,7 @@ export function Scorecard({
                       {r.carrierName ?? <span className="text-ink-400">unknown</span>}
                     </span>
                   </div>
-                  <div className={`mt-0.5 text-[11px] text-ink-500 ${hasDetail ? "pl-4" : ""}`}>
+                  <div className={`mt-0.5 whitespace-nowrap text-[11px] text-ink-500 ${hasDetail ? "pl-4" : ""}`}>
                     DOT {r.dot} · {r.peerGroupLabel}
                     {r.loadCount > 0 && ` · ${r.loadCount} load${r.loadCount === 1 ? "" : "s"}`}
                   </div>

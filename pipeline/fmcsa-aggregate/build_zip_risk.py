@@ -22,12 +22,13 @@ Tiers: high (lift>=2.5), elevated (lift>=1.5), among ZIPs with >=500 carriers;
 everyone else omitted (treated normal).
 """
 import json
+import os
 from pathlib import Path
 import polars as pl
 
-AGG = Path("data/carrier_aggregates.parquet")
-IDN = Path("data/carrier_identity.parquet")
-OUT = Path("lib/data/zip-risk.json")
+AGG = Path(os.environ.get("FMCSA_PARQUET", "data/carrier_aggregates.parquet"))
+IDN = Path(os.environ.get("FMCSA_IDENTITY_PARQUET", "data/carrier_identity.parquet"))
+OUT = Path(os.environ.get("FMCSA_ZIP_RISK_OUT", "lib/data/zip-risk.json"))
 MIN_CARRIERS = 500
 
 

@@ -8,9 +8,11 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "check:parquet": "node scripts/check_parquet_schema.mjs",
+    "check:parquet:clean": "node scripts/check_parquet_schema.mjs --exact",
     "test:rules": "tsx --env-file=.env.local scripts/test_rules.ts",
     "test:snapshots": "tsx --env-file=.env.local scripts/snapshot_audit.ts",
-    "test": "pnpm test:rules && pnpm test:snapshots"
+    "test": "pnpm check:parquet && pnpm test:rules && pnpm test:snapshots"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

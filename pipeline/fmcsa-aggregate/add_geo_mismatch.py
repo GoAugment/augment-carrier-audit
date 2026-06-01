@@ -19,7 +19,7 @@ import os
 from pathlib import Path
 import polars as pl
 
-AGG = Path("data/carrier_aggregates.parquet")
+AGG = Path(os.environ.get("FMCSA_PARQUET", "data/carrier_aggregates.parquet"))
 INSP = Path(os.environ.get(
     "FMCSA_INSPECTION_FILE",
     "data/sources/SMS_Input_-_Inspection_20260518.csv",

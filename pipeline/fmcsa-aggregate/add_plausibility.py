@@ -22,13 +22,14 @@ the carrier's self-reported PU is much larger than its actual operating fleet.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import polars as pl
 
 HERE = Path(__file__).parent
-IN_PARQUET = HERE / "carrier_aggregates.parquet"
-OUT_PARQUET = HERE / "carrier_aggregates.parquet"  # overwrite in place
+IN_PARQUET = Path(os.environ.get("FMCSA_PARQUET", HERE / "carrier_aggregates.parquet"))
+OUT_PARQUET = IN_PARQUET  # overwrite in place
 
 
 def main() -> None:

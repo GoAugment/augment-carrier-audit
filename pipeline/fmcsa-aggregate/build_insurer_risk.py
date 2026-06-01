@@ -16,9 +16,9 @@ from pathlib import Path
 import duckdb
 
 REFRESH = os.environ.get("FMCSA_REFRESH_DIR", "data/sources/refresh_20260529")
-A = f"{REFRESH}/ActPendInsur_All_With_History.csv"
+A = os.environ.get("FMCSA_ACTPEND", f"{REFRESH}/ActPendInsur_All_With_History.csv")
 R = os.environ.get("FMCSA_REVOCATION", "/Users/art/Downloads/Revocation_-_All_With_History_20260514.csv")
-OUT = Path("lib/data/insurer-risk.json")
+OUT = Path(os.environ.get("FMCSA_INSURER_RISK_OUT", "lib/data/insurer-risk.json"))
 OW0, OW1 = "2025-04-01", "2026-04-30"
 
 con = duckdb.connect(); con.execute("PRAGMA threads=4")

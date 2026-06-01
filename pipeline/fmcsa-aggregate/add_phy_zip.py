@@ -10,10 +10,11 @@ NB: this nudges the parquet toward the 100 MiB GitHub blob limit. If it ever
 crosses, switch to precomputing a compact zip_risk_tier enum instead of the raw
 ZIP (build_zip_risk.py already has the lift table)."""
 import polars as pl
+import os
 from pathlib import Path
 
-AGG = Path("data/carrier_aggregates.parquet")
-IDN = Path("data/carrier_identity.parquet")
+AGG = Path(os.environ.get("FMCSA_PARQUET", "data/carrier_aggregates.parquet"))
+IDN = Path(os.environ.get("FMCSA_IDENTITY_PARQUET", "data/carrier_identity.parquet"))
 
 
 def main() -> None:
