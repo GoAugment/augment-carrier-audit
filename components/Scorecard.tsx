@@ -586,12 +586,37 @@ export function Scorecard({
                 // a fixed-width points badge, then a bold label (+ small
                 // category tag) over a muted detail line — so the contributions
                 // read as a tidy list instead of a run-on sentence.
-                const renderGroup = (
-                  title: string,
-                  items: Signal[],
-                  dot: string,
-                  extra?: React.ReactNode
-                ) => (
+                // Largest shared-fleet sibling, rendered INLINE on the relevant
+                // fleet factor (Linked authority / Equipment spread / Fleet
+                // shared) rather than as a separate line — so every risk-side row
+                // is a scored factor. Status is bold + color-coded: "when
+                // revoked" for a revoked sibling, otherwise its Augie level.
+                const FLEET_RE = /linked authority|equipment spread|fleet shared/i;
+                const sib =
+                  r.siblingDot != null
+                    ? {
+                        name: r.siblingName ?? "carrier",
+                        dot: r.siblingDot,
+                        statusText:
+                          r.siblingStatus === "revoked"
+                            ? `Revoked${r.siblingRevokedDate ? ` ${r.siblingRevokedDate}` : ""}`
+                            : r.siblingStatus === "inactive"
+                              ? "Inactive"
+                              : r.siblingTier
+                                ? verdictLabel[r.siblingTier]
+                                : "not scored",
+                        tone:
+                          r.siblingStatus === "revoked" || r.siblingTier === "Critical"
+                            ? "text-red-700"
+                            : r.siblingTier === "High"
+                              ? "text-orange-700"
+                              : r.siblingTier === "Medium"
+                                ? "text-amber-700"
+                                : "text-ink-500",
+                      }
+                    : null;
+                let overlapShown = false;
+                const renderGroup = (title: string, items: Signal[], dot: string) => (
                   <div>
                     <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-500">
                       <span className={`inline-block h-1.5 w-1.5 rounded-full ${dot}`} />
@@ -599,81 +624,52 @@ export function Scorecard({
                     </div>
                     {items.length > 0 ? (
                       <ul className="mt-1.5 space-y-1.5 text-xs">
-                        {items.map((s, i) => (
-                          <li key={i} className="flex gap-2">
-                            {s.points != null ? (
-                              // Scored factor (Carrier-risk side): points badge.
-                              <span className="mt-px inline-flex h-[18px] min-w-[34px] shrink-0 items-center justify-center rounded bg-white/70 text-[10px] font-semibold tabular-nums text-ink-700">
-                                +{s.points}
-                              </span>
-                            ) : (
-                              // Descriptive finding (On-road safety side): these
-                              // aren't scored individually (they roll up into the
-                              // "Hard safety signal" factor on the risk side), so
-                              // a quiet bullet instead of an empty score box.
-                              <span
-                                aria-hidden
-                                className="mt-[7px] inline-block h-1 w-1 shrink-0 rounded-full bg-ink-300"
-                              />
-                            )}
-                            <div className="leading-snug">
-                              <div>
-                                <strong className="font-semibold text-ink-900">{s.label}</strong>
-                                {s.category ? (
-                                  <span className="ml-1.5 text-[10px] uppercase tracking-wide text-ink-400">
-                                    {s.category}
-                                  </span>
+                        {items.map((s, i) => {
+                          const showOverlap = !!sib && !overlapShown && FLEET_RE.test(s.label);
+                          if (showOverlap) overlapShown = true;
+                          return (
+                            <li key={i} className="flex gap-2">
+                              {s.points != null ? (
+                                // Scored factor (Carrier-risk side): points badge.
+                                <span className="mt-px inline-flex h-[18px] min-w-[34px] shrink-0 items-center justify-center rounded bg-white/70 text-[10px] font-semibold tabular-nums text-ink-700">
+                                  +{s.points}
+                                </span>
+                              ) : (
+                                // Descriptive finding (On-road safety side): not
+                                // scored individually (they roll up into "Hard
+                                // safety signal"), so a quiet bullet, not a box.
+                                <span
+                                  aria-hidden
+                                  className="mt-[7px] inline-block h-1 w-1 shrink-0 rounded-full bg-ink-300"
+                                />
+                              )}
+                              <div className="leading-snug">
+                                <div>
+                                  <strong className="font-semibold text-ink-900">{s.label}</strong>
+                                  {s.category ? (
+                                    <span className="ml-1.5 text-[10px] uppercase tracking-wide text-ink-400">
+                                      {s.category}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {s.detail ? <div className="text-ink-600">{s.detail}</div> : null}
+                                {showOverlap && sib ? (
+                                  <div className="text-ink-600">
+                                    <span className="font-medium text-ink-800">{sib.name}</span> (DOT{" "}
+                                    {sib.dot}) ·{" "}
+                                    <span className={`font-semibold ${sib.tone}`}>{sib.statusText}</span>
+                                  </div>
                                 ) : null}
                               </div>
-                              {s.detail ? <div className="text-ink-600">{s.detail}</div> : null}
-                            </div>
-                          </li>
-                        ))}
+                            </li>
+                          );
+                        })}
                       </ul>
                     ) : (
                       <p className="mt-1.5 text-xs text-ink-400">None noted.</p>
                     )}
-                    {extra}
                   </div>
                 );
-                // When a shared-fleet sibling was named, show what it is. A
-                // REVOKED/inactive sibling whose fleet now runs here is the
-                // chameleon-successor tell, so its status takes priority over its
-                // tier; an active sibling shows its own Augie verdict.
-                // The overlap line for the fleet-sharing factors above: names the
-                // largest shared-fleet sibling and its status as bold/colored
-                // inline text (not a pill), so the "Equipment spread" / "Linked
-                // authority" factors don't need to restate the overlap and there's
-                // no duplicate status pill.
-                const siblingStatusText =
-                  r.siblingStatus === "revoked"
-                    ? `Revoked${r.siblingRevokedDate ? ` ${r.siblingRevokedDate}` : ""}`
-                    : r.siblingStatus === "inactive"
-                      ? "Inactive"
-                      : r.siblingTier
-                        ? verdictLabel[r.siblingTier]
-                        : "not scored";
-                const siblingToneClass =
-                  r.siblingStatus === "revoked" || r.siblingTier === "Critical"
-                    ? "text-red-700"
-                    : r.siblingTier === "High"
-                      ? "text-orange-700"
-                      : r.siblingTier === "Medium"
-                        ? "text-amber-700"
-                        : "text-ink-500";
-                const siblingNote =
-                  r.siblingDot != null ? (
-                    <div className="mt-2 text-[11px] text-ink-600">
-                      Largest fleet overlap:{" "}
-                      <span className="font-medium text-ink-800">
-                        {r.siblingName ?? "carrier"}
-                      </span>{" "}
-                      (DOT {r.siblingDot}) ·{" "}
-                      <span className={`font-semibold ${siblingToneClass}`}>
-                        {siblingStatusText}
-                      </span>
-                    </div>
-                  ) : null;
                 return (
                   <tr className={`${rowTint[r.riskLevel]}`}>
                     <td
@@ -690,8 +686,7 @@ export function Scorecard({
                             ? `Carrier risk · ${r.riskScore}`
                             : "Carrier risk",
                           risk,
-                          "bg-red-400",
-                          siblingNote
+                          "bg-red-400"
                         )}
                       </div>
                     </td>
