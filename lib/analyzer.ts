@@ -2324,7 +2324,10 @@ function scoreCarrier(
         }
         setFleetRisk(
           diffuseTier === "caution" ? 8 : 24,
-          "Diffuse equipment sharing",
+          // Use the rule-registry label (not a hardcoded one) so the scored
+          // contribution and the reason for this signal share a label and the
+          // expanded panel collapses them into one item instead of two.
+          getRule("chameleon-diffuse-equipment").label,
           `${diffPct.toFixed(0)}% of inspected VINs spread across ${nSibs} other active DOTs.`
         );
         // Largest of the diffuse siblings is a revoked authority → chameleon-

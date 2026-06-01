@@ -10,7 +10,7 @@
     "+16 [Safety / compliance] FMCSA enforcement case",
     "+18 [Safety / compliance] Hard safety signal",
     "+4 [Context] Insurer / ZIP risk context",
-    "+24 [Identity / chameleon] Diffuse equipment sharing"
+    "+24 [Identity / chameleon] Equipment spread across multiple active DOTs"
   ],
   "reasonLabels": [
     "ISS, Inspect (top inspection priority)",
