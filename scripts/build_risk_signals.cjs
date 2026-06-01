@@ -75,28 +75,56 @@ async function main() {
             ' | '
           ) AS shutdown_links
         FROM links_ranked GROUP BY target
+      ),
+      -- Insurance POLICY NUMBER shared across DOTs (from the L&I insurance-history
+      -- file). One policy can't legitimately cover two separate carriers, so a
+      -- shared policy# with an involuntarily-revoked DOT is a strong same-operator
+      -- chameleon edge (~6x revoke lift; lift test 2026-05). Exclude insurer-generic
+      -- policy#s shared by >10 DOTs.
+      ins AS (
+        SELECT DISTINCT TRY_CAST(column01 AS BIGINT) AS dot, TRIM(column07) AS pol
+        FROM read_csv('data/sources/inshist_allwithhistory.txt',
+                      header=false, all_varchar=true, ignore_errors=true, sample_size=-1)
+        WHERE TRY_CAST(column01 AS BIGINT) > 0 AND length(TRIM(column07)) >= 4
+      ),
+      pol_clusters AS (SELECT pol, COUNT(DISTINCT dot) AS nd FROM ins GROUP BY 1),
+      policy_links AS (
+        SELECT t.dot AS dot,
+          string_agg(DISTINCT
+            'shares insurance policy with shut-down revoked DOT ' || CAST(s.dot AS VARCHAR)
+              || CASE WHEN s.name IS NOT NULL AND s.name <> '' THEN ' (' || s.name || ')' ELSE '' END,
+            ' | ') AS shared_policy_links
+        FROM ins t
+        JOIN ins o ON o.pol = t.pol AND o.dot <> t.dot
+        JOIN pol_clusters pc ON pc.pol = t.pol AND pc.nd BETWEEN 2 AND 10
+        JOIN shutdowns s ON s.dot = o.dot
+        GROUP BY t.dot
       )
       SELECT
         i.dot AS DOT_NUMBER,
         CASE WHEN i.email_domain IN (${freeList}) THEN i.email_domain ELSE NULL END AS free_email_domain,
         NULLIF(regexp_extract(i.street_u, '${RES_RE}', 2), '') AS residential_marker,
-        la.shutdown_links AS shutdown_links
+        la.shutdown_links AS shutdown_links,
+        pl.shared_policy_links AS shared_policy_links
       FROM idn i
       LEFT JOIN links_agg la ON la.dot = i.dot
+      LEFT JOIN policy_links pl ON pl.dot = i.dot
       WHERE (i.email_domain IN (${freeList}))
          OR (regexp_extract(i.street_u, '${RES_RE}', 2) <> '')
          OR (la.shutdown_links IS NOT NULL)
+         OR (pl.shared_policy_links IS NOT NULL)
     ) TO 'data/carrier_risk_signals.parquet' (FORMAT PARQUET, COMPRESSION ZSTD)
   `);
   const stats = await run(`
     SELECT COUNT(*) n,
       COUNT(free_email_domain) n_free,
       COUNT(residential_marker) n_res,
-      COUNT(shutdown_links) n_links
+      COUNT(shutdown_links) n_links,
+      COUNT(shared_policy_links) n_policy
     FROM read_parquet('data/carrier_risk_signals.parquet')`);
   const s = stats[0];
   console.log(`built data/carrier_risk_signals.parquet in ${((Date.now()-t0)/1000).toFixed(1)}s`);
-  console.log(`rows=${s.n}  free_email=${s.n_free}  residential=${s.n_res}  shutdown_links=${s.n_links}`);
+  console.log(`rows=${s.n}  free_email=${s.n_free}  residential=${s.n_res}  shutdown_links=${s.n_links}  shared_policy_links=${s.n_policy}`);
   process.exit(0);
 }
 main().catch((e) => { console.error(e); process.exit(1); });
