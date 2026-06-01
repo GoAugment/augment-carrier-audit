@@ -100,15 +100,30 @@ OUTPUT_DIR = Path(
         "data/fmcsa_scrape",
     )
 )
-SNAPSHOT_TAG = "20260514"  # SMS data vintage — see SMS_DATA_TAG below
+# Output parquet is tagged by SMS data vintage (not "today") so a scrape that
+# spans midnight / restarts resumes into the same file. The monthly refresh
+# sets SMS_DATA_TAG to the new drop's date (build_all passes it); the default
+# keeps the current vintage so a bare re-run still resumes the existing file.
+SNAPSHOT_TAG = os.environ.get("SMS_DATA_TAG", "20260514")
 
 BASE_URL = "https://ai.fmcsa.dot.gov/SMS/Carrier/{dot}/BASIC/{basic}.aspx"
 
-# Tag the output parquet by the SMS data vintage, not "today". A scrape that
-# spans midnight or restarts the next morning should write to the same file so
-# resume logic finds the existing rows. Update this when ingesting a new
-# monthly SMS bulk drop.
-SMS_DATA_TAG = "20260514"
+
+def _sms_vintage_date():
+    """Anchor for the crash-sufficiency window. Derived from the YYYYMMDD in the
+    crash filename so each monthly refresh recomputes the 24mo/12mo eligibility
+    window against the current drop instead of a frozen date. Override with
+    SMS_DATA_DATE=YYYYMMDD; falls back to the May-2026 vintage."""
+    from datetime import datetime as _dt
+
+    override = os.environ.get("SMS_DATA_DATE")
+    if override:
+        return _dt.strptime(override, "%Y%m%d")
+    crash_path = os.environ.get(
+        "FMCSA_CRASH_FILE", "/Users/art/Downloads/SMS_Input_-_Crash_20260518.csv"
+    )
+    m = re.search(r"(\d{8})", os.path.basename(crash_path))
+    return _dt.strptime(m.group(1), "%Y%m%d") if m else _dt(2026, 5, 18)
 
 # Identifies the scraper + contact for FMCSA admins if they need to reach us.
 USER_AGENT = (
@@ -398,9 +413,9 @@ def select_universe(crash_sufficiency_only: bool = True) -> list[int]:
     Default: carriers meeting Crash Indicator data sufficiency (2+ crashes
     24mo, 1+ crashes 12mo). ~26k DOTs in the May 2026 snapshot.
     """
-    from datetime import datetime, timedelta
+    from datetime import timedelta
 
-    snapshot = datetime(2026, 5, 18)
+    snapshot = _sms_vintage_date()
     cutoff_12mo = snapshot - timedelta(days=365)
 
     crash = (
