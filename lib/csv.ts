@@ -7,7 +7,7 @@
  *     scored the carrier). Crash Indicator + Hazmat are our faithful
  *     reconstructions of BASICs FMCSA computes but doesn't publish.
  *   - "Augie …" columns = our OWN peer-ranked measures (raw OOS rates,
- *     crashes-per-million) — our methodology, NOT an FMCSA SMS percentile.
+ *     crashes-per-million), our methodology, NOT an FMCSA SMS percentile.
  *   - one resolved "<axis> status" per on-road axis = the tier the tool landed
  *     on for that cell (source-agnostic).
  * Non-safety columns (authority / insurance / revocation / identity / risk)
@@ -115,7 +115,7 @@ function row(r: CarrierRow): string {
     r.peerGroupLabel,
     r.powerUnits,
     r.loadCount,
-    // resolved on-road verdict (status only — the underlying numbers live in
+    // resolved on-road verdict (status only, the underlying numbers live in
     // the source-separated groups below)
     r.axes.crash.status,
     r.axes.unsafeDriving.status,
@@ -181,9 +181,9 @@ function row(r: CarrierRow): string {
 
 export function toCsv(result: AuditResult): string {
   const lines: string[] = [];
-  // Preamble — methodology note + summary, prefixed with # so it's clearly
+  // Preamble, methodology note + summary, prefixed with # so it's clearly
   // human context, not a data row.
-  lines.push(`# Augment Carrier Safety Audit — ${new Date().toISOString().slice(0, 10)}`);
+  lines.push(`# Augment Carrier Safety Audit, ${new Date().toISOString().slice(0, 10)}`);
   lines.push(
     `# ${result.totalLoads} loads / ${result.totalCarriers} carriers / ${result.flaggedCarriers} flagged`
   );
@@ -194,7 +194,7 @@ export function toCsv(result: AuditResult): string {
     `# Safety sources are split by column prefix. "FMCSA …" = FMCSA's SMS BASIC percentile ` +
       `(blank where FMCSA hasn't scored the carrier; Crash Indicator + Hazmat are our faithful ` +
       `reconstructions of BASICs FMCSA doesn't publish). "Augie …" = our own peer-ranked measures ` +
-      `(raw OOS rates; crashes-per-million via MCS-150 VMT) — used where FMCSA has no percentile, ` +
+      `(raw OOS rates; crashes-per-million via MCS-150 VMT), used where FMCSA has no percentile, ` +
       `NOT an FMCSA SMS percentile. ISS score is our reproduction (est). Risk score is our additive ` +
       `index. Insurance/revocation/authority from L&I feeds.`
   );

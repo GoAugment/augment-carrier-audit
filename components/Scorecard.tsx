@@ -16,7 +16,7 @@ const riskStyles: Record<RiskLevel, string> = {
   Low: "bg-augment-50 text-augment-900 border-augment-200",
 };
 
-// The "Low" tier is shown as "Clean" — for a broker, the bottom tier means
+// The "Low" tier is shown as "Clean", for a broker, the bottom tier means
 // "nothing flagged," which reads more clearly than "Low".
 const verdictLabel: Record<RiskLevel, string> = {
   Critical: "Critical",
@@ -25,7 +25,7 @@ const verdictLabel: Record<RiskLevel, string> = {
   Low: "Clean",
 };
 
-// Accent bar on the left of an expanded reasons panel — colored by tier
+// Accent bar on the left of an expanded reasons panel, colored by tier
 // (Critical = the red bar in the design).
 const barColor: Record<RiskLevel, string> = {
   Critical: "border-l-red-500",
@@ -60,8 +60,8 @@ const cellStyles: Record<AxisStatus, string> = {
   critical: "bg-red-200 text-red-950 font-semibold",
   severe: "bg-red-100 text-red-900",
   high: "bg-orange-100 text-orange-900",
-  elevated: "bg-amber-100 text-amber-900",
-  /** info = contextual signal (e.g. old revocations) — amber, lighter than elevated.
+  elevated: "bg-amber-100/60 text-amber-900",
+  /** info = contextual signal (e.g. old revocations), amber, lighter than elevated.
    *  Does NOT contribute to overall risk tier; just surfaces in the cell. */
   info: "bg-amber-50 text-amber-800",
   clean: "bg-augment-50 text-augment-800",
@@ -69,7 +69,7 @@ const cellStyles: Record<AxisStatus, string> = {
 };
 
 // The on-road BASIC columns are peer-rank REFERENCE data (a percentile per
-// axis), not a verdict — so they get a quieter single-hue treatment: neutral
+// axis), not a verdict, so they get a quieter single-hue treatment: neutral
 // until the carrier crosses FMCSA's alert level, then orange (deeper = further
 // above peers). They never go amber or red. Red/amber stay reserved for the
 // verdict columns, so a peer percentile (e.g. 86th) can't be visually confused
@@ -95,16 +95,16 @@ function ReadingNote() {
     <div className="mb-3 text-xs text-ink-600">
       <p>
         Two color scales. The <span className="font-semibold text-ink-700">verdict</span> columns
-        (ISS, Risk score, and authority/insurance standing) use the full alarm ramp —{" "}
+        (ISS, Risk score, and authority/insurance standing) use the full alarm ramp,{" "}
         <span className="rounded bg-augment-50 px-1 text-augment-800">clean</span>{" "}
-        <span className="rounded bg-amber-100 px-1 text-amber-900">elevated</span>{" "}
+        <span className="rounded bg-amber-100/60 px-1 text-amber-900">elevated</span>{" "}
         <span className="rounded bg-orange-100 px-1 text-orange-900">high</span>{" "}
         <span className="rounded bg-red-200 px-1 text-red-950 font-semibold">critical</span>
         . The <span className="font-semibold text-ink-700">on-road BASIC</span> columns are peer
         percentiles (reference, not a verdict): they stay neutral until the carrier crosses FMCSA&apos;s
         alert level, then turn{" "}
         <span className="rounded bg-orange-100 px-1 text-orange-900">orange</span> (deeper = further
-        above peers) — a single axis never goes red, so an{" "}
+        above peers), a single axis never goes red, so an{" "}
         <span className="tabular-nums">86th</span> percentile isn&apos;t confused with a Critical score.
         We flag on the last 24 months of activity; hover any cell for details.{" "}
         <button
@@ -131,7 +131,7 @@ function ReadingNote() {
             ≥7 true insurance cancellations in 24mo (Critical).
           </p>
           <p>
-            <span className="font-semibold text-ink-700">Info-only context</span> doesn&apos;t flag —
+            <span className="font-semibold text-ink-700">Info-only context</span> doesn&apos;t flag,
             old Satisfactory ratings (&gt;10y), historical revocations with no recent activity,
             and BIPD insurance below the $1M industry floor but at FMCSA-required levels are
             surfaced in the tooltip but do not contribute to the carrier&apos;s tier.
@@ -176,7 +176,7 @@ function Cell({
  *  exactly: one consistent ramp where red = Critical, orange = High, amber =
  *  Medium, green = Low/None. (Previously banded the raw score to severe/high/
  *  elevated, which made a Critical carrier show red-100 here but red-200 on its
- *  tier badge — two reds for the same verdict.) */
+ *  tier badge, two reds for the same verdict.) */
 function riskCellOf(r: CarrierRow): AxisCell {
   const status: AxisStatus =
     r.riskTier === "Critical"
@@ -185,7 +185,7 @@ function riskCellOf(r: CarrierRow): AxisCell {
         ? "high"
         : r.riskTier === "Medium"
           ? "elevated"
-          : "clean"; // Low / None — low concern, green
+          : "clean"; // Low / None, low concern, green
   const factorBody =
     r.riskContributions.length > 0
       ? `\n\nContributions:\n• ${r.riskContributions
@@ -196,7 +196,7 @@ function riskCellOf(r: CarrierRow): AxisCell {
     status,
     display: String(r.riskScore),
     sub: r.riskTier === "None" ? undefined : r.riskTier,
-    detail: `Carrier Risk Score (0-100, higher = worse) — tier ${r.riskTier}: transparent additive score across safety, authority/insurance, identity/chameleon, operations, and corroborating context. A heuristic index, not a probability.${factorBody}`,
+    detail: `Carrier Risk Score (0-100, higher = worse), tier ${r.riskTier}: transparent additive score across safety, authority/insurance, identity/chameleon, operations, and corroborating context. A heuristic index, not a probability.${factorBody}`,
   };
 }
 
@@ -225,7 +225,7 @@ function issCellOf(r: CarrierRow): AxisCell {
     display: String(r.issScore),
     sub: r.issTier,
     detail:
-      "Estimated FMCSA Inspection Selection System score (1-100, higher = FMCSA more likely to inspect). Reproduced from public BASIC/investigation data — FMCSA does not publish ISS. See note below the table.",
+      "Estimated FMCSA Inspection Selection System score (1-100, higher = FMCSA more likely to inspect). Reproduced from public BASIC/investigation data, FMCSA does not publish ISS. See note below the table.",
   };
 }
 
@@ -233,7 +233,7 @@ function issCellOf(r: CarrierRow): AxisCell {
 // findings vs the scored carrier-risk contributions and non-safety standing
 // findings.
 const SAFETY_RE =
-  /crash|unsafe driving|hos compliance|driver oos|vehicle oos|hazmat|fast.?act|acute|serious viol|iss —|multiple basic|safety rating/i;
+  /crash|unsafe driving|hos compliance|driver oos|vehicle oos|hazmat|fast.?act|acute|serious viol|iss,|multiple basic|safety rating/i;
 
 type Signal = { label: string; detail: string; points?: number; category?: string };
 function splitSignals(r: CarrierRow): {
@@ -367,7 +367,7 @@ export function Scorecard({
           <thead className="sticky top-0 z-10 bg-white text-[11px] font-semibold uppercase tracking-wide text-[#596560] shadow-sm">
             {/* Group band: makes explicit that the verdict, the FMCSA SMS
                 safety percentiles, and regulatory standing are three different
-                lenses — they answer different questions and can legitimately
+                lenses, they answer different questions and can legitimately
                 disagree (e.g. a chameleon shell with clean inspection scores). */}
             <tr className="text-[10px] tracking-wide text-ink-500">
               <th colSpan={2} className="whitespace-nowrap px-3 pt-2 pb-1 text-left font-semibold text-[#0F5A41]">
@@ -383,14 +383,14 @@ export function Scorecard({
               <th
                 colSpan={7}
                 className="whitespace-nowrap border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-[#E89432]"
-                title="FMCSA Safety Measurement System — all 7 BASICs, peer-ranked within the carrier's fleet-size group. Higher percentile = worse than more peers. CI* (crash) and HM* (hazmat) are our estimates; FMCSA doesn't publish them."
+                title="FMCSA Safety Measurement System, all 7 BASICs, peer-ranked within the carrier's fleet-size group. Higher percentile = worse than more peers. CI* (crash) and HM* (hazmat) are our estimates; FMCSA doesn't publish them."
               >
-                On-road safety — 7 BASICs, peer-ranked
+                On-road safety, 7 BASICs, peer-ranked
               </th>
               <th
                 colSpan={3}
                 className="whitespace-nowrap border-l border-ink-200 px-2 pt-2 pb-1 text-center font-semibold text-[#D7453C]"
-                title="Risk standing — regulatory, authority, insurance, and identity signals that may not show up in safety percentiles but affect whether the carrier can safely take the load."
+                title="Risk standing, regulatory, authority, insurance, and identity signals that may not show up in safety percentiles but affect whether the carrier can safely take the load."
               >
                 Risk standing
               </th>
@@ -399,7 +399,7 @@ export function Scorecard({
               <th className="px-3 py-2 align-bottom">#</th>
               <th className="px-3 py-2 align-bottom">Carrier</th>
               <th
-                className="border-l border-ink-200 px-2 py-2 text-center align-bottom text-[#E89432]"
+                className="border-l border-ink-200 whitespace-nowrap px-2 py-2 text-center align-bottom text-[#E89432]"
                 title="ISS-CSA Inspection Selection System score (1–100). Higher = FMCSA recommends inspection. ≥75 Inspect · 50–74 Optional · &lt;50 Pass."
               >
                 ISS
@@ -409,16 +409,16 @@ export function Scorecard({
                 </span>
               </th>
               <th
-                className="px-2 py-2 text-center align-bottom text-[#D7453C]"
-                title="Carrier risk score (0–100, higher = worse) — additive safety, authority/insurance, identity/chameleon, operations, and context factors. A heuristic index, not a probability."
+                className="whitespace-nowrap px-2 py-2 text-center align-bottom text-[#D7453C]"
+                title="Carrier risk score (0–100, higher = worse), additive safety, authority/insurance, identity/chameleon, operations, and context factors. A heuristic index, not a probability."
               >
                 Risk
                 <br />
                 <span className="text-[10px] font-normal normal-case text-[#7D8883]">risk</span>
               </th>
               <th
-                className="border-l border-ink-200 px-2 py-2 text-center align-bottom"
-                title="Crashes per million miles — raw crash count over 24 months ÷ annual VMT × 2 ÷ 1,000,000. CI* = our estimated FMCSA Crash Indicator percentile (peer-ranked) where available; see note below the table."
+                className="border-l border-ink-200 whitespace-nowrap px-2 py-2 text-center align-bottom"
+                title="Crashes per million miles, raw crash count over 24 months ÷ annual VMT × 2 ÷ 1,000,000. CI* = our estimated FMCSA Crash Indicator percentile (peer-ranked) where available; see note below the table."
               >
                 Crash
                 <br />
@@ -427,18 +427,18 @@ export function Scorecard({
                 </span>
               </th>
               <th
-                className="px-2 py-2 text-center align-bottom"
-                title="Unsafe Driving — FMCSA SMS percentile (peer-ranked; cell color flags at/above FMCSA's intervention threshold). Small number = violation rate per driver inspection."
+                className="whitespace-nowrap px-2 py-2 text-center align-bottom"
+                title="Unsafe Driving, FMCSA SMS percentile (peer-ranked; cell color flags at/above FMCSA's intervention threshold). Small number = violation rate per driver inspection."
               >
-                Unsafe driving
+                Unsafe
                 <br />
                 <span className="text-[10px] font-normal normal-case text-[#7D8883]">
                   SMS %ile
                 </span>
               </th>
               <th
-                className="px-2 py-2 text-center align-bottom"
-                title="HOS Compliance — FMCSA SMS percentile (peer-ranked; cell color flags at/above FMCSA's intervention threshold). Small number = violation rate per driver inspection."
+                className="whitespace-nowrap px-2 py-2 text-center align-bottom"
+                title="HOS Compliance, FMCSA SMS percentile (peer-ranked; cell color flags at/above FMCSA's intervention threshold). Small number = violation rate per driver inspection."
               >
                 HOS
                 <br />
@@ -447,18 +447,18 @@ export function Scorecard({
                 </span>
               </th>
               <th
-                className="px-2 py-2 text-center align-bottom"
-                title="Driver Fitness — FMCSA SMS percentile (peer-ranked; cell color flags at/above FMCSA's intervention threshold). Falls back to driver OOS rate when the carrier isn't data-sufficient for a percentile."
+                className="whitespace-nowrap px-2 py-2 text-center align-bottom"
+                title="Driver Fitness, FMCSA SMS percentile (peer-ranked; cell color flags at/above FMCSA's intervention threshold). Falls back to driver OOS rate when the carrier isn't data-sufficient for a percentile."
               >
-                Driver fitness
+                Fitness
                 <br />
                 <span className="text-[10px] font-normal normal-case text-[#7D8883]">
                   SMS %ile
                 </span>
               </th>
               <th
-                className="px-2 py-2 text-center align-bottom"
-                title="Controlled Substances / Alcohol — FMCSA SMS percentile (peer-ranked; cell color flags at/above FMCSA's intervention threshold). Sparse — '—' unless the carrier has enough relevant inspections."
+                className="whitespace-nowrap px-2 py-2 text-center align-bottom"
+                title="Controlled Substances / Alcohol, FMCSA SMS percentile (peer-ranked; cell color flags at/above FMCSA's intervention threshold). Sparse, '—' unless the carrier has enough relevant inspections."
               >
                 Ctrl. subs.
                 <br />
@@ -467,18 +467,18 @@ export function Scorecard({
                 </span>
               </th>
               <th
-                className="px-2 py-2 text-center align-bottom"
-                title="Vehicle Maintenance — FMCSA SMS percentile (peer-ranked; cell color flags at/above FMCSA's intervention threshold). Falls back to vehicle OOS rate when the carrier isn't data-sufficient for a percentile."
+                className="whitespace-nowrap px-2 py-2 text-center align-bottom"
+                title="Vehicle Maintenance, FMCSA SMS percentile (peer-ranked; cell color flags at/above FMCSA's intervention threshold). Falls back to vehicle OOS rate when the carrier isn't data-sufficient for a percentile."
               >
-                Vehicle maint.
+                Vehicle
                 <br />
                 <span className="text-[10px] font-normal normal-case text-[#7D8883]">
                   SMS %ile
                 </span>
               </th>
               <th
-                className="px-2 py-2 text-center align-bottom"
-                title="Hazmat Compliance — HM* = our estimated FMCSA percentile (FMCSA doesn't publish it); see note below the table. Falls back to hazmat OOS rate when not data-sufficient. Hazmat OOS feeds the ISS estimate."
+                className="whitespace-nowrap px-2 py-2 text-center align-bottom"
+                title="Hazmat Compliance, HM* = our estimated FMCSA percentile (FMCSA doesn't publish it); see note below the table. Falls back to hazmat OOS rate when not data-sufficient. Hazmat OOS feeds the ISS estimate."
               >
                 Hazmat
                 <br />
@@ -487,7 +487,7 @@ export function Scorecard({
                 </span>
               </th>
               <th
-                className="border-l border-ink-200 px-2 py-2 text-center align-bottom"
+                className="border-l border-ink-200 whitespace-nowrap px-2 py-2 text-center align-bottom"
                 title="Most recent involuntary revocation date, or chronic-revocation count"
               >
                 Revocations
@@ -495,7 +495,7 @@ export function Scorecard({
                 <span className="text-[10px] font-normal normal-case text-[#7D8883]">recent / chronic</span>
               </th>
               <th
-                className="px-2 py-2 text-center align-bottom"
+                className="whitespace-nowrap px-2 py-2 text-center align-bottom"
                 title="FMCSA operating authority status"
               >
                 Authority
@@ -503,7 +503,7 @@ export function Scorecard({
                 <span className="text-[10px] font-normal normal-case text-[#7D8883]">active?</span>
               </th>
               <th
-                className="px-2 py-2 text-center align-bottom"
+                className="whitespace-nowrap px-2 py-2 text-center align-bottom"
                 title="BIPD insurance on file vs required"
               >
                 Insurance
@@ -674,7 +674,7 @@ export function Scorecard({
         </table>
       </div>
       <p className="mt-2 text-[11px] leading-relaxed text-ink-500">
-        <span className="font-medium text-ink-600">ISS*</span> — Estimated FMCSA
+        <span className="font-medium text-ink-600">ISS*</span>, Estimated FMCSA
         Inspection Selection System score (1–100) and tier (Inspect / Optional /
         Pass). FMCSA does not publish ISS; this is our reproduction of the public
         ISS-CSA algorithm from FMCSA BASIC percentiles and investigation history,

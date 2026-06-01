@@ -12,7 +12,7 @@
     "+4 [Context] Insurer / ZIP risk context"
   ],
   "reasonLabels": [
-    "ISS — Inspect (top inspection priority)",
+    "ISS, Inspect (top inspection priority)",
     "Insurance churn",
     "All-cancel insurance pattern",
     "Acute/critical violations from FMCSA investigation",

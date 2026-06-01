@@ -4,7 +4,7 @@
  * Five evaluators run against the parsed email + FMCSA data. Each returns a
  * list of Signals (tier + label + detail). The verdict tier is the worst
  * signal that fired. `info` signals are surfaced as evidence but don't bump
- * the verdict tier — they're context the broker should know.
+ * the verdict tier, they're context the broker should know.
  *
  * Why deterministic (no LLM here)? Two reasons:
  *   1. Testable. We can hand-construct any ExtractedEmail and verify the
@@ -53,7 +53,7 @@ export async function checkCarrierEmail(e: ExtractedEmail): Promise<Verdict> {
   let dot = dotStr ? parseInt(dotStr.replace(/\D/g, ""), 10) : NaN;
 
   // Fall back to MC lookup when DOT is missing. Many small-carrier outreach
-  // emails reference only "MC-133655" without a DOT — the parquet has both,
+  // emails reference only "MC-133655" without a DOT, the parquet has both,
   // so we can resolve MC → DOT and continue with the full verdict pipeline
   // instead of bailing to Caution.
   if ((!Number.isFinite(dot) || dot <= 0) && e.identity_claims.mc_number) {
@@ -81,7 +81,7 @@ export async function checkCarrierEmail(e: ExtractedEmail): Promise<Verdict> {
     return verdictDotNotFound(dot, e);
   }
 
-  // Track what we actually checked vs skipped — verdict summary uses this
+  // Track what we actually checked vs skipped, verdict summary uses this
   // to set the right expectation with the broker. A "Clean" verdict from a
   // sparse email is not the same as a "Clean" verdict from a rich email
   // where every check ran with data.
@@ -95,7 +95,7 @@ export async function checkCarrierEmail(e: ExtractedEmail): Promise<Verdict> {
     lane_viability_checked:
       !!e.lane.origin_state && !!e.lane.destination_state && !!identity,
     chameleon_cluster_checked: !!identity?.phone,
-    // True whenever we have a sender domain — the DNS/WHOIS checks run on
+    // True whenever we have a sender domain, the DNS/WHOIS checks run on
     // that domain. We no longer try to verify per-message SPF/DKIM/DMARC
     // because inline forwards make those headers unreliable.
     email_auth_checked: domainAuthApplicable(e),
@@ -124,7 +124,7 @@ export async function checkCarrierEmail(e: ExtractedEmail): Promise<Verdict> {
  * Run the existing carrier-audit analyzer.ts against this carrier and map
  * its tier to a Signal. Inherits ALL existing scoring: P95 statistical
  * outliers, recent revocations, lapsed insurance, new-authority Critical,
- * chameleon-pattern cluster, etc. No new logic — just a tier mapping.
+ * chameleon-pattern cluster, etc. No new logic, just a tier mapping.
  */
 function evalAuditTier(carrier: FmcsaCarrier, dot: number): Signal[] {
   const result = analyze(
@@ -139,7 +139,7 @@ function evalAuditTier(carrier: FmcsaCarrier, dot: number): Signal[] {
     : "no specific reasons surfaced";
 
   // These four "Carrier in X tier" signals are tier echos of the analyzer's
-  // overall verdict — not standalone rules. They aggregate the analyzer's
+  // overall verdict, not standalone rules. They aggregate the analyzer's
   // individual rule findings (insurance lapsed, prior-revoke, address
   // cluster, etc.) into a single carrier-tier line for brokers who want
   // the bottom line. Labels stay inline because the actual rules (which
@@ -215,7 +215,7 @@ function evalIdentityCoherence(
   // --- Sender email/domain match ---
   // For business-domain FMCSA records we compare domains (sufficient signal).
   // For free-email FMCSA records (gmail.com, etc.) we compare the FULL email
-  // address because "matches gmail.com" tells us nothing — every Gmail user
+  // address because "matches gmail.com" tells us nothing, every Gmail user
   // matches. The local-part is what identifies the sender.
   const senderEmail = e.sender_metadata.sender_email?.toLowerCase() ?? "";
   const senderDomain = (e.sender_metadata.sender_email_domain ?? "").toLowerCase();
@@ -226,7 +226,7 @@ function evalIdentityCoherence(
 
     if (fmcsaIsFree) {
       // Compare full local-part@domain. Sender's full address required here
-      // — if Stage 1 didn't pull it (older payloads), fall back to a
+      //, if Stage 1 didn't pull it (older payloads), fall back to a
       // skip-coverage rather than a misleading domain-only pass.
       if (senderEmail && senderEmail !== fmcsaEmail) {
         signals.push({
@@ -256,7 +256,7 @@ function evalIdentityCoherence(
       }
     }
   } else if (identity?.emailDomain) {
-    // FMCSA has domain only (older data?) — fall back to domain compare.
+    // FMCSA has domain only (older data?), fall back to domain compare.
     const fmcsa = identity.emailDomain.toLowerCase();
     if (fmcsa !== senderDomain) {
       signals.push({
@@ -268,7 +268,7 @@ function evalIdentityCoherence(
     }
   } else if (FREE_EMAIL_DOMAINS.has(senderDomain)) {
     // FMCSA has no email on file AND sender is using free email. Surface
-    // as info — too common in small-carrier population to flag.
+    // as info, too common in small-carrier population to flag.
     signals.push({
       category: "identity_coherence",
       tier: "info",
@@ -318,7 +318,7 @@ function evalIdentityCoherence(
  * driver counts > 0) from the identity parquet, not the carrier's
  * self-reported claim.
  *
- * Returns no signals when no lane is specified in the email — the absence
+ * Returns no signals when no lane is specified in the email, the absence
  * of a lane isn't a signal.
  */
 function evalLaneViability(
@@ -331,7 +331,7 @@ function evalLaneViability(
   if (!origin || !dest) return [];
 
   const isInterstate = origin !== dest;
-  if (!isInterstate) return []; // intrastate lane — all carriers OK to consider
+  if (!isInterstate) return []; // intrastate lane, all carriers OK to consider
 
   // Interstate lane required. Carrier needs at least one interstate driver
   // bucket flagged in their MCS-150.
@@ -349,7 +349,7 @@ function evalLaneViability(
   }
 
   // Interstate-only-local carriers (within 100mi) trying to run long-haul.
-  // Soft signal — they might be expanding, but worth noting.
+  // Soft signal, they might be expanding, but worth noting.
   if (!identity.interstateBeyond100mi && identity.interstateWithin100mi) {
     return [
       {
@@ -373,10 +373,10 @@ function evalLaneViability(
  * to haul hazmat? FMCSA's HM_Ind flag (from Census) is the carrier's own
  * indication that they handle hazmat. Tendering placarded hazmat to a carrier
  * without HM_Ind is a regulatory and liability problem regardless of fraud
- * concerns — even when the carrier is otherwise legitimate.
+ * concerns, even when the carrier is otherwise legitimate.
  *
  * Stage 1 extraction (is_hazmat_load) intentionally errs toward false
- * positives — we'd rather flag "are these chemicals hazmat?" and let the
+ * positives, we'd rather flag "are these chemicals hazmat?" and let the
  * broker confirm than miss an actual hazmat pitch.
  */
 function evalHazmat(
@@ -387,7 +387,7 @@ function evalHazmat(
   if (!e.lane.is_hazmat_load) return [];
 
   // No identity row → can't check. Stay silent rather than emit a misleading
-  // signal — the missing-coverage line in the verdict surfaces the gap.
+  // signal, the missing-coverage line in the verdict surfaces the gap.
   if (!identity) return [];
 
   if (!identity.hazmatFlag) {
@@ -403,7 +403,7 @@ function evalHazmat(
   }
 
   // Carrier has the flag. Check that they have any hazmat-inspection
-  // activity in the last 24mo — a flag with zero hazmat inspections suggests
+  // activity in the last 24mo, a flag with zero hazmat inspections suggests
   // a stale self-report.
   if (carrier.hazmatInsp === 0) {
     return [
@@ -434,7 +434,7 @@ function evalHazmat(
 /**
  * Does this carrier share a phone number with another DOT? Strongest when
  * the focal DOT is NEW and the matched DOT was revoked BEFORE the focal
- * registered — that's the textbook re-incarnation pattern.
+ * registered, that's the textbook re-incarnation pattern.
  *
  * Patterns this distinguishes:
  *   - Corporate phone (mega fleet w/ many subsidiary DOTs sharing 800-line)
@@ -508,7 +508,7 @@ async function evalChameleonCluster(
   // Corporate-phone heuristic: when many DOTs share the phone, it's almost
   // always a corporate switchboard (Schneider's 800-558-6767 is on 6+ DOTs).
   // Even if one of them happens to have revocation history, that's not a
-  // chameleon signal for the focal — it's just a sibling DOT.
+  // chameleon signal for the focal, it's just a sibling DOT.
   if (others.length >= CORPORATE_PHONE_MATCH_THRESHOLD) {
     const revokedSibling = others.find((o) => {
       const c = otherCarriers.get(o.dotNumber);
@@ -555,7 +555,7 @@ async function evalChameleonCluster(
       });
     } else if (hasRevocation) {
       // Phone match with a revoked carrier, but timing doesn't support
-      // chameleon — surface as caution, broker decides.
+      // chameleon, surface as caution, broker decides.
       signals.push({
         category: "chameleon_cluster",
         tier: "caution",
@@ -564,7 +564,7 @@ async function evalChameleonCluster(
       });
     } else {
       // Few live siblings on the same phone. Previously dismissed as a benign
-      // owner-operator pattern — but a lift test (2026-05, internal do-not-use
+      // owner-operator pattern, but a lift test (2026-05, internal do-not-use
       // outcomes) found carriers sharing a phone are flagged ~1.3x more often
       // than carriers on a unique line, and the 1-2 sibling case is the most
       // elevated bucket. So it's a weak fraud corroborator, not benign: surface
@@ -573,7 +573,7 @@ async function evalChameleonCluster(
         category: "chameleon_cluster",
         tier: "caution",
         label: getRule("phone-shared-one-other-dot").label,
-        detail: `Sender's phone also belongs to active DOT ${o.dotNumber} (${c.legalName ?? "unnamed"}), which has no revocation history. Shared contact between separate active carriers can mean one operator running multiple authorities — verify they're the same legitimate business before tendering.`,
+        detail: `Sender's phone also belongs to active DOT ${o.dotNumber} (${c.legalName ?? "unnamed"}), which has no revocation history. Shared contact between separate active carriers can mean one operator running multiple authorities, verify they're the same legitimate business before tendering.`,
       });
     }
   }
@@ -594,7 +594,7 @@ async function evalEmailAuthenticity(
 
   // NOTE: per-message SPF/DKIM/DMARC was removed. Inline forwards strip the
   // original carrier's Authentication-Results; the remaining header reflects
-  // the broker's forwarding server (always passes — meaningless). Reply-To
+  // the broker's forwarding server (always passes, meaningless). Reply-To
   // mismatch IS preserved across forwards and stays useful below.
 
   // --- Hard signal: Reply-To domain mismatch ---
@@ -669,7 +669,7 @@ async function evalEmailAuthenticity(
   }
 
   // --- Domain-level config check + WHOIS age ---
-  // Skip free email providers (gmail/yahoo/etc. — well-established and the
+  // Skip free email providers (gmail/yahoo/etc., well-established and the
   // domain isn't owned by the sender anyway) and skip when the domain matches
   // FMCSA's registration (the carrier's history with FMCSA is stronger
   // evidence than these external lookups).
@@ -678,7 +678,7 @@ async function evalEmailAuthenticity(
     FREE_EMAIL_DOMAINS.has(senderDomain) ||
     identity?.emailDomain?.toLowerCase() === senderDomain;
   if (!skipDomainLookups && senderDomain) {
-    // Run DNS + WHOIS in parallel — both are external network lookups, no
+    // Run DNS + WHOIS in parallel, both are external network lookups, no
     // dependency between them.
     const [dnsConfig, age] = await Promise.all([
       checkDomainAuth(senderDomain),
@@ -702,7 +702,7 @@ async function evalEmailAuthenticity(
         });
       } else {
         // Positive info signal: domain is properly set up. NOT the same as
-        // "this email passed auth" — we can't claim that from forwarded mail.
+        // "this email passed auth", we can't claim that from forwarded mail.
         const parts: string[] = [];
         if (dnsConfig.hasSpf) parts.push("SPF");
         if (dnsConfig.hasDmarc) parts.push("DMARC");
@@ -745,7 +745,7 @@ async function evalEmailAuthenticity(
 }
 
 /** True when at least one of the email-authenticity domain checks could be
- *  evaluated for this email — i.e. the email had a sender domain we could
+ *  evaluated for this email, i.e. the email had a sender domain we could
  *  look up. Free-mail domains count as "checked" too (their setup is known
  *  good by definition). */
 function domainAuthApplicable(e: ExtractedEmail): boolean {
@@ -800,7 +800,7 @@ function composeVerdict(
     .filter((s) => s.tier !== "info")
     .sort((a, b) => tierRank(b.tier) - tierRank(a.tier))[0];
 
-  // Re-run analyze() once — used both to surface concrete reasons in the
+  // Re-run analyze() once, used both to surface concrete reasons in the
   // summary AND to populate the audit summary block at the bottom.
   const dot = carrier.dotNumber as number;
   const audit = analyze(
@@ -809,7 +809,7 @@ function composeVerdict(
   ).rows[0];
 
   // The reply's headline already conveys the tier + recommended action.
-  // The summary should explain WHY — surface the concrete reasons, not a
+  // The summary should explain WHY, surface the concrete reasons, not a
   // generic "Carrier in Severe tier" which just restates a tier label.
   let summary: string;
   if (dominantSignal) {
@@ -819,7 +819,7 @@ function composeVerdict(
       summary = `${dominantSignal.label}.`;
     }
   } else if (richChecksCount <= 1) {
-    // Clean verdict from a sparse email — be honest about why.
+    // Clean verdict from a sparse email, be honest about why.
     summary =
       "Carrier audit is clean and email headers look legitimate, but the email itself didn't include enough info (no lane, no claimed phone or company name) to fully verify identity. Treat as the equivalent of running the website audit.";
   } else {
@@ -928,7 +928,7 @@ const AXIS_SCALE_FOR_DISPLAY: Record<AxisKey, number> = {
   crashesPerMillionMiles: 1,
   crashMeasure: 1,
   // Unsafe Driving + HOS rate cutoffs are stored as decimals (0-1) in
-  // thresholds.json. The email displays them as % — so multiply by 100 to
+  // thresholds.json. The email displays them as %, so multiply by 100 to
   // keep observed (also in %) on the same scale.
   unsafeDriving: 100,
   hos: 100,
@@ -980,7 +980,7 @@ function labelCrashMeasure(measure: number | null | undefined): string | null {
 
 /** FMCSA's BASIC "alert" flags are Y when a carrier is over the intervention
  *  threshold on that SMS dimension. These are the most actionable single
- *  safety signal — FMCSA itself uses them to prioritize compliance review.
+ *  safety signal, FMCSA itself uses them to prioritize compliance review.
  *  We only surface fired alerts; "all 5 cleared" is the silent default. */
 function collectBasicAlerts(
   c: import("../fmcsa").FmcsaCarrier
@@ -1014,7 +1014,7 @@ function phraseReason(label: string): string {
   return REASON_PHRASING[stripped] ?? stripped;
 }
 
-/** A safety rating older than 5 years is misleading as a positive signal —
+/** A safety rating older than 5 years is misleading as a positive signal,
  *  the carrier may have changed entirely. Suppress old ratings to avoid
  *  giving brokers false confidence. */
 function isSafetyRatingFresh(rated: string | null): boolean {

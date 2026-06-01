@@ -1,5 +1,5 @@
 /**
- * Rule registry — the single source of truth for every flag we surface to
+ * Rule registry, the single source of truth for every flag we surface to
  * users, across the website carrier audit AND the email reply.
  *
  * Each rule entry has a stable ID, plain-language definition, threshold
@@ -50,7 +50,7 @@ export const RULES: Rule[] = [
       critical: "DOT issued less than 90 days ago.",
     },
     fixtures: {
-      // Note: fixtures for this rule are inherently volatile — the DOT
+      // Note: fixtures for this rule are inherently volatile, the DOT
       // crosses the 90-day threshold ~3 months after registration and
       // stops triggering. Refresh by re-running the find_rule_fixtures.py
       // query against the latest parquet snapshot.
@@ -110,7 +110,7 @@ export const RULES: Rule[] = [
   },
   // Note: cargo-insurance-not-on-file was previously documented here but its
   // analyzer function (classifyCargoInsurance) was never wired into the
-  // main analyze() flow — see lib/analyzer.ts:836-838 comment. The FMCSA
+  // main analyze() flow, see lib/analyzer.ts:836-838 comment. The FMCSA
   // bulk-file cargo-on-file flag has too many false positives (large
   // carriers self-insure cargo and don't file with FMCSA; brokers verify
   // cargo COI direct with the carrier). Rule + dead function removed
@@ -134,7 +134,7 @@ export const RULES: Rule[] = [
     category: "insurance",
     label: "Severe insurance churn",
     definition:
-      "Five or more distinct insurance policies cancelled in the last 24 months — the top 0.3% (P99.7) of carriers nationally. Each distinct policy means a separate underwriter dropped this carrier (multiple cancellation notices on the same policy don't count). Repeated insurer dropouts indicate the carrier is on the edge of becoming uninsurable; the next cancellation may not be replaced. Distinct from administrative billing-cycle issues, where a single insurer repeatedly cancels and reinstates the same policy — that pattern doesn't fire this rule.",
+      "Five or more distinct insurance policies cancelled in the last 24 months, the top 0.3% (P99.7) of carriers nationally. Each distinct policy means a separate underwriter dropped this carrier (multiple cancellation notices on the same policy don't count). Repeated insurer dropouts indicate the carrier is on the edge of becoming uninsurable; the next cancellation may not be replaced. Distinct from administrative billing-cycle issues, where a single insurer repeatedly cancels and reinstates the same policy, that pattern doesn't fire this rule.",
     thresholds: {
       critical: "≥5 distinct policies cancelled in 24 months.",
     },
@@ -148,7 +148,7 @@ export const RULES: Rule[] = [
     category: "insurance",
     label: "Insurance churn",
     definition:
-      "Three to four distinct insurance policies cancelled in the last 24 months — between the 99th and 99.6th national percentiles. The signal counts unique policy numbers, not cancellation events, so a carrier whose single insurer repeatedly cancels and reinstates the same policy (billing-cycle issues) does not trigger here. Frequent distinct-insurer dropouts suggest the carrier is being shopped between underwriters, often due to claim history or premium nonpayment. At 5+ distinct cancellations the rule escalates to Severe insurance churn.",
+      "Three to four distinct insurance policies cancelled in the last 24 months, between the 99th and 99.6th national percentiles. The signal counts unique policy numbers, not cancellation events, so a carrier whose single insurer repeatedly cancels and reinstates the same policy (billing-cycle issues) does not trigger here. Frequent distinct-insurer dropouts suggest the carrier is being shopped between underwriters, often due to claim history or premium nonpayment. At 5+ distinct cancellations the rule escalates to Severe insurance churn.",
     thresholds: {
       caution: "3 or 4 distinct policies cancelled in 24 months (P99-P99.6 band).",
     },
@@ -177,7 +177,7 @@ export const RULES: Rule[] = [
     category: "insurance",
     label: "All-cancel insurance pattern",
     definition:
-      "Three or more distinct BIPD policies in the last 24 months, with zero Replaced events recorded — i.e. every policy ends as a Cancellation rather than a continuous Replacement. The pattern indicates the carrier is shopping a new insurer each policy term rather than renewing with the same one, which usually means the prior insurer declined to continue. Distinct from rapid-replace (cancel then immediately re-bind) and from churn (raw cancellation count).",
+      "Three or more distinct BIPD policies in the last 24 months, with zero Replaced events recorded, i.e. every policy ends as a Cancellation rather than a continuous Replacement. The pattern indicates the carrier is shopping a new insurer each policy term rather than renewing with the same one, which usually means the prior insurer declined to continue. Distinct from rapid-replace (cancel then immediately re-bind) and from churn (raw cancellation count).",
     thresholds: {
       high:    "≥5 distinct BIPD policies in 24mo with zero Replaced events.",
       caution: "3 or 4 distinct BIPD policies in 24mo with zero Replaced events.",
@@ -228,7 +228,7 @@ export const RULES: Rule[] = [
     category: "chameleon",
     label: "FMCSA prior-revoke flag (chameleon)",
     definition:
-      "FMCSA's own PRIOR_REVOKE_FLAG marks this DOT as a re-incarnation of a previously-revoked predecessor DOT. This is the strongest single chameleon signal available — no inference required, FMCSA explicitly linked the active DOT to its revoked predecessor. The new authority exists specifically to escape the predecessor's enforcement history.",
+      "FMCSA's own PRIOR_REVOKE_FLAG marks this DOT as a re-incarnation of a previously-revoked predecessor DOT. This is the strongest single chameleon signal available, no inference required, FMCSA explicitly linked the active DOT to its revoked predecessor. The new authority exists specifically to escape the predecessor's enforcement history.",
     thresholds: {
       critical: "FMCSA PRIOR_REVOKE_FLAG = Y AND PRIOR_REVOKE_DOT_NUMBER points to a different DOT.",
     },
@@ -244,7 +244,7 @@ export const RULES: Rule[] = [
   // cluster, each PU/VIN-gated) plus the hard regulatory/fraud signals.
 
   // ---------------------------------------------------------------------
-  // IDENTITY COHERENCE — email-only rules comparing what the email claims
+  // IDENTITY COHERENCE, email-only rules comparing what the email claims
   // against what FMCSA has on file.
   // ---------------------------------------------------------------------
   {
@@ -252,7 +252,7 @@ export const RULES: Rule[] = [
     category: "identityCoherence",
     label: "MC# mismatch",
     definition:
-      "The MC (Motor Carrier) number stated in the email doesn't match FMCSA's registered MC for the claimed DOT. MC and DOT numbers are tied to the same legal entity in FMCSA's records — a mismatch suggests either a fabricated identity or an impersonator using a stolen DOT alongside a different (often valid-looking) MC.",
+      "The MC (Motor Carrier) number stated in the email doesn't match FMCSA's registered MC for the claimed DOT. MC and DOT numbers are tied to the same legal entity in FMCSA's records, a mismatch suggests either a fabricated identity or an impersonator using a stolen DOT alongside a different (often valid-looking) MC.",
     thresholds: {
       critical: "Email's MC number doesn't equal the FMCSA-registered MC for the claimed DOT.",
     },
@@ -272,7 +272,7 @@ export const RULES: Rule[] = [
     category: "identityCoherence",
     label: "Sender at free email (no FMCSA email to compare)",
     definition:
-      "Sender is on a free-mail provider (Gmail, Yahoo, Outlook, etc.) and FMCSA has no email on file for this carrier. We can't verify the sender against FMCSA — common in small-carrier and owner-op populations, so this is informational rather than a flag.",
+      "Sender is on a free-mail provider (Gmail, Yahoo, Outlook, etc.) and FMCSA has no email on file for this carrier. We can't verify the sender against FMCSA, common in small-carrier and owner-op populations, so this is informational rather than a flag.",
     thresholds: {
       info: "Sender domain is free-mail AND FMCSA has no email for this DOT.",
     },
@@ -292,14 +292,14 @@ export const RULES: Rule[] = [
     category: "identityCoherence",
     label: "Phone in email doesn't match FMCSA",
     definition:
-      "The phone number stated in the email doesn't match FMCSA's registered phone for this DOT. Carriers do change phone numbers, so a single mismatch isn't damning — but combined with other identity flags it strengthens the impersonation hypothesis.",
+      "The phone number stated in the email doesn't match FMCSA's registered phone for this DOT. Carriers do change phone numbers, so a single mismatch isn't damning, but combined with other identity flags it strengthens the impersonation hypothesis.",
     thresholds: {
       caution: "Phone in the email doesn't match FMCSA's registered phone after normalization.",
     },
   },
 
   // ---------------------------------------------------------------------
-  // LANE VIABILITY — does the carrier's authority + operating area cover
+  // LANE VIABILITY, does the carrier's authority + operating area cover
   // the lane they're offering to haul?
   // ---------------------------------------------------------------------
   {
@@ -317,21 +317,21 @@ export const RULES: Rule[] = [
     category: "laneViability",
     label: "Carrier registers as interstate-local only",
     definition:
-      "Carrier's MCS-150 marks them as interstate within 100 miles only — no long-haul drivers, no over-the-road inspections. The proposed lane likely exceeds that 100-mile radius. Carrier could be expanding (and should update their MCS-150 first), but the mismatch is worth flagging.",
+      "Carrier's MCS-150 marks them as interstate within 100 miles only, no long-haul drivers, no over-the-road inspections. The proposed lane likely exceeds that 100-mile radius. Carrier could be expanding (and should update their MCS-150 first), but the mismatch is worth flagging.",
     thresholds: {
       caution: "Carrier operation = interstate within 100 miles AND proposed lane is plausibly long-haul.",
     },
   },
 
   // ---------------------------------------------------------------------
-  // HAZMAT — applies only when the broker's email pitches a hazmat load
+  // HAZMAT, applies only when the broker's email pitches a hazmat load
   // ---------------------------------------------------------------------
   {
     id: "hazmat-not-registered",
     category: "hazmat",
     label: "Carrier not registered for hazmat",
     definition:
-      "Email pitches a hazmat (placardable) load, but FMCSA Census shows HM_Ind=N for this carrier — they have not indicated they handle hazardous materials on their MCS-150. Tendering placarded hazmat to a non-hazmat carrier is a regulatory and liability problem regardless of how willing the driver is.",
+      "Email pitches a hazmat (placardable) load, but FMCSA Census shows HM_Ind=N for this carrier, they have not indicated they handle hazardous materials on their MCS-150. Tendering placarded hazmat to a non-hazmat carrier is a regulatory and liability problem regardless of how willing the driver is.",
     thresholds: {
       critical: "Email pitches hazmat AND carrier's MCS-150 HM_Ind = N.",
     },
@@ -341,7 +341,7 @@ export const RULES: Rule[] = [
     category: "hazmat",
     label: "Hazmat-registered carrier with no recent hazmat activity",
     definition:
-      "Carrier's MCS-150 indicates hazmat capability (HM_Ind=Y), but FMCSA has no hazmat inspections on record in the last 24 months. The hazmat self-report may be stale — verify the carrier's current hazmat permit and driver endorsements before tendering.",
+      "Carrier's MCS-150 indicates hazmat capability (HM_Ind=Y), but FMCSA has no hazmat inspections on record in the last 24 months. The hazmat self-report may be stale, verify the carrier's current hazmat permit and driver endorsements before tendering.",
     thresholds: {
       caution: "HM_Ind = Y but 0 hazmat inspections in last 24 months.",
     },
@@ -351,21 +351,21 @@ export const RULES: Rule[] = [
     category: "hazmat",
     label: "Hazmat-registered, with recent hazmat activity",
     definition:
-      "Carrier handles hazmat per MCS-150 (HM_Ind=Y) and has recent hazmat inspections on record. This is a positive verification — they actively haul placardable loads. The broker should still confirm specific endorsements (HM placard, tanker, etc.) match the load class.",
+      "Carrier handles hazmat per MCS-150 (HM_Ind=Y) and has recent hazmat inspections on record. This is a positive verification, they actively haul placardable loads. The broker should still confirm specific endorsements (HM placard, tanker, etc.) match the load class.",
     thresholds: {
       info: "HM_Ind = Y AND ≥1 hazmat inspections in last 24 months.",
     },
   },
 
   // ---------------------------------------------------------------------
-  // CHAMELEON — phone-based (email-only, not in audit)
+  // CHAMELEON, phone-based (email-only, not in audit)
   // ---------------------------------------------------------------------
   {
     id: "phone-corp-switchboard",
     category: "chameleon",
     label: "Phone shared with multiple DOTs (corporate switchboard)",
     definition:
-      "Sender's phone matches three or more other DOTs in FMCSA. Large fleets and dispatch services commonly share one line across many authorities, and at this scale the pattern skews toward legitimate dispatchers (a lift test found very large clusters less elevated than 1-2 DOT matches) — weaker than a 1-2 DOT match. Surfaced as context so brokers know the phone belongs to a shared dispatch line, not uniquely to the carrier they're tendering to.",
+      "Sender's phone matches three or more other DOTs in FMCSA. Large fleets and dispatch services commonly share one line across many authorities, and at this scale the pattern skews toward legitimate dispatchers (a lift test found very large clusters less elevated than 1-2 DOT matches), weaker than a 1-2 DOT match. Surfaced as context so brokers know the phone belongs to a shared dispatch line, not uniquely to the carrier they're tendering to.",
     thresholds: {
       info: "Phone matches ≥3 other DOTs (corporate switchboard pattern).",
     },
@@ -395,14 +395,14 @@ export const RULES: Rule[] = [
     category: "chameleon",
     label: "Phone shared with another active carrier",
     definition:
-      "Sender's phone matches one or two other active DOTs in FMCSA with no revocation history. Often a legitimate multi-authority owner-operator — but a lift test (2026-05) against internal do-not-use outcomes found carriers sharing a phone are flagged ~1.3x more often than carriers on a unique line, and the 1-2 sibling case is the most elevated bucket. So it is a weak fraud corroborator, not benign. Surfaced at caution: confirm it is the same legitimate operator before tendering.",
+      "Sender's phone matches one or two other active DOTs in FMCSA with no revocation history. Often a legitimate multi-authority owner-operator, but a lift test (2026-05) against internal do-not-use outcomes found carriers sharing a phone are flagged ~1.3x more often than carriers on a unique line, and the 1-2 sibling case is the most elevated bucket. So it is a weak fraud corroborator, not benign. Surfaced at caution: confirm it is the same legitimate operator before tendering.",
     thresholds: {
       caution: "Phone matches 1-2 other active DOTs with no revocation history.",
     },
   },
 
   // ---------------------------------------------------------------------
-  // EMAIL AUTHENTICITY — DNS / WHOIS / behavioral signals about the sender
+  // EMAIL AUTHENTICITY, DNS / WHOIS / behavioral signals about the sender
   // ---------------------------------------------------------------------
   {
     id: "reply-to-differs-from-sender",
@@ -429,7 +429,7 @@ export const RULES: Rule[] = [
     category: "emailAuthenticity",
     label: "Vague cold pitch without signature",
     definition:
-      "Email is an unsolicited cold inquiry with no signature block and low specificity (no MC#, no specific lanes, no equipment detail). Common cold-list pattern from carrier brokers or scrapers — not necessarily fraudulent but worth flagging as low-specificity outreach.",
+      "Email is an unsolicited cold inquiry with no signature block and low specificity (no MC#, no specific lanes, no equipment detail). Common cold-list pattern from carrier brokers or scrapers, not necessarily fraudulent but worth flagging as low-specificity outreach.",
     thresholds: {
       info: "No load-posting response AND no signature block AND specificity score is low.",
     },
@@ -459,7 +459,7 @@ export const RULES: Rule[] = [
     category: "emailAuthenticity",
     label: "Sender domain has no MX records",
     definition:
-      "Sender's domain has no MX (mail exchanger) records in DNS — replies will bounce. Typical of parked domains, throwaway typo-squats, or newly-registered domains that haven't been provisioned for email. Legitimate carriers operate from domains that accept inbound mail.",
+      "Sender's domain has no MX (mail exchanger) records in DNS, replies will bounce. Typical of parked domains, throwaway typo-squats, or newly-registered domains that haven't been provisioned for email. Legitimate carriers operate from domains that accept inbound mail.",
     thresholds: {
       high: "Sender domain has no MX records in DNS.",
     },
@@ -469,7 +469,7 @@ export const RULES: Rule[] = [
     category: "emailAuthenticity",
     label: "Sender domain lacks email authentication setup",
     definition:
-      "Sender's domain accepts mail (MX on file) but publishes neither SPF nor DMARC. Real businesses configure at least one — without them anyone can spoof mail from this domain. Unusual for a legitimate carrier; worth confirming the carrier's identity through another channel.",
+      "Sender's domain accepts mail (MX on file) but publishes neither SPF nor DMARC. Real businesses configure at least one, without them anyone can spoof mail from this domain. Unusual for a legitimate carrier; worth confirming the carrier's identity through another channel.",
     thresholds: {
       caution: "Sender domain has MX but neither SPF nor DMARC.",
     },
@@ -479,7 +479,7 @@ export const RULES: Rule[] = [
     category: "emailAuthenticity",
     label: "Sender domain configured for authenticated email",
     definition:
-      "Sender's domain publishes SPF and/or DMARC and accepts inbound mail — set up like a real business. This is a domain-level check, not a per-message check (inline-forwarded emails strip the per-message auth headers, so we can't claim the specific message passed authentication, only that the domain is properly configured).",
+      "Sender's domain publishes SPF and/or DMARC and accepts inbound mail, set up like a real business. This is a domain-level check, not a per-message check (inline-forwarded emails strip the per-message auth headers, so we can't claim the specific message passed authentication, only that the domain is properly configured).",
     thresholds: {
       info: "Sender domain has MX AND publishes SPF and/or DMARC.",
     },
@@ -489,7 +489,7 @@ export const RULES: Rule[] = [
     category: "emailAuthenticity",
     label: "Sender domain newly registered",
     definition:
-      "Sender's domain was registered less than 90 days ago. Brand-new domains are uncommon for legitimate carriers — they're operating businesses with established web presence. New domains paired with carrier outreach is a recurring fraud pattern (impersonators register a domain that looks like a real carrier's days before the scam).",
+      "Sender's domain was registered less than 90 days ago. Brand-new domains are uncommon for legitimate carriers, they're operating businesses with established web presence. New domains paired with carrier outreach is a recurring fraud pattern (impersonators register a domain that looks like a real carrier's days before the scam).",
     thresholds: {
       high: "WHOIS registration date less than 90 days ago.",
     },
@@ -499,7 +499,7 @@ export const RULES: Rule[] = [
     category: "emailAuthenticity",
     label: "Sender domain less than a year old",
     definition:
-      "Sender's domain was registered between 90 days and 1 year ago. Not as suspicious as a brand-new domain but worth verifying — most established carriers operate on multi-year-old domains.",
+      "Sender's domain was registered between 90 days and 1 year ago. Not as suspicious as a brand-new domain but worth verifying, most established carriers operate on multi-year-old domains.",
     thresholds: {
       caution: "WHOIS registration date between 90 and 365 days ago.",
     },
@@ -509,14 +509,14 @@ export const RULES: Rule[] = [
     category: "emailAuthenticity",
     label: "Sender domain age established",
     definition:
-      "Sender's domain has been registered for at least a year, often many years. Positive identity signal — establishes the sender's domain isn't a recently-spun-up impersonation site.",
+      "Sender's domain has been registered for at least a year, often many years. Positive identity signal, establishes the sender's domain isn't a recently-spun-up impersonation site.",
     thresholds: {
       info: "WHOIS registration date ≥365 days ago.",
     },
   },
 
   // ---------------------------------------------------------------------
-  // EDGE CASES — fired by composeVerdict when carrier can't be resolved
+  // EDGE CASES, fired by composeVerdict when carrier can't be resolved
   // ---------------------------------------------------------------------
   {
     id: "no-dot-or-mc-in-email",
@@ -540,7 +540,7 @@ export const RULES: Rule[] = [
   },
 
   // ---------------------------------------------------------------------
-  // SMS BASIC + CRASH — statistical-axis rules
+  // SMS BASIC + CRASH, statistical-axis rules
   //
   // These six rules all share the same shape: an observed rate (violation /
   // OOS / crash count divided by exposure) is compared against the carrier's
@@ -549,7 +549,7 @@ export const RULES: Rule[] = [
   //   ≥P95 → Severe, ≥P90 → High, ≥P85 → Elevated, <P85 → Clean.
   //
   // The "definition" text below intentionally leaves out specific cutoff
-  // numbers because they change with each FMCSA snapshot — see the
+  // numbers because they change with each FMCSA snapshot, see the
   // tooltip on the website Scorecard for the live peer-group cutoff at
   // the time of the audit.
   // ---------------------------------------------------------------------
@@ -566,7 +566,7 @@ export const RULES: Rule[] = [
     },
     fixtures: {
       // Any crash-rate fixture is a function of (crashes_24mo, annual_mileage)
-      // — both change quickly. Picked a small-fleet carrier with persistent
+      //, both change quickly. Picked a small-fleet carrier with persistent
       // high crash count to maximize stability.
       critical: { dot: 1162977, reason: "UNIVERSAL INTERMODAL SERVICES: ~18 crashes per million miles on 1.25M mileage, 45 crashes / 124 PU." },
       none: { dot: 53467, reason: "Werner: industry-leading low crash rate." },
@@ -609,7 +609,7 @@ export const RULES: Rule[] = [
     category: "smsBasic",
     label: "Driver OOS",
     definition:
-      "Driver out-of-service rate: roadside inspections where the driver was placed OOS (could not continue driving) divided by total driver inspections. Driver OOS is the consequence-side metric — it's what happens when violations are severe enough to halt the trip immediately.",
+      "Driver out-of-service rate: roadside inspections where the driver was placed OOS (could not continue driving) divided by total driver inspections. Driver OOS is the consequence-side metric, it's what happens when violations are severe enough to halt the trip immediately.",
     thresholds: {
       critical: "Driver OOS rate at or above P95 for peer group.",
       high:     "Between P90 and P95 for peer group.",
@@ -641,7 +641,7 @@ export const RULES: Rule[] = [
     category: "smsBasic",
     label: "Hazmat OOS",
     definition:
-      "Hazmat out-of-service rate: hazmat-load inspections that resulted in an OOS order divided by total hazmat inspections (24 months). Hazmat OOS is materially more serious than general Vehicle OOS — the regulatory threshold is lower and the consequences (placard violations, leak risk) are higher. Only fires for carriers with hazmat activity.",
+      "Hazmat out-of-service rate: hazmat-load inspections that resulted in an OOS order divided by total hazmat inspections (24 months). Hazmat OOS is materially more serious than general Vehicle OOS, the regulatory threshold is lower and the consequences (placard violations, leak risk) are higher. Only fires for carriers with hazmat activity.",
     thresholds: {
       critical: "Hazmat OOS rate at or above P95 for peer group.",
       high:     "Between P90 and P95 for peer group.",
@@ -655,9 +655,9 @@ export const RULES: Rule[] = [
   {
     id: "fast-act-high-risk",
     category: "smsBasic",
-    label: "FAST Act High-Risk — triggered",
+    label: "FAST Act High-Risk, triggered",
     definition:
-      "Two or more of the four crash-correlated BASICs — Unsafe Driving, Crash Indicator, Hours-of-Service, Vehicle Maintenance — are at or above the 90th percentile. This is the threshold FMCSA uses under the FAST Act (§5305) to prioritize a carrier for an onsite safety investigation. Computed from the current monthly SMS snapshot's percentiles; FMCSA's non-passenger rule additionally requires the condition to persist two consecutive months and excludes carriers investigated in the last 18 months, so this flags carriers that meet the percentile bar (a superset). Crash Indicator percentile is only available for carriers with sufficient crash data, so CI-driven high-risk is undercounted.",
+      "Two or more of the four crash-correlated BASICs, Unsafe Driving, Crash Indicator, Hours-of-Service, Vehicle Maintenance, are at or above the 90th percentile. This is the threshold FMCSA uses under the FAST Act (§5305) to prioritize a carrier for an onsite safety investigation. Computed from the current monthly SMS snapshot's percentiles; FMCSA's non-passenger rule additionally requires the condition to persist two consecutive months and excludes carriers investigated in the last 18 months, so this flags carriers that meet the percentile bar (a superset). Crash Indicator percentile is only available for carriers with sufficient crash data, so CI-driven high-risk is undercounted.",
     thresholds: {
       high: "≥2 of {Unsafe Driving, Crash Indicator, HOS, Vehicle Maintenance} at ≥90th percentile.",
     },
@@ -671,7 +671,7 @@ export const RULES: Rule[] = [
     category: "smsBasic",
     label: "Acute/critical violations from FMCSA investigation",
     definition:
-      "FMCSA conducted an on-site or off-site investigation in the last 12 months and cited one or more acute or critical (Serious) violations. Acute violations require immediate corrective action (e.g., no controlled-substances testing program); critical violations indicate a breakdown in management controls (e.g., a pattern of false records of duty status). Under FMCSA's own ISS algorithm a Serious Violation forces the associated BASIC to the 100th percentile. This is direct evidence FMCSA found the carrier non-compliant during an audit — far stronger than roadside percentiles. Sourced from the per-carrier SMS investigation results.",
+      "FMCSA conducted an on-site or off-site investigation in the last 12 months and cited one or more acute or critical (Serious) violations. Acute violations require immediate corrective action (e.g., no controlled-substances testing program); critical violations indicate a breakdown in management controls (e.g., a pattern of false records of duty status). Under FMCSA's own ISS algorithm a Serious Violation forces the associated BASIC to the 100th percentile. This is direct evidence FMCSA found the carrier non-compliant during an audit, far stronger than roadside percentiles. Sourced from the per-carrier SMS investigation results.",
     thresholds: {
       critical: "≥1 acute/critical violation in 2+ BASICs, or any controlled-substances/HOS acute violation.",
       high: "≥1 acute/critical violation from an investigation in the last 12 months.",
@@ -684,9 +684,9 @@ export const RULES: Rule[] = [
   {
     id: "insurance-imminent-lapse",
     category: "insurance",
-    label: "BIPD insurance about to lapse — no replacement on file",
+    label: "BIPD insurance about to lapse, no replacement on file",
     definition:
-      "The carrier's most recent BIPD (liability) insurance filing is a cancellation, with no replacement policy on file and no other active BIPD coverage — so the carrier is days from losing the financial responsibility required to operate, or has already lost it. A carrier that loses insurance loses its authority and is a major tender risk. NOTE: computed against the insurance-data snapshot, so it must be run on fresh insurance data to be operationally accurate.",
+      "The carrier's most recent BIPD (liability) insurance filing is a cancellation, with no replacement policy on file and no other active BIPD coverage, so the carrier is days from losing the financial responsibility required to operate, or has already lost it. A carrier that loses insurance loses its authority and is a major tender risk. NOTE: computed against the insurance-data snapshot, so it must be run on fresh insurance data to be operationally accurate.",
     thresholds: {
       critical: "Cancellation already in effect (lapsed) or within ~10 days, no replacement.",
       high: "Cancellation effective within ~45 days, no replacement on file.",
@@ -698,7 +698,7 @@ export const RULES: Rule[] = [
   },
 
   // ---------------------------------------------------------------------
-  // CHAMELEON — fleet sharing (cross-DOT VIN overlap)
+  // CHAMELEON, fleet sharing (cross-DOT VIN overlap)
   // ---------------------------------------------------------------------
   {
     id: "chameleon-shared-fleet",
@@ -708,8 +708,8 @@ export const RULES: Rule[] = [
       "A meaningful share of the trucks inspected under this carrier (identified by VIN) are also inspected under another currently-active DOT. Two active DOTs running the same physical fleet is the strongest single signal of a multi-shell operator: the same operator is running 'one' business under two paper authorities, which spreads safety violations across two ledgers and dilutes the audit picture brokers see on either DOT alone. Excludes legitimate one-way truck sales (where the seller's DOT goes inactive) because both sides of the overlap must currently be active.",
     thresholds: {
       critical: "≥50% VIN overlap with another active DOT at the SAME physical address (DK MAX TRUCKING / DK MAX PRIME pattern: same building, near-identical name, shared fleet).",
-      high:     "≥80% VIN overlap with another active DOT regardless of address (sister-DOT structure — name variants, related entities sharing trucks).",
-      caution:  "≥50% VIN overlap with another active DOT, no address or name correlation (probable fleet acquisition or undisclosed corporate relationship — worth verifying).",
+      high:     "≥80% VIN overlap with another active DOT regardless of address (sister-DOT structure, name variants, related entities sharing trucks).",
+      caution:  "≥50% VIN overlap with another active DOT, no address or name correlation (probable fleet acquisition or undisclosed corporate relationship, worth verifying).",
     },
     fixtures: {
       critical: {
@@ -725,14 +725,14 @@ export const RULES: Rule[] = [
   },
 
   // ---------------------------------------------------------------------
-  // CHAMELEON — diffuse equipment sharing
+  // CHAMELEON, diffuse equipment sharing
   // ---------------------------------------------------------------------
   {
     id: "chameleon-diffuse-equipment",
     category: "chameleon",
     label: "Equipment spread across multiple active DOTs",
     definition:
-      "A meaningful share of this carrier's inspected trucks have also been inspected under multiple OTHER active DOTs — equipment is laundered across a ring of sister authorities rather than shared with a single twin. Distinct from chameleon-shared-fleet, which catches concentrated two-DOT pairs (DK MAX / DK MAX PRIME). Distinct from leasing pools (a carrier running Ryder rentals will share VINs with 100+ other lessees but no single sibling holds more than a handful of trucks) by requiring that the largest single sibling share at least 10% of the fleet — proving the sharing is concentrated enough to be a real ring rather than rental turnover. The concentration floor is relaxed to 5% when another chameleon-specific signal (prior revoke, recent involuntary revocation, rapid replace, lapsed BIPD, address cluster, or all-cancel insurance pattern) has already fired, since a carrier corroborated by other chameleon evidence is not a legitimate leasing operation.",
+      "A meaningful share of this carrier's inspected trucks have also been inspected under multiple OTHER active DOTs, equipment is laundered across a ring of sister authorities rather than shared with a single twin. Distinct from chameleon-shared-fleet, which catches concentrated two-DOT pairs (DK MAX / DK MAX PRIME). Distinct from leasing pools (a carrier running Ryder rentals will share VINs with 100+ other lessees but no single sibling holds more than a handful of trucks) by requiring that the largest single sibling share at least 10% of the fleet, proving the sharing is concentrated enough to be a real ring rather than rental turnover. The concentration floor is relaxed to 5% when another chameleon-specific signal (prior revoke, recent involuntary revocation, rapid replace, lapsed BIPD, address cluster, or all-cancel insurance pattern) has already fired, since a carrier corroborated by other chameleon evidence is not a legitimate leasing operation.",
     thresholds: {
       critical: "≥50% of own VINs run under any other active DOT, spread across ≥5 distinct siblings, AND top sibling shares ≥10% of fleet (≥5% when corroborated by another chameleon signal).",
       high:     "≥30% of own VINs run under any other active DOT, spread across ≥3 distinct siblings, AND top sibling shares ≥10% of fleet (≥5% when corroborated by another chameleon signal).",
@@ -741,19 +741,19 @@ export const RULES: Rule[] = [
     fixtures: {
       critical: { dot: 3621624, reason: "DK MAX TRUCKING INC: 86% of its 140 inspected VINs run under 24 other active DOTs (rich sample, 60 PU)." },
       high:     { dot: 4198159, reason: "ALAKE LOGISTICS INC: 43% of 7 VINs run under 3 other active DOTs, top sibling 14% concentration." },
-      caution:  { dot: 3432788, reason: "PUNIA TRANS INC (relaxed-floor): 27% diffuse / 3 siblings, top sibling 9% — fires only because other chameleon signals (lapsed BIPD + revoke + all-cancel) relax the concentration floor from 10% to 5%." },
+      caution:  { dot: 3432788, reason: "PUNIA TRANS INC (relaxed-floor): 27% diffuse / 3 siblings, top sibling 9%, fires only because other chameleon signals (lapsed BIPD + revoke + all-cancel) relax the concentration floor from 10% to 5%." },
       none: [
         { dot: 53467, reason: "Werner: trucks unique to the operating fleet." },
         {
           dot: 3863705,
-          reason: "NOOR EXPRESS LOGISTICS INC (leasing-pool guard): 54% diffuse share across 109 siblings (Ryder, UPS, New Prime) but top sibling shares only 4% AND no chameleon-specific corroborating signals — rule must not fire on rental-fleet turnover even with churn.",
+          reason: "NOOR EXPRESS LOGISTICS INC (leasing-pool guard): 54% diffuse share across 109 siblings (Ryder, UPS, New Prime) but top sibling shares only 4% AND no chameleon-specific corroborating signals, rule must not fire on rental-fleet turnover even with churn.",
         },
       ],
     },
   },
 
   // ---------------------------------------------------------------------
-  // CHAMELEON — address cluster
+  // CHAMELEON, address cluster
   // ---------------------------------------------------------------------
   {
     id: "chameleon-address-cluster",
@@ -769,7 +769,7 @@ export const RULES: Rule[] = [
     fixtures: {
       // Fixtures sampled from May 2026 parquet snapshot. Each DOT chosen
       // because its address_dupe_oos_count puts it solidly inside the tier's
-      // band, not on the edge — leaves headroom for FMCSA data churn before
+      // band, not on the edge, leaves headroom for FMCSA data churn before
       // the fixture drifts out of band.
       critical: {
         dot: 2763893,
@@ -785,7 +785,7 @@ export const RULES: Rule[] = [
         // Picked specifically for a "pure caution" profile: 4 OOS siblings
         // triggers chameleon-address-cluster at caution, but the carrier is
         // otherwise clean (active interstate authority, $750k BIPD on file,
-        // no revocations, no OOS rate issues) — so the overall riskLevel
+        // no revocations, no OOS rate issues), so the overall riskLevel
         // settles at Elevated. Avoids the conflation that happens when a
         // chameleon-caution DOT also has Insurance lapsed, where the
         // carrier's overall tier gets dominated by the harder finding.
@@ -807,7 +807,7 @@ export const RULES_BY_ID: ReadonlyMap<RuleId, Rule> = new Map(
   RULES.map((r) => [r.id, r]),
 );
 
-/** Look up a rule by id. Throws on unknown ids — callers should pass
+/** Look up a rule by id. Throws on unknown ids, callers should pass
  *  literal ids from the registry, so an unknown id is a programmer
  *  error, not a runtime fallback case. */
 export function getRule(id: RuleId): Rule {

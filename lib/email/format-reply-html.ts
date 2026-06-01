@@ -1,13 +1,13 @@
 /**
- * HTML reply template — matches the design mockup in
+ * HTML reply template, matches the design mockup in
  * .context/attachments/XRcItc/. Sent as the text/html alternative alongside
  * the plain-text body so mail clients render either.
  *
  * Email-HTML constraints (NOT regular HTML):
- *   - No <link rel="stylesheet"> — embed styles inline or in <style>
- *   - No CSS Grid, no Flexbox — use nested <table> for layout
+ *   - No <link rel="stylesheet">, embed styles inline or in <style>
+ *   - No CSS Grid, no Flexbox, use nested <table> for layout
  *   - No background-image, no @media (well, Apple Mail accepts but Outlook
- *     strips) — use bgcolor= and inline color: for colors
+ *     strips), use bgcolor= and inline color: for colors
  *   - System-font stack only; custom fonts won't survive
  *   - No JavaScript; no <iframe>
  *   - Width capped to 640px (Outlook chokes wider)
@@ -19,7 +19,7 @@ import type { ExtractedEmail, Signal, Verdict } from "./types";
 import { cancelChurnPercentileText } from "../analyzer";
 
 // Brand palette. Tier colors below match the website's audit-result pill
-// palette (components/AuditWidget.tsx) — Tailwind red-200/red-950 for
+// palette (components/AuditWidget.tsx), Tailwind red-200/red-950 for
 // Critical, red-100/red-900 for Severe, orange-100/orange-900 for High,
 // amber-50/amber-900 for Elevated, plus green for Clean. Keeping these in
 // sync means the email and the website read as the same product.
@@ -50,11 +50,11 @@ const C = {
 
 /** Website-aligned 4-tier scale (analyzer.riskLevel) used for the top pill.
  *  We surface the carrier's audit tier here directly so "Critical" on the
- *  website is "Critical" in the email — same scale, same colors. */
+ *  website is "Critical" in the email, same scale, same colors. */
 type TierStyle = { bg: string; ink: string; headline: string };
 // Critical uses white text on solid red for mobile-dark-mode safety.
 // Gmail/iOS mobile inverts light-background pills (light pink → dark gray)
-// while leaving the text color alone — so dark red text on (inverted) dark
+// while leaving the text color alone, so dark red text on (inverted) dark
 // gray becomes invisible. White ink on saturated red survives the inversion.
 // Light tiers (Low/Medium/High) use dark ink on a tinted background; they
 // stay legible in dark mode because mobile clients typically leave
@@ -67,7 +67,7 @@ const AUDIT_TIER_STYLES: Record<string, TierStyle> = {
 };
 // Default style used when no carrier was resolved (no DOT/MC in the email,
 // or claimed DOT not in FMCSA snapshot). Headline tells the broker what to
-// do — ask for the carrier's DOT/MC — instead of the misleading "verify
+// do, ask for the carrier's DOT/MC, instead of the misleading "verify
 // identity" (there's nothing to verify yet).
 const DEFAULT_TIER_STYLE: TierStyle = {
   bg: "#fef3c7", ink: "#78350f", headline: "Carrier identity required",
@@ -79,7 +79,7 @@ const DEFAULT_TIER_STYLE: TierStyle = {
 // a Times default at heavy weights).
 //
 // CRITICAL: Use SINGLE quotes inside the stack (e.g. 'Segoe UI'), NOT double.
-// This string gets interpolated into inline style="..." attributes — any inner
+// This string gets interpolated into inline style="..." attributes, any inner
 // double quotes prematurely close the attribute, and every declaration after
 // font-family in that style="..." block silently fails to apply.
 const FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
@@ -95,7 +95,7 @@ function esc(s: string | number | null | undefined): string {
     .replace(/'/g, "&#39;");
 }
 
-/** Compose the email preheader — the hidden one-liner Gmail (and most other
+/** Compose the email preheader, the hidden one-liner Gmail (and most other
  *  clients) shows as the inbox preview snippet instead of falling back to
  *  the first visible text in the body. Without one, Gmail picks "Augie ·
  *  Carrier safety check audit@augie.ai" from the top banner, which is
@@ -103,7 +103,7 @@ function esc(s: string | number | null | undefined): string {
  *
  *    "High · SCHNEIDER NATIONAL · Sender domain doesn't match FMCSA"
  *    "Clean · WERNER ENTERPRISES INC · all checks passed"
- *    "Carrier identity required — send MC or DOT to verify"
+ *    "Carrier identity required, send MC or DOT to verify"
  *
  *  Keep it under ~90 chars; Gmail truncates around there. */
 function composePreheader(verdict: Verdict): string {
@@ -115,7 +115,7 @@ function composePreheader(verdict: Verdict): string {
   const carrierName = c.legalName ?? `DOT ${c.dotNumber}`;
 
   // Pick the most decision-relevant finding to surface in the preview.
-  // Skip the audit-tier-echo signals ("Carrier in Critical tier" etc.) —
+  // Skip the audit-tier-echo signals ("Carrier in Critical tier" etc.),
   // they restate the tier we already showed and crowd out the actual
   // finding. Prefer a specific analyzer reason if present (insurance
   // lapsed, chameleon, recent revocation); fall back to the first
@@ -138,10 +138,10 @@ function composePreheader(verdict: Verdict): string {
 
 /** Render the preheader as a hidden block at the top of the email body.
  *  Belt-and-suspenders styles cover all the major clients:
- *    display:none      — Gmail / Apple Mail / Outlook web
- *    max-height:0      — guards against clients that ignore display:none
- *    overflow:hidden   — pairs with max-height:0
- *    mso-hide:all      — Outlook desktop (Word rendering engine) */
+ *    display:none     , Gmail / Apple Mail / Outlook web
+ *    max-height:0     , guards against clients that ignore display:none
+ *    overflow:hidden  , pairs with max-height:0
+ *    mso-hide:all     , Outlook desktop (Word rendering engine) */
 function renderPreheader(text: string): string {
   return (
     `<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;` +
@@ -152,7 +152,7 @@ function renderPreheader(text: string): string {
 }
 
 /** For Critical verdicts, pick a finding-specific headline instead of the
- *  generic "Do not engage without verification" — verification can't change a
+ *  generic "Do not engage without verification", verification can't change a
  *  revoked authority or $0 insurance, so the action is "stop," not "verify."
  *  Returns the base headline unchanged for non-critical tiers or when no
  *  specific finding pattern matches. */
@@ -164,7 +164,7 @@ function criticalHeadline(verdict: Verdict, base: string): string {
 
   const reasonsText = c.audit.reasonLabels.join(" ").toLowerCase();
   const findings: string[] = [];
-  // Revoked authority — strongest possible signal, takes precedence.
+  // Revoked authority, strongest possible signal, takes precedence.
   if (
     c.mostRecentRevocationDate &&
     Date.now() - Date.parse(c.mostRecentRevocationDate) < 24 * 30 * 86400000
@@ -173,7 +173,7 @@ function criticalHeadline(verdict: Verdict, base: string): string {
   } else if (c.allowedToOperate != null && c.allowedToOperate !== "Y") {
     findings.push("Not allowed to operate");
   }
-  // Missing insurance — also unrecoverable in the moment.
+  // Missing insurance, also unrecoverable in the moment.
   if ((c.bipdAmount ?? 0) === 0 && !c.bipdInsurer) {
     findings.push("No insurance on file");
   }
@@ -195,7 +195,7 @@ function criticalHeadline(verdict: Verdict, base: string): string {
  *  coherence, lane_viability, email_authenticity, chameleon_cluster) fire
  *  harder. Without this, an audit-Low carrier with a sender-domain
  *  mismatch would show "Low" + green pill while the body explained an
- *  impersonation pattern — exactly the contradiction we want to avoid. */
+ *  impersonation pattern, exactly the contradiction we want to avoid. */
 function computeDisplayTier(verdict: Verdict): string {
   const RANK: Record<string, number> = {
     Low: 0, Medium: 1, High: 2, Critical: 3, Verify: 1,
@@ -408,7 +408,7 @@ function noCarrierHeadline(extracted: ExtractedEmail | undefined): string {
   return "Can't verify the sender.";
 }
 
-/** "Missing from the email" pill — same shape as the FROM THE EMAIL pills
+/** "Missing from the email" pill, same shape as the FROM THE EMAIL pills
  *  but with a dashed border, no status dot, and muted ink. Visually
  *  reinforces "this is something we'd need but don't have," distinct from
  *  the solid pills that show what we *did* find. */
@@ -432,7 +432,7 @@ function renderNoCarrierFollowupBlock(extracted: ExtractedEmail | undefined): st
   if (!claims?.dot_number) missing.push("DOT number");
   if (!claims?.claimed_company_name) missing.push("Carrier legal name");
 
-  // Reply text — name the carrier's contact when we extracted one, otherwise
+  // Reply text, name the carrier's contact when we extracted one, otherwise
   // a generic "Hi". Always include the missing-fields ask so the broker can
   // forward verbatim.
   const contactName =
@@ -532,7 +532,7 @@ function ageFromYear(yearStr: string | null | undefined): string | null {
 
 /** All the checks the system performs, with each marked as passed (ran and
  *  produced no hard finding), failed (ran and fired a critical/high/caution
- *  signal — those surface separately in "What we found"), or skipped (the
+ *  signal, those surface separately in "What we found"), or skipped (the
  *  email didn't include the inputs we'd need to run it).
  *
  *  Reads coverage flags + the signal list together so we can confidently say
@@ -561,7 +561,7 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
 
   const rows: CheckRow[] = [];
 
-  // Carrier audit — each analyzer reason becomes its own failed-check row so
+  // Carrier audit, each analyzer reason becomes its own failed-check row so
   // critical issues (insurance lapse, rapid replace, recent revocation,
   // chameleon cluster) get individual visibility instead of being collapsed
   // into one "DOT active" finding. The reason's detail string carries the
@@ -587,9 +587,9 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
     }
   }
 
-  // Insurance — explicit failed row when BIPD is missing AND FMCSA requires
+  // Insurance, explicit failed row when BIPD is missing AND FMCSA requires
   // it. Many carriers (intrastate-only, private, owner-op without property
-  // authority) legally don't need BIPD on file — flagging those as
+  // authority) legally don't need BIPD on file, flagging those as
   // "No insurance" creates Critical-tier false positives. We mirror the
   // audit's logic (analyzer.ts > classifyInsurance), which only fires when
   // fmcsaRequired > 0 AND onFile === 0.
@@ -612,7 +612,7 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
         detail: `${insurer}. Coverage current, no lapses in the most recent FMCSA snapshot. Verify the COI before booking; freight over $750k (or hazmat over $1M / $5M) needs higher coverage.`,
       });
     }
-    // No row at all when FMCSA doesn't require BIPD AND none is on file —
+    // No row at all when FMCSA doesn't require BIPD AND none is on file,
     // there's nothing wrong, and no positive verification to report either.
   }
 
@@ -711,7 +711,7 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
     });
   }
 
-  // Lane viability — honest phrasing about what we actually checked.
+  // Lane viability, honest phrasing about what we actually checked.
   // For long-haul interstate carriers (the common case) ANY state-to-state
   // lane is in scope; the lane info is confirmational, not gating. The
   // gate is whether the carrier has interstate authority at all, plus a
@@ -733,11 +733,11 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
     });
   }
 
-  // Sender-domain config — based on the DNS lookups (MX/SPF/DMARC existence)
+  // Sender-domain config, based on the DNS lookups (MX/SPF/DMARC existence)
   // and WHOIS age, NOT per-message SPF/DKIM/DMARC (which inline forwards
   // strip). Passed = configured for authenticated email, no MX issues, not
   // brand new. Failed = MX missing or brand-new domain. Free-email senders
-  // (gmail.com etc.) are recorded as "Trusted provider" — meaningful in a
+  // (gmail.com etc.) are recorded as "Trusted provider", meaningful in a
   // different way: the domain itself is fine, the open question is whether
   // the specific account was claimed by the carrier (handled by the local-
   // part match check above).
@@ -785,7 +785,7 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
     });
   }
 
-  // Hazmat — only show when the email pitched a hazmat load
+  // Hazmat, only show when the email pitched a hazmat load
   if (cov.hazmat_match_checked) {
     const fail = hasHardSignal((s) => s.label.toLowerCase().includes("hazmat"));
     rows.push({
@@ -806,7 +806,7 @@ function pill(text: string, bg: string, ink: string, opts?: { large?: boolean })
   const padding = opts?.large ? "8px 18px" : "5px 12px";
   const fontSize = opts?.large ? "15px" : "12px";
   // border-radius:999px gives a true pill shape on every modern email client.
-  // Outlook desktop strips border-radius entirely and shows a rectangle —
+  // Outlook desktop strips border-radius entirely and shows a rectangle,
   // acceptable fallback.
   return `<span style="display:inline-block;padding:${padding};background:${bg};color:${ink};font-size:${fontSize};font-weight:600;border-radius:999px;letter-spacing:0.02em;line-height:1.1;margin-right:6px;">${esc(text)}</span>`;
 }
@@ -852,10 +852,10 @@ function renderBar(
   // caller has a non-standard tier mapping (e.g. insurance churn's 2-tier
   // structure), they pass an explicit override.
   const fillColor = fillColorOverride ?? (
-    observed >= p95 ? "#a01919" :  // ≥P95 — Severe (red)
-    observed >= p90 ? "#c2410c" :  // P90-P95 — High (orange)
-    observed >= p85 ? "#a16207" :  // P85-P90 — Elevated (amber)
-    "#2f9742"                       // <P85 — Clean (green)
+    observed >= p95 ? "#a01919" :  // ≥P95, Severe (red)
+    observed >= p90 ? "#c2410c" :  // P90-P95, High (orange)
+    observed >= p85 ? "#a16207" :  // P85-P90, Elevated (amber)
+    "#2f9742"                       // <P85, Clean (green)
   );
 
   // Track (un-filled) background with subtle zone tints so brokers see where
@@ -866,7 +866,7 @@ function renderBar(
 
   // Tick lines: 1px-wide dark cells inserted at the percentile boundaries.
   // We render the BACKGROUND track as zones, then OVERLAY a filled "fill"
-  // bar on top via a wrapper trick — but email doesn't have z-index, so
+  // bar on top via a wrapper trick, but email doesn't have z-index, so
   // instead we render the bar AS the fill and put ticks AS overlay borders.
   // Simpler approach: render the fill row (one solid color up to observed),
   // followed by a SECOND tiny row with tick labels at the boundaries.
@@ -904,10 +904,10 @@ function renderBar(
   </table>`;
 }
 
-/** A row in the safety-profile chart — label, observed, multiplier, bar with
+/** A row in the safety-profile chart, label, observed, multiplier, bar with
  *  P85/P90/P95 markers. Falls back to a text-only row when cutoffs are
  *  degenerate (e.g. owner-op peer group where most carriers have 0 OOS and
- *  all three percentiles collapse to 0) — the bar wouldn't be meaningful. */
+ *  all three percentiles collapse to 0), the bar wouldn't be meaningful. */
 function renderBarRow(
   label: string,
   observedDisplay: string,
@@ -931,7 +931,7 @@ function renderBarRow(
     // Peer group has too few non-zero values to form a meaningful
     // distribution (e.g. owner-op hazmat OOS where most carriers have 0).
     // Still render a placeholder bar for visual consistency with other
-    // axes — fully empty when observed=0 (just the gray track), fully red
+    // axes, fully empty when observed=0 (just the gray track), fully red
     // when observed>0 (above peer typical).
     const nonTrivial = observed != null && observed > 0;
     const indicator = nonTrivial
@@ -991,7 +991,7 @@ function renderBarRow(
  *      (cutoff value follows "of", not parenthesized)
  *    - Flagged axis: "...cutoff for Large (251-1000) fleets (29%)."
  *      (cutoff value in trailing parens, but the peer-group descriptor
- *      "(251-1000)" is also parenthesized — so a naive "last parens" match
+ *      "(251-1000)" is also parenthesized, so a naive "last parens" match
  *      would have picked that up. Use "fleets (X)" anchor instead.)
  */
 function parseP95(detail: string | null | undefined): number | null {
@@ -1012,8 +1012,8 @@ function parseP95(detail: string | null | undefined): number | null {
 }
 
 function renderDetailSection(c: NonNullable<Verdict["carrier"]>): string {
-  // Inspection breakdown — show OOS rates so brokers can see fleet upkeep.
-  // Safety profile bars — one per axis, showing observed value vs peer P95
+  // Inspection breakdown, show OOS rates so brokers can see fleet upkeep.
+  // Safety profile bars, one per axis, showing observed value vs peer P95
   // cutoff. Each bar fills proportionally with green up to P95 and red past
   // it. P95 values come from the analyzer's detail strings (same source the
   // website uses).
@@ -1031,7 +1031,7 @@ function renderDetailSection(c: NonNullable<Verdict["carrier"]>): string {
   addInspBar("Vehicle OOS", c.vehicleInspections, c.auditAxes.vehicleOos);
   addInspBar("Hazmat OOS", c.hazmatInspections, c.auditAxes.hazmatOos);
 
-  // Unsafe Driving + HOS — rendered like OOS axes (rate vs peer P85/P90/P95).
+  // Unsafe Driving + HOS, rendered like OOS axes (rate vs peer P85/P90/P95).
   // The analyzer's classification uses the violation rate, so we plot that
   // rather than the raw FMCSA SMS measure (1.88 etc.) which is on a
   // different scale and harder to interpret at a glance.
@@ -1041,7 +1041,7 @@ function renderDetailSection(c: NonNullable<Verdict["carrier"]>): string {
     const display = `${violationCount} of ${totalInsp} insp (${pct.toFixed(0)}%)`;
     barRows.push(renderBarRow(label, display, pct, axis.cutoffs, "%"));
   };
-  // Only render when the axis actually fired (non-clean) — for a clean
+  // Only render when the axis actually fired (non-clean), for a clean
   // carrier the OOS rows already cover the inspection volume context.
   if (c.auditAxes.unsafeDriving && c.auditAxes.unsafeDriving.status !== "clean") {
     // unsafeDrivingViolations isn't on VerdictCarrierSummary, but the axis's
@@ -1081,7 +1081,7 @@ function renderDetailSection(c: NonNullable<Verdict["carrier"]>): string {
     ));
     // Single context line below the crash bar: breakdown counts + FMCSA's
     // own severity-weighted Crash Indicator with its national P-rank.
-    // Total comes from c.crashes24mo (the authoritative FMCSA count) — NOT
+    // Total comes from c.crashes24mo (the authoritative FMCSA count), NOT
     // fatal+injury+tow, because a single crash can be both injury AND
     // tow-away in FMCSA's data and summing the breakdown double-counts.
     const [fatal, inj, tow] = c.crashBreakdown;
@@ -1130,7 +1130,7 @@ function renderDetailSection(c: NonNullable<Verdict["carrier"]>): string {
     const count = c.insuranceCancellations24mo;
     const display = `${count} cancellation${count === 1 ? "" : "s"}${dateLabel ? ` · ${dateLabel}` : ""}`;
     // The insurance churn rule is two-tier (3-6 = Elevated, ≥7 = Severe)
-    // AND the distribution is heavily zero-inflated — 90% of active
+    // AND the distribution is heavily zero-inflated, 90% of active
     // carriers have ZERO cancellations, so the P85/P90/P95 percentile
     // metaphor used by the SMS BASIC bars doesn't fit. Use empirical
     // distribution percentiles for both ticks AND badge so the bar tells
@@ -1191,7 +1191,7 @@ function renderDetailSection(c: NonNullable<Verdict["carrier"]>): string {
   // safety-profile block above; we skip the text rows here to avoid
   // duplicating the same finding in two visual styles.
 
-  // BASIC alerts pill row — FMCSA's own Y flags. Optional, supplements the
+  // BASIC alerts pill row, FMCSA's own Y flags. Optional, supplements the
   // axis rows above when FMCSA themselves has called the carrier out.
   const basicRows: string[] = [];
   if (c.basicAlerts.length > 0) {
@@ -1208,10 +1208,10 @@ function renderDetailSection(c: NonNullable<Verdict["carrier"]>): string {
   }
 
   const allRows = [...barRows, ...crashRows, ...axisRows, ...basicRows, ...insRows].join("\n");
-  if (!allRows) return ""; // nothing to show — skip the section entirely
+  if (!allRows) return ""; // nothing to show, skip the section entirely
 
   return `
-    <!-- FMCSA detail — 24mo operational record from the bulk FMCSA snapshot.
+    <!-- FMCSA detail, 24mo operational record from the bulk FMCSA snapshot.
          Red = at or above FMCSA's regulatory intervention threshold (BASIC
          alerts) or above operationally concerning levels (≥20% OOS rate,
          multiple insurance cancellations, fatal/injury crashes). Amber =
@@ -1257,7 +1257,7 @@ export function buildReplyHtml(verdict: Verdict, extracted?: ExtractedEmail): st
   // Pill label: start with the carrier's audit tier (website 5-scale), then
   // escalate if email-side signals (identity coherence, lane viability,
   // email authenticity) fire harder than the audit. A Clean-on-FMCSA carrier
-  // emailed-from-impersonator should NOT show as Clean — that contradicts
+  // emailed-from-impersonator should NOT show as Clean, that contradicts
   // the body's findings and misleads a glancing reader.
   const computedTierLabel = computeDisplayTier(verdict);
   const baseTier = AUDIT_TIER_STYLES[computedTierLabel] ?? DEFAULT_TIER_STYLE;
@@ -1276,7 +1276,7 @@ export function buildReplyHtml(verdict: Verdict, extracted?: ExtractedEmail): st
     : { ...baseTier, headline: criticalHeadline(verdict, baseTier.headline) };
   const tierLabel = !c ? "Need MC / DOT" : computedTierLabel;
 
-  // Checks list — every system check with pass/fail/skip status. Powers both
+  // Checks list, every system check with pass/fail/skip status. Powers both
   // the counter and the VERIFIED + SKIPPED sections so they stay in sync.
   const checks = buildChecksRun(verdict);
   const passedChecks = checks.filter((r) => r.status === "passed");
@@ -1289,7 +1289,7 @@ export function buildReplyHtml(verdict: Verdict, extracted?: ExtractedEmail): st
   };
 
   // Hard signals fired (critical/high/caution) → "What we found" section.
-  // Suppress audit_tier signals here — their reasons already populate the
+  // Suppress audit_tier signals here, their reasons already populate the
   // headline summary, and the FMCSA DETAIL block surfaces the underlying
   // data (BASIC alerts, insurance churn, crashes, OOS rates). Showing the
   // audit-tier wrapper too would be a third statement of the same finding.
@@ -1307,10 +1307,10 @@ export function buildReplyHtml(verdict: Verdict, extracted?: ExtractedEmail): st
   const carrierRows: string[] = [];
   if (c) {
     const cells: string[] = [];
-    // Authority cell — when authority has been recently revoked OR is
+    // Authority cell, when authority has been recently revoked OR is
     // currently flagged as not-allowed-to-operate, that fact replaces the
     // issue date entirely (red). The revocation date is the single most
-    // decision-relevant fact for a flagged carrier — a glancing reader
+    // decision-relevant fact for a flagged carrier, a glancing reader
     // should not come away thinking "valid authority since 2022" when the
     // carrier was actually revoked 4 months ago.
     const revokeMs = c.mostRecentRevocationDate ? Date.parse(c.mostRecentRevocationDate) : NaN;
@@ -1373,7 +1373,7 @@ export function buildReplyHtml(verdict: Verdict, extracted?: ExtractedEmail): st
     if (c.companyOfficer) {
       cells.push(labelValueCell("Primary officer", esc(c.companyOfficer)));
     }
-    // No separate "Audit tier" cell — the verdict pill at the top of the
+    // No separate "Audit tier" cell, the verdict pill at the top of the
     // email already conveys overall risk. The audit-tier scale (Clean /
     // Elevated / High / Severe / Critical) and the verdict scale (Clean /
     // Caution / High / Critical) used to both appear, which was confusing
@@ -1406,7 +1406,7 @@ export function buildReplyHtml(verdict: Verdict, extracted?: ExtractedEmail): st
 <style>
   /* Force the font stack across every element. Webkit/Blink at heavy weights
      can fall through to the browser default serif when font-family is set
-     only on <body> — explicit selectors guarantee consistency. */
+     only on <body>, explicit selectors guarantee consistency. */
   body, table, td, div, span, p, a, h1, h2, h3 {
     ${FONT_DECL}
     -webkit-font-smoothing: antialiased;
@@ -1450,7 +1450,7 @@ ${renderPreheader(composePreheader(verdict))}
     </td></tr>
 
     ${!c ? "" : `
-    <!-- Counter row — passed / failed / skipped. Failed only renders when >0
+    <!-- Counter row, passed / failed / skipped. Failed only renders when >0
          so a Clean verdict shows the standard two-column layout. -->
     <tr><td style="padding:0 32px 28px 32px;">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0">
@@ -1490,7 +1490,7 @@ ${renderPreheader(composePreheader(verdict))}
     </td></tr>` : ""}
 
     ${c && (failedChecks.length + passedChecks.length) > 0 ? `
-    <!-- Safety checks — combined section with failed (red ✗) first, then
+    <!-- Safety checks, combined section with failed (red ✗) first, then
          passed (green ✓). Order matches the counter at the top of the email
          and mirrors how a broker reads the verdict: "show me what failed,
          then reassure me with what passed." -->
@@ -1528,7 +1528,7 @@ ${renderPreheader(composePreheader(verdict))}
     </td></tr>` : ""}
 
     ${c && skippedChecks.length > 0 ? `
-    <!-- Skipped panel — checks we couldn't run because the email didn't include the inputs -->
+    <!-- Skipped panel, checks we couldn't run because the email didn't include the inputs -->
     <tr><td style="padding:24px 32px;">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${C.pageBg};border-radius:2px;">
         <tr><td style="padding:16px;">
@@ -1538,7 +1538,7 @@ ${renderPreheader(composePreheader(verdict))}
       </table>
     </td></tr>` : ""}
 
-    <!-- Footer — single-DOT review is self-contained; the site link is for
+    <!-- Footer, single-DOT review is self-contained; the site link is for
          brokers who want to bookmark or share the full audit view. -->
     <tr><td style="padding:14px 32px;background:${C.pageBg};border-top:1px solid ${C.border};">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
