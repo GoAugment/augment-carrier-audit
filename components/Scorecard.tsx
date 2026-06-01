@@ -416,12 +416,12 @@ export function Scorecard({
               <th className="px-3 py-2 align-bottom">Carrier</th>
               <th
                 className="border-l border-ink-200 whitespace-nowrap px-2 py-2 text-center align-bottom text-[#E89432]"
-                title="ISS-CSA Inspection Selection System score (1–100). Higher = FMCSA recommends inspection. ≥75 Inspect · 50–74 Optional · &lt;50 Pass."
+                title="ISS-CSA Inspection Selection System score (1–100), our estimate — FMCSA doesn't publish ISS. Higher = FMCSA recommends inspection. ≥75 Inspect · 50–74 Optional · &lt;50 Pass. See note below the table."
               >
-                ISS
+                ISS*
                 <br />
                 <span className="text-[10px] font-normal normal-case text-[#7D8883]">
-                  on-road
+                  est.
                 </span>
               </th>
               <th
