@@ -298,6 +298,12 @@ function ordinal(n: number): string {
   return `${n}${suffix}`;
 }
 
+/** "1 cancellation" / "2 cancellations" — proper count + noun, so reasons don't
+ *  read like templated "(s)" placeholders (and "1 …(s)" is never wrong). */
+function plural(n: number, noun: string, pluralNoun?: string): string {
+  return `${n} ${n === 1 ? noun : (pluralNoun ?? `${noun}s`)}`;
+}
+
 /** Render a BASIC as its FMCSA SMS percentile (peer-ranked, what FMCSA alerts
  *  on) instead of the raw rate, keeping the rate as a secondary anchor. Color
  *  reflects FMCSA's alert: at/above intervention threshold → high (severe if
@@ -604,7 +610,7 @@ function computeRiskScore(
         c.bipdDaysToLapse != null
           ? c.bipdDaysToLapse < 0
             ? "; lapse is already past due"
-            : `; ${c.bipdDaysToLapse} day(s) to lapse`
+            : `; ${plural(c.bipdDaysToLapse, "day")} to lapse`
           : ""
       }.`
     );
@@ -614,7 +620,7 @@ function computeRiskScore(
       phantom && (subMin || insChurn || newAuth) ? 42 : 28,
       "Identity / chameleon",
       "Phantom fleet",
-      `${c.puVinsInspected} distinct trucks inspected vs ${c.totalPowerUnits} reported power unit(s)${
+      `${c.puVinsInspected} distinct trucks inspected vs ${plural(c.totalPowerUnits, "reported power unit")}${
         subMin || insChurn || newAuth ? "; corroborated by insurance distress or new authority." : "."
       }`
     );
@@ -622,7 +628,7 @@ function computeRiskScore(
   if (insChurn) {
     const bits: string[] = [];
     if (c.insuranceCancellations24mo >= 2)
-      bits.push(`${c.insuranceCancellations24mo} cancellation(s) in 24mo`);
+      bits.push(`${plural(c.insuranceCancellations24mo, "cancellation")} in 24mo`);
     if (c.insuranceDistinctPolicies24mo >= 3)
       bits.push(`${c.insuranceDistinctPolicies24mo} distinct policies in 24mo`);
     if (c.rapidReplaceFlag) bits.push("rapid cancel+replace");
@@ -638,7 +644,7 @@ function computeRiskScore(
       16,
       "Safety / compliance",
       "FMCSA enforcement case",
-      `${c.enforcementCasesCount} closed enforcement case(s)${
+      `${plural(c.enforcementCasesCount, "closed enforcement case")}${
         c.enforcementRecentDate ? `, latest ${c.enforcementRecentDate}` : ""
       }.`
     );
@@ -735,7 +741,7 @@ function computeRiskScore(
     const bits: string[] = [];
     if (c.issTier === "Inspect" && c.issScore != null) bits.push(`ISS ${c.issScore} Inspect`);
     if (c.fastActHighRisk) bits.push("FAST Act high-risk");
-    if (c.hasSeriousViolation) bits.push(`${c.seriousViolationCount} acute/critical serious violation(s)`);
+    if (c.hasSeriousViolation) bits.push(plural(c.seriousViolationCount, "acute/critical serious violation"));
     if (crashSeverityHard || (c.crashesPerMillionMiles != null && c.crashesPerMillionMiles >= 5)) {
       const b = crashSeverityBit();
       if (b) bits.push(b);
@@ -971,7 +977,7 @@ function classifyOos(
       cell: {
         status: "na",
         display: "—",
-        detail: `Only ${inspections} inspection(s) in last 24 months, not enough data to score.`,
+        detail: `Only ${plural(inspections, "inspection")} in last 24 months, not enough data to score.`,
       },
       reason: null,
     };
@@ -1465,11 +1471,11 @@ function classifyEnforcement(c: FmcsaCarrier): {
     cell: {
       status: large ? "high" : "elevated",
       display: `$${(c.enforcementTotalSettled / 1000).toFixed(0)}k`,
-      detail: `${c.enforcementCasesCount} closed case(s), $${c.enforcementTotalSettled.toLocaleString()} settled (latest ${c.enforcementRecentDate}).`,
+      detail: `${plural(c.enforcementCasesCount, "closed case")}, $${c.enforcementTotalSettled.toLocaleString()} settled (latest ${c.enforcementRecentDate}).`,
     },
     reason: {
       label: getRule("recent-enforcement").label,
-      detail: `${c.enforcementCasesCount} closed case(s), $${c.enforcementTotalSettled.toLocaleString()} settled (latest ${c.enforcementRecentDate}).`,
+      detail: `${plural(c.enforcementCasesCount, "closed case")}, $${c.enforcementTotalSettled.toLocaleString()} settled (latest ${c.enforcementRecentDate}).`,
     },
     hit: true,
     large,
@@ -1567,7 +1573,7 @@ function scoreCarrier(
       crash.cell.status = "elevated";
       crashEstReason = {
         label: "Estimated Crash Indicator, elevated",
-        detail: `Estimated Crash Indicator at the ${ordinal(Math.round(ci ?? 0))} percentile (at/above FMCSA's intervention threshold), from ${c.crashTotal} crash(es), no mileage on file to compute a per-mile rate. FMCSA does not publish this BASIC; treat as an estimate.`,
+        detail: `Estimated Crash Indicator at the ${ordinal(Math.round(ci ?? 0))} percentile (at/above FMCSA's intervention threshold), from ${plural(c.crashTotal, "crash", "crashes")}, no mileage on file to compute a per-mile rate. FMCSA does not publish this BASIC; treat as an estimate.`,
       };
     }
     const crashPct = cpmPct ?? ci;
@@ -1711,7 +1717,7 @@ function scoreCarrier(
     insurance.cell.detail = `${insurance.cell.detail ?? ""}\nCargo insurer: ${c.cargoInsurerName}.`;
   }
   if (c.insuranceCancellations24mo > 0) {
-    insurance.cell.detail = `${insurance.cell.detail ?? ""}\n${c.insuranceCancellations24mo} insurance cancellation(s) in last 24mo${c.mostRecentCancelDate ? ` (most recent policy event ${c.mostRecentCancelDate}, ${c.mostRecentCancelReason ?? "unspecified"})` : ""}.`;
+    insurance.cell.detail = `${insurance.cell.detail ?? ""}\n${plural(c.insuranceCancellations24mo, "insurance cancellation")} in last 24mo${c.mostRecentCancelDate ? ` (most recent policy event ${c.mostRecentCancelDate}, ${c.mostRecentCancelReason ?? "unspecified"})` : ""}.`;
   }
 
   // ---- Post-classification escalations (status overrides) ----
@@ -1904,7 +1910,7 @@ function scoreCarrier(
             `Last BIPD liability policy is cancelling (effective ${c.bipdPendingCancelDate})${
               c.bipdDaysToLapse != null
                 ? c.bipdDaysToLapse >= 0
-                  ? `, about ${c.bipdDaysToLapse} day(s) out`
+                  ? `, about ${plural(c.bipdDaysToLapse, "day")} out`
                   : `, already past due`
                 : ""
             }, with no replacement filed and no other active BIPD coverage. The carrier is at imminent risk of losing operating authority. (Insurance data as of the latest snapshot, confirm against live FMCSA before relying on it.)`,
