@@ -68,6 +68,22 @@ const cellStyles: Record<AxisStatus, string> = {
   na: "bg-ink-50 text-ink-400",
 };
 
+// The on-road BASIC columns are peer-rank REFERENCE data (a percentile per
+// axis), not a verdict — so they get a quieter single-hue treatment: neutral
+// until the carrier crosses FMCSA's alert level, then orange (deeper = further
+// above peers). They never go amber or red. Red/amber stay reserved for the
+// verdict columns, so a peer percentile (e.g. 86th) can't be visually confused
+// with a Critical score (e.g. 82).
+const basicCellStyles: Record<AxisStatus, string> = {
+  critical: "bg-orange-200 text-orange-950 font-semibold",
+  severe: "bg-orange-100 text-orange-900",
+  high: "bg-orange-100 text-orange-900",
+  elevated: "text-ink-700",
+  info: "text-ink-500",
+  clean: "bg-augment-50 text-augment-800",
+  na: "bg-ink-50 text-ink-400",
+};
+
 /**
  * Compact, collapsible explainer. Renders as one line by default; clicking
  * "more" expands the math/methodology details. Saves vertical real estate
@@ -78,13 +94,19 @@ function ReadingNote() {
   return (
     <div className="mb-3 text-xs text-ink-600">
       <p>
-        Cell color = the carrier&apos;s risk on this axis:{" "}
+        Two color scales. The <span className="font-semibold text-ink-700">verdict</span> columns
+        (ISS, Risk score, and authority/insurance standing) use the full alarm ramp —{" "}
         <span className="rounded bg-augment-50 px-1 text-augment-800">clean</span>{" "}
-        <span className="rounded bg-amber-100 px-1 text-amber-900">info</span>{" "}
-        <span className="rounded bg-orange-100 px-1 text-orange-900">elevated</span>{" "}
-        <span className="rounded bg-red-100 px-1 text-red-900">severe (≥P95 vs peers)</span>{" "}
+        <span className="rounded bg-amber-100 px-1 text-amber-900">elevated</span>{" "}
+        <span className="rounded bg-orange-100 px-1 text-orange-900">high</span>{" "}
         <span className="rounded bg-red-200 px-1 text-red-950 font-semibold">critical</span>
-        . We flag carriers only on the last 24 months of activity. Hover any cell for details.{" "}
+        . The <span className="font-semibold text-ink-700">on-road BASIC</span> columns are peer
+        percentiles (reference, not a verdict): they stay neutral until the carrier crosses FMCSA&apos;s
+        alert level, then turn{" "}
+        <span className="rounded bg-orange-100 px-1 text-orange-900">orange</span> (deeper = further
+        above peers) — a single axis never goes red, so an{" "}
+        <span className="tabular-nums">86th</span> percentile isn&apos;t confused with a Critical score.
+        We flag on the last 24 months of activity; hover any cell for details.{" "}
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -120,10 +142,20 @@ function ReadingNote() {
   );
 }
 
-function Cell({ cell, className = "" }: { cell: AxisCell; className?: string }) {
+function Cell({
+  cell,
+  className = "",
+  quiet = false,
+}: {
+  cell: AxisCell;
+  className?: string;
+  /** quiet = on-road BASIC reference column (orange-only heat, never red/amber). */
+  quiet?: boolean;
+}) {
+  const styles = quiet ? basicCellStyles : cellStyles;
   return (
     <td
-      className={`px-2 py-2 text-center text-xs tabular-nums ${className} ${cellStyles[cell.status]}`}
+      className={`px-2 py-2 text-center text-xs tabular-nums ${className} ${styles[cell.status]}`}
       title={cell.detail ?? ""}
     >
       <div>{cell.display}</div>
@@ -536,13 +568,13 @@ export function Scorecard({
                 </td>
                 <Cell cell={issCellOf(r)} className="border-l border-ink-200" />
                 <Cell cell={riskCellOf(r)} />
-                <Cell cell={r.axes.crash} className="border-l border-ink-200" />
-                <Cell cell={r.axes.unsafeDriving} />
-                <Cell cell={r.axes.hos} />
-                <Cell cell={r.axes.driverOos} />
-                <Cell cell={r.axes.controlledSubstances} />
-                <Cell cell={r.axes.vehicleOos} />
-                <Cell cell={r.axes.hazmatOos} />
+                <Cell cell={r.axes.crash} className="border-l border-ink-200" quiet />
+                <Cell cell={r.axes.unsafeDriving} quiet />
+                <Cell cell={r.axes.hos} quiet />
+                <Cell cell={r.axes.driverOos} quiet />
+                <Cell cell={r.axes.controlledSubstances} quiet />
+                <Cell cell={r.axes.vehicleOos} quiet />
+                <Cell cell={r.axes.hazmatOos} quiet />
                 <Cell cell={r.axes.revocations} className="border-l border-ink-200" />
                 <Cell cell={r.axes.authority} />
                 <Cell cell={r.axes.insurance} />
