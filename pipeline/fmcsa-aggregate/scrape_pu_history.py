@@ -351,10 +351,16 @@ class AsyncScraper:
         if not proxy_url:
             zr_key = os.environ.get("ZENROWS_API_KEY")
             if zr_key:
-                proxy_url = f"http://{zr_key}:mode=auto@api.zenrows.com:8001"
+                # ZenRows proxy params (pipe the password field). These .aspx
+                # pages are server-rendered, so we do NOT need js_render (the
+                # slow/expensive bit). premium_proxy=true (residential IPs) is
+                # what gets us past FMCSA's WAF. Override via ZENROWS_PROXY_PARAMS.
+                params = os.environ.get("ZENROWS_PROXY_PARAMS", "premium_proxy=true")
+                proxy_url = f"http://{zr_key}:{params}@api.zenrows.com:8001"
+        timeout_s = float(os.environ.get("SCRAPE_TIMEOUT", "60"))
         client_kwargs: dict = dict(
             headers={"User-Agent": USER_AGENT},
-            timeout=60,  # proxy adds latency; bump from 30 → 60
+            timeout=timeout_s,  # proxy adds latency; override via SCRAPE_TIMEOUT
             follow_redirects=True,
             verify=not bool(proxy_url),  # ZenRows MITMs TLS, disable verify
             limits=httpx.Limits(max_keepalive_connections=concurrency,
