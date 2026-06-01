@@ -640,30 +640,38 @@ export function Scorecard({
                 // REVOKED/inactive sibling whose fleet now runs here is the
                 // chameleon-successor tell, so its status takes priority over its
                 // tier; an active sibling shows its own Augie verdict.
+                // The overlap line for the fleet-sharing factors above: names the
+                // largest shared-fleet sibling and its status as bold/colored
+                // inline text (not a pill), so the "Equipment spread" / "Linked
+                // authority" factors don't need to restate the overlap and there's
+                // no duplicate status pill.
+                const siblingStatusText =
+                  r.siblingStatus === "revoked"
+                    ? `Revoked${r.siblingRevokedDate ? ` ${r.siblingRevokedDate}` : ""}`
+                    : r.siblingStatus === "inactive"
+                      ? "Inactive"
+                      : r.siblingTier
+                        ? verdictLabel[r.siblingTier]
+                        : "not scored";
+                const siblingToneClass =
+                  r.siblingStatus === "revoked" || r.siblingTier === "Critical"
+                    ? "text-red-700"
+                    : r.siblingTier === "High"
+                      ? "text-orange-700"
+                      : r.siblingTier === "Medium"
+                        ? "text-amber-700"
+                        : "text-ink-500";
                 const siblingNote =
                   r.siblingDot != null ? (
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-600">
-                      <span>
-                        Linked authority
-                        {r.siblingName ? ` ${r.siblingName}` : ""} (DOT {r.siblingDot}):
+                    <div className="mt-2 text-[11px] text-ink-600">
+                      Largest fleet overlap:{" "}
+                      <span className="font-medium text-ink-800">
+                        {r.siblingName ?? "carrier"}
+                      </span>{" "}
+                      (DOT {r.siblingDot}) ·{" "}
+                      <span className={`font-semibold ${siblingToneClass}`}>
+                        {siblingStatusText}
                       </span>
-                      {r.siblingStatus === "revoked" ? (
-                        <span className="inline-flex rounded border border-red-400 bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-900">
-                          Revoked{r.siblingRevokedDate ? ` ${r.siblingRevokedDate}` : ""}
-                        </span>
-                      ) : r.siblingStatus === "inactive" ? (
-                        <span className="inline-flex rounded border border-ink-300 bg-ink-100 px-1.5 py-0.5 text-[10px] font-medium text-ink-700">
-                          Inactive
-                        </span>
-                      ) : r.siblingTier ? (
-                        <span
-                          className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-medium ${riskStyles[r.siblingTier]}`}
-                        >
-                          {verdictLabel[r.siblingTier]}
-                        </span>
-                      ) : (
-                        <span className="text-ink-400">not scored</span>
-                      )}
                     </div>
                   ) : null;
                 return (
