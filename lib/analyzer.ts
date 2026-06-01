@@ -53,6 +53,7 @@ import {
   peerGroupLabel,
   MIN_PU_FOR_CRASH,
   MIN_INSP_FOR_OOS,
+  MIN_INSP_FOR_CONFIDENT_OOS,
   type AxisKey,
   type PeerGroup,
   type TierCutoffs,
@@ -991,6 +992,12 @@ function classifyOos(
   // BASICs ≥90th), and regulatory/fraud failures. statTier emits only severe
   // (≥P95) or clean, so this caps the severe band down to High.
   if (status === "severe") status = "high";
+  // Thin-sample guard: below the confidence floor the raw OOS rate is small-n
+  // noise (2 of 3 = 67% is a single inspection off a 60% cutoff), so it can
+  // surface but must not seed a High verdict — cap it at elevated (Medium).
+  if (inspections < MIN_INSP_FOR_CONFIDENT_OOS && status === "high") {
+    status = "elevated";
+  }
   const pctStr = `${(rate * 100).toFixed(0)}%`;
   const cell: AxisCell = {
     status,
@@ -1042,16 +1049,28 @@ function classifyCrash(
       if (c.injCrash > 0) sev.push(`${c.injCrash} injury`);
       if (c.towawayCrash > 0) sev.push(`${c.towawayCrash} tow`);
       const sevStr = sev.length ? ` (${sev.join(", ")})` : "";
+      // No exposure denominator → can't call this a high-RATE carrier, so a
+      // single non-fatal crash can't seed a High verdict; it caps at elevated
+      // (Medium). A fatality stays severe, and a repeat-injury pattern (injury
+      // crash + 2+ total) stays high — both warrant escalation even without
+      // mileage. (Previously ANY injury crash, even a lone one, read as high.)
       const status: AxisStatus =
-        c.fatalCrash > 0 ? "severe" : c.injCrash > 0 ? "high" : "elevated";
+        c.fatalCrash > 0
+          ? "severe"
+          : c.injCrash > 0 && c.crashTotal >= 2
+            ? "high"
+            : "elevated";
+      const countDetail = `${plural(c.crashTotal, "crash", "crashes")}${sevStr} on ${c.totalPowerUnits} PU in 24 months. No reliable mileage on file to compute a per-mile rate, so shown as a severity-weighted count rather than a percentile.`;
       return {
         cell: {
           status,
           display: String(c.crashTotal),
           sub: sev.length ? sev[0] : `crash${c.crashTotal === 1 ? "" : "es"}`,
-          detail: `${c.crashTotal} crashes${sevStr} on ${c.totalPowerUnits} PU in 24 months. No mileage on file to compute a per-mile rate, so shown as a severity-weighted count rather than a percentile.`,
+          detail: countDetail,
         },
-        reason: null,
+        // Emit a finding so the on-road safety column reflects the crash instead
+        // of reading "None noted." while the cell is colored.
+        reason: { label: getRule("crash-rate").label, detail: countDetail },
       };
     }
     return {
@@ -1561,7 +1580,12 @@ function scoreCarrier(
   let crashEstReason: Reason | null = null;
   {
     const cpm = c.crashesPerMillionMiles;
-    const cpmPct = cpmToPercentile(cpm, peer);
+    // Only derive the headline crash percentile from cpm when the mileage
+    // denominator is reliable (same >=100k gate as classifyCrash). Otherwise a
+    // tiny/stale VMT spikes cpm into a scary "97th*" that contradicts the
+    // (count-based) amber cell — keep classifyCrash's count display instead.
+    const cpmReliable = !!c.annualMileage && c.annualMileage >= 100_000;
+    const cpmPct = cpmReliable ? cpmToPercentile(cpm, peer) : null;
     const ci = c.crashIndicatorPercentile;
     // cpm (crashes-per-mile) is the reliable crash signal; the scraped CI estimate
     // is noisy (per-PU, can over-flag big low-per-mile carriers like Werner, and

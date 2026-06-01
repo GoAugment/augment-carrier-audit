@@ -157,6 +157,11 @@ export const nationalThresholds = {
 export const MIN_PU_FOR_CRASH = 5;
 /** Minimum inspections before an OOS axis is considered. */
 export const MIN_INSP_FOR_OOS = 3;
+/** Confidence floor: below this inspection count a raw OOS rate is small-n noise
+ *  (e.g. 2 of 3 = 67% is one inspection off the cutoff), so it can flag but must
+ *  NOT seed a High verdict — it caps at `elevated` (Medium). FMCSA's own SMS
+ *  withholds a published percentile at these counts for the same reason. */
+export const MIN_INSP_FOR_CONFIDENT_OOS = 5;
 
 export const maxLoadsPerSubmission = Number(
   process.env.MAX_LOADS_PER_SUBMISSION ?? 7500
