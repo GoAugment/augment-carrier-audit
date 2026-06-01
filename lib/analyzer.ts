@@ -388,7 +388,20 @@ function computeSafetyScore(
   // CI* 1st), so never let a low CI estimate mask a genuinely high crash rate.
   // cpm-preferred (reliable); the noisy scraped CI estimate only fills the gap
   // when there's no per-mile rate. (Avoids over-flagging big low-per-mile fleets.)
-  const crashPct = cpmToPercentile(c.crashesPerMillionMiles, peer) ?? c.crashIndicatorPercentile;
+  const crashPct =
+    cpmToPercentile(c.crashesPerMillionMiles, peer) ??
+    c.crashIndicatorPercentile ??
+    // No per-mile rate and no Crash Indicator percentile (common for new /
+    // low-mileage carriers with no MCS-150 VMT on file) — but crashes still
+    // happened. Fall back to a severity-weighted proxy so the score isn't
+    // crash-blind: a fatality outweighs an injury outweighs a tow-away.
+    (c.fatalCrash > 0
+      ? 95
+      : c.injCrash > 0
+        ? 85
+        : c.crashTotal >= 2
+          ? 70
+          : null);
   const parts: Array<[number | null, number]> = [
     [crashPct, SAFETY_WEIGHTS.crash],
     [c.unsafeDrivingPercentile, SAFETY_WEIGHTS.ud],
@@ -688,29 +701,49 @@ function computeRiskScore(
     );
   }
 
+  // Severity-weighted crash signal that works even with no mileage denominator:
+  // a fatality, or an injury crash alongside multiple crashes, means someone
+  // was hurt — a hard signal on its own, regardless of per-mile rate.
+  const crashSeverityHard = c.fatalCrash > 0 || (c.injCrash > 0 && c.crashTotal >= 2);
+  const crashSeverityBit = (): string | null => {
+    if (c.crashTotal < 1 && c.fatalCrash === 0) return null;
+    const sev: string[] = [];
+    if (c.fatalCrash > 0) sev.push(`${c.fatalCrash} fatal`);
+    if (c.injCrash > 0) sev.push(`${c.injCrash} injury`);
+    if (c.towawayCrash > 0) sev.push(`${c.towawayCrash} tow`);
+    const sevStr = sev.length ? ` (${sev.join(", ")})` : "";
+    return c.crashesPerMillionMiles != null
+      ? `${c.crashesPerMillionMiles.toFixed(2)} crashes per million miles${sevStr}`
+      : `${c.crashTotal} crashes${sevStr}, no mileage on file to compute a rate`;
+  };
   const safetyHard =
     c.fastActHighRisk ||
     c.hasSeriousViolation ||
     c.issTier === "Inspect" ||
+    crashSeverityHard ||
     (c.crashesPerMillionMiles != null && c.crashesPerMillionMiles >= 5 && c.crashTotal >= 2);
   const safetyContext =
     !safetyHard &&
     (c.issTier === "Optional" ||
-      (c.crashesPerMillionMiles != null && c.crashesPerMillionMiles >= 2 && c.crashTotal >= 2) ||
+      c.crashTotal >= 2 ||
       (safetyScore != null && safetyScore >= 65));
   if (safetyHard) {
     const bits: string[] = [];
     if (c.issTier === "Inspect" && c.issScore != null) bits.push(`ISS ${c.issScore} Inspect`);
     if (c.fastActHighRisk) bits.push("FAST Act high-risk");
     if (c.hasSeriousViolation) bits.push(`${c.seriousViolationCount} acute/critical serious violation(s)`);
-    if (c.crashesPerMillionMiles != null && c.crashesPerMillionMiles >= 5)
-      bits.push(`${c.crashesPerMillionMiles.toFixed(2)} crashes per million miles`);
+    if (crashSeverityHard || (c.crashesPerMillionMiles != null && c.crashesPerMillionMiles >= 5)) {
+      const b = crashSeverityBit();
+      if (b) bits.push(b);
+    }
     add(18, "Safety / compliance", "Hard safety signal", bits.join("; "));
   } else if (safetyContext) {
     const bits: string[] = [];
     if (c.issTier === "Optional" && c.issScore != null) bits.push(`ISS ${c.issScore} Optional`);
-    if (c.crashesPerMillionMiles != null && c.crashesPerMillionMiles >= 2)
-      bits.push(`${c.crashesPerMillionMiles.toFixed(2)} crashes per million miles`);
+    if (c.crashTotal >= 2) {
+      const b = crashSeverityBit();
+      if (b) bits.push(b);
+    }
     if (safetyScore != null && safetyScore >= 65) bits.push(`safety score ${safetyScore}`);
     add(8, "Safety / compliance", "Elevated safety context", bits.join("; "), "context");
   }
@@ -976,11 +1009,33 @@ function classifyCrash(
   // Gate on mileage alone (≥100k annual). Mileage is the right exposure
   // proxy; PU floor would exclude legit 2-4 truck operators with real VMT.
   if (!c.annualMileage || c.annualMileage < 100_000 || cpm == null) {
+    // No mileage denominator for a per-mile rate. But crashes still happened —
+    // surface the (severity-weighted) count instead of hiding it as "—",
+    // especially when someone was hurt. A new/low-mileage carrier with crashes
+    // shouldn't read as crash-clean.
+    if (c.crashTotal >= 2 || c.fatalCrash > 0 || c.injCrash > 0) {
+      const sev: string[] = [];
+      if (c.fatalCrash > 0) sev.push(`${c.fatalCrash} fatal`);
+      if (c.injCrash > 0) sev.push(`${c.injCrash} injury`);
+      if (c.towawayCrash > 0) sev.push(`${c.towawayCrash} tow`);
+      const sevStr = sev.length ? ` (${sev.join(", ")})` : "";
+      const status: AxisStatus =
+        c.fatalCrash > 0 ? "severe" : c.injCrash > 0 ? "high" : "elevated";
+      return {
+        cell: {
+          status,
+          display: String(c.crashTotal),
+          sub: sev.length ? sev[0] : `crash${c.crashTotal === 1 ? "" : "es"}`,
+          detail: `${c.crashTotal} crashes${sevStr} on ${c.totalPowerUnits} PU in 24 months. No mileage on file to compute a per-mile rate, so shown as a severity-weighted count rather than a percentile.`,
+        },
+        reason: null,
+      };
+    }
     return {
       cell: {
         status: "na",
         display: "—",
-        detail: `Annual mileage on file is below 100k, not enough exposure to compute a crash rate per million miles.`,
+        detail: `No crashes, or annual mileage on file is below 100k (not enough exposure to compute a crash rate per million miles).`,
       },
       reason: null,
     };

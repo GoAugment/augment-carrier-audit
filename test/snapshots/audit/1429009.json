@@ -3,10 +3,10 @@
   "reasonNote": "FATAL: ≥1 fatal crash in 24mo",
   "carrierName": "MCHUGH GROUP INC",
   "riskLevel": "Low",
-  "riskScore": 8,
-  "riskTier": "None",
+  "riskScore": 18,
+  "riskTier": "Low",
   "riskContributions": [
-    "+8 [Safety / compliance] Elevated safety context"
+    "+18 [Safety / compliance] Hard safety signal"
   ],
   "reasonLabels": [],
   "axes": {
