@@ -24,6 +24,11 @@ import { pipeline } from "node:stream/promises";
 
 const AGGREGATES = "carrier_aggregates.parquet";
 const IDENTITY = "carrier_identity.parquet";
+// Small (~4MB) precomputed identity-risk signals — bundled into the functions,
+// so /api/analyze reads it locally instead of fetching the 96MB identity
+// parquet from Blob and running a 2M-row self-join on every request. Built
+// offline by scripts/build_risk_signals.cjs (re-run on the monthly refresh).
+const RISK_SIGNALS = "carrier_risk_signals.parquet";
 
 // One in-flight (or resolved) download per file. Concurrent requests on a cold
 // instance share a single download; warm requests reuse the /tmp file. A
@@ -71,3 +76,4 @@ async function resolveSource(name: string): Promise<string> {
 
 export const getAggregatesParquetPath = (): Promise<string> => resolveSource(AGGREGATES);
 export const getIdentityParquetPath = (): Promise<string> => resolveSource(IDENTITY);
+export const getRiskSignalsParquetPath = (): Promise<string> => resolveSource(RISK_SIGNALS);

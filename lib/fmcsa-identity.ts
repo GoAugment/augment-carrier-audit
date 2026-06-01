@@ -14,33 +14,11 @@
  */
 import type { Database } from "duckdb";
 import type { CarrierIdentityRiskSignals } from "./analyzer";
-import { getAggregatesParquetPath, getIdentityParquetPath } from "./parquet-source";
+import { getIdentityParquetPath, getRiskSignalsParquetPath } from "./parquet-source";
 
-const FREE_EMAIL_DOMAINS = new Set([
-  "gmail.com",
-  "yahoo.com",
-  "hotmail.com",
-  "outlook.com",
-  "aol.com",
-  "icloud.com",
-  "me.com",
-  "msn.com",
-  "live.com",
-  "comcast.net",
-  "sbcglobal.net",
-  "att.net",
-  "ymail.com",
-  "proton.me",
-  "protonmail.com",
-  "mail.com",
-]);
-
-function residentialAddressMarker(street: string | null): string | null {
-  if (!street) return null;
-  const upper = street.toUpperCase();
-  const m = upper.match(/(^|[^A-Z])(APT|APARTMENT|TRLR|TRAILER|LOT|SPC|SPACE|MOBILE HOME)([^A-Z]|$)/);
-  return m?.[2] ?? null;
-}
+// NB: the free-email-domain list and the residential-address-marker regex now
+// live in scripts/build_risk_signals.cjs — those signals are precomputed
+// offline into carrier_risk_signals.parquet rather than derived per request.
 
 // Lazy-load duckdb — see fmcsa-parquet.ts for the Vercel-build rationale.
 let _db: Database | null = null;
@@ -319,17 +297,24 @@ export async function fetchIdentity(
   return out;
 }
 
-interface ShutdownIdentityLinkRow {
-  target_dot: number | bigint;
-  link_type: string;
-  linked_dot: number | bigint;
-  legal_name: string | null;
+interface RiskSignalRow {
+  DOT_NUMBER: number | bigint;
+  free_email_domain: string | null;
+  residential_marker: string | null;
+  shutdown_links: string | null;
 }
 
 /**
- * Lightweight scoring signals derived from the identity parquet. These remain
- * optional in analyzer.ts so callers that only load carrier_aggregates.parquet
- * still get a complete score from aggregate-level factors.
+ * Lightweight scoring signals for analyzer.ts: free-email-domain marker,
+ * residential-address marker, and shut-down-identity links (email/phone/officer
+ * matches to involuntarily-revoked DOTs).
+ *
+ * Reads the small precomputed `carrier_risk_signals.parquet` (bundled) by DOT —
+ * a point lookup. The links were a 2M-row self-join over the 96MB identity
+ * parquet on every request; that's now precomputed offline
+ * (scripts/build_risk_signals.cjs), so /api/analyze touches neither the Blob
+ * identity parquet nor the self-join. Carriers absent from the table have no
+ * signals (same outcome as the old self-join finding nothing).
  */
 export async function fetchIdentityRiskSignals(
   dots: number[]
@@ -338,89 +323,30 @@ export async function fetchIdentityRiskSignals(
   const out = new Map<number, CarrierIdentityRiskSignals>();
   if (unique.length === 0) return out;
 
-  const identities = await fetchIdentity(unique);
   for (const dot of unique) {
-    const identity = identities.get(dot);
-    const domain = identity?.emailDomain?.toLowerCase().trim() ?? null;
     out.set(dot, {
-      freeEmailDomain: domain && FREE_EMAIL_DOMAINS.has(domain) ? domain : null,
-      residentialAddressMarker: residentialAddressMarker(identity?.phyStreet ?? null),
+      freeEmailDomain: null,
+      residentialAddressMarker: null,
       shutdownIdentityLinks: [],
     });
   }
 
   const placeholders = unique.map(() => "?").join(",");
-  const identityPath = (await getIdentityParquetPath()).replace(/'/g, "''");
-  const aggregatePath = (await getAggregatesParquetPath()).replace(/'/g, "''");
+  const signalsPath = (await getRiskSignalsParquetPath()).replace(/'/g, "''");
   const sql = `
-    WITH targets AS (
-      SELECT
-        DOT_NUMBER AS target_dot,
-        lower(trim(coalesce(email_address, ''))) AS email,
-        regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') AS phone_norm,
-        upper(trim(coalesce(company_officer_1, ''))) AS officer_norm
-      FROM read_parquet('${identityPath}')
-      WHERE DOT_NUMBER IN (${placeholders})
-    ),
-    identities AS (
-      SELECT
-        DOT_NUMBER,
-        lower(trim(coalesce(email_address, ''))) AS email,
-        regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') AS phone_norm,
-        upper(trim(coalesce(company_officer_1, ''))) AS officer_norm
-      FROM read_parquet('${identityPath}')
-    ),
-    shutdowns AS (
-      SELECT DOT_NUMBER, LEGAL_NAME
-      FROM read_parquet('${aggregatePath}')
-      WHERE (status_code <> 'A' OR status_code IS NULL)
-        AND coalesce(involuntary_revocations, 0) > 0
-    ),
-    links AS (
-      SELECT t.target_dot, 'email' AS link_type, s.DOT_NUMBER AS linked_dot, s.LEGAL_NAME AS legal_name
-      FROM targets t
-      JOIN identities i ON t.email <> '' AND t.email = i.email AND i.DOT_NUMBER <> t.target_dot
-      JOIN shutdowns s ON s.DOT_NUMBER = i.DOT_NUMBER
-
-      UNION ALL
-
-      SELECT t.target_dot, 'phone' AS link_type, s.DOT_NUMBER AS linked_dot, s.LEGAL_NAME AS legal_name
-      FROM targets t
-      JOIN identities i ON length(t.phone_norm) >= 10
-        AND t.phone_norm NOT IN ('0000000000','9999999999','1111111111','1234567890')
-        AND t.phone_norm = i.phone_norm
-        AND i.DOT_NUMBER <> t.target_dot
-      JOIN shutdowns s ON s.DOT_NUMBER = i.DOT_NUMBER
-
-      UNION ALL
-
-      SELECT t.target_dot, 'officer' AS link_type, s.DOT_NUMBER AS linked_dot, s.LEGAL_NAME AS legal_name
-      FROM targets t
-      JOIN identities i ON length(t.officer_norm) >= 5
-        AND t.officer_norm NOT IN ('OWNER','UNKNOWN','NONE','N/A','NA')
-        AND t.officer_norm = i.officer_norm
-        AND i.DOT_NUMBER <> t.target_dot
-      JOIN shutdowns s ON s.DOT_NUMBER = i.DOT_NUMBER
-    )
-    SELECT DISTINCT target_dot, link_type, linked_dot, legal_name
-    FROM links
-    ORDER BY target_dot, link_type, linked_dot
+    SELECT DOT_NUMBER, free_email_domain, residential_marker, shutdown_links
+    FROM read_parquet('${signalsPath}')
+    WHERE DOT_NUMBER IN (${placeholders})
   `;
-  const rows = await runQuery<ShutdownIdentityLinkRow>(sql, unique);
-  const seen = new Set<string>();
+  const rows = await runQuery<RiskSignalRow>(sql, unique);
   for (const r of rows) {
-    const target = asInt(r.target_dot);
-    const linked = asInt(r.linked_dot);
-    const key = `${target}:${r.link_type}:${linked}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const signals = out.get(target);
-    if (!signals || signals.shutdownIdentityLinks.length >= 5) continue;
-    signals.shutdownIdentityLinks.push(
-      `${r.link_type} matches shut-down revoked DOT ${linked}${
-        r.legal_name ? ` (${r.legal_name})` : ""
-      }`
-    );
+    out.set(asInt(r.DOT_NUMBER), {
+      freeEmailDomain: r.free_email_domain ?? null,
+      residentialAddressMarker: r.residential_marker ?? null,
+      shutdownIdentityLinks: r.shutdown_links
+        ? r.shutdown_links.split(" | ").slice(0, 5)
+        : [],
+    });
   }
 
   return out;

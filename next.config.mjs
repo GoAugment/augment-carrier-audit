@@ -19,6 +19,7 @@ const nextConfig = {
     outputFileTracingIncludes: {
       "/api/analyze": [
         "./data/carrier_aggregates.parquet",
+        "./data/carrier_risk_signals.parquet",
         "./data/national_thresholds.json",
         "./node_modules/duckdb/lib/**/*",
         "./node_modules/duckdb/package.json",
@@ -36,6 +37,7 @@ const nextConfig = {
         // parquets (~190MB) + duckdb (62MB) exceeds Vercel's 250MB limit.
         // Aggregates stays bundled: 95MB + 62MB duckdb ≈ 157MB, under the cap.
         "./data/carrier_aggregates.parquet",
+        "./data/carrier_risk_signals.parquet",
         "./data/national_thresholds.json",
         "./node_modules/duckdb/lib/**/*",
         "./node_modules/duckdb/package.json",
