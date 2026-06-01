@@ -580,39 +580,50 @@ export function Scorecard({
                 <Cell cell={r.axes.insurance} />
               </tr>
               {open && (() => {
+                // Always renders (never null) so the two columns stay put:
+                // On-road safety on the LEFT, Carrier risk on the RIGHT, even
+                // when one side has no flags. Each factor is a two-line row —
+                // a fixed-width points badge, then a bold label (+ small
+                // category tag) over a muted detail line — so the contributions
+                // read as a tidy list instead of a run-on sentence.
                 const renderGroup = (
                   title: string,
                   items: Signal[],
                   dot: string,
                   extra?: React.ReactNode
-                ) =>
-                  items.length > 0 || extra ? (
-                    <div>
-                      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-500">
-                        <span className={`inline-block h-1.5 w-1.5 rounded-full ${dot}`} />
-                        {title}
-                      </div>
-                      <ul className="mt-1 space-y-1.5 text-xs text-ink-700">
+                ) => (
+                  <div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-500">
+                      <span className={`inline-block h-1.5 w-1.5 rounded-full ${dot}`} />
+                      {title}
+                    </div>
+                    {items.length > 0 ? (
+                      <ul className="mt-1.5 space-y-1.5 text-xs">
                         {items.map((s, i) => (
-                          <li key={i}>
-                            {s.points != null && (
-                              <span className="mr-1.5 inline-flex rounded bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-ink-700">
-                                +{s.points}
-                              </span>
-                            )}
-                            <strong className="font-semibold text-ink-900">{s.label}</strong>
-                            {s.category ? (
-                              <span className="ml-1 text-[10px] text-ink-400">
-                                {s.category}
-                              </span>
-                            ) : null}
-                            {s.detail ? <span> {s.detail}</span> : null}
+                          <li key={i} className="flex gap-2">
+                            <span className="mt-px inline-flex h-[18px] min-w-[34px] shrink-0 items-center justify-center rounded bg-white/70 text-[10px] font-semibold tabular-nums text-ink-700">
+                              {s.points != null ? `+${s.points}` : ""}
+                            </span>
+                            <div className="leading-snug">
+                              <div>
+                                <strong className="font-semibold text-ink-900">{s.label}</strong>
+                                {s.category ? (
+                                  <span className="ml-1.5 text-[10px] uppercase tracking-wide text-ink-400">
+                                    {s.category}
+                                  </span>
+                                ) : null}
+                              </div>
+                              {s.detail ? <div className="text-ink-600">{s.detail}</div> : null}
+                            </div>
                           </li>
                         ))}
                       </ul>
-                      {extra}
-                    </div>
-                  ) : null;
+                    ) : (
+                      <p className="mt-1.5 text-xs text-ink-400">None noted.</p>
+                    )}
+                    {extra}
+                  </div>
+                );
                 // When a shared-fleet sibling was named, show what it is. A
                 // REVOKED/inactive sibling whose fleet now runs here is the
                 // chameleon-successor tell, so its status takes priority over its
