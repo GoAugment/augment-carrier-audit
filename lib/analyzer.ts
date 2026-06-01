@@ -2225,9 +2225,9 @@ function scoreCarrier(
               category: "Identity / chameleon",
               label: "Linked authority revoked",
               points: 24,
-              detail: `Runs the fleet of DOT ${siblingDot}, whose authority was involuntarily revoked${
-                sStat.date ? ` ${sStat.date}` : ""
-              }.`,
+              // Specifics (which sibling + when revoked) render once in the
+              // "Largest fleet overlap" line below, so keep this to the why.
+              detail: "Operating a recently-revoked sibling authority's fleet; chameleon-successor pattern.",
               kind: "core",
             });
           }
@@ -2345,9 +2345,7 @@ function scoreCarrier(
                 category: "Identity / chameleon",
                 label: "Linked authority revoked",
                 points: 24,
-                detail: `Largest linked authority DOT ${siblingRef.dot} was involuntarily revoked${
-                  sStat.date ? ` ${sStat.date}` : ""
-                }.`,
+                detail: "Operating a recently-revoked sibling authority's fleet; chameleon-successor pattern.",
                 kind: "core",
               });
             }
