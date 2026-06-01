@@ -234,6 +234,12 @@ function issCellOf(r: CarrierRow): AxisCell {
 // findings.
 const SAFETY_RE =
   /crash|unsafe driving|hos compliance|driver oos|vehicle oos|hazmat|fast.?act|acute|serious viol|iss,|multiple basic|safety rating/i;
+// The concentrated single-sibling "Fleet shared with another active DOT" reason
+// is the same VIN-overlap evidence as the scored "Equipment spread …" / "Shared
+// fleet …" factor; we surface the named sibling (+ shared-VIN count + status) as
+// an inline sub-line under that factor instead of as its own bullet. Dropped
+// from the panel here only — it stays in reasons[] for the email reply + rules.
+const FLEET_SHARED_REASON_RE = /^fleet shared with another/i;
 
 type Signal = { label: string; detail: string; points?: number; category?: string };
 function splitSignals(r: CarrierRow): {
@@ -253,6 +259,7 @@ function splitSignals(r: CarrierRow): {
       safety.push(reason);
       continue;
     }
+    if (FLEET_SHARED_REASON_RE.test(reason.label)) continue;
     if (seen.has(reason.label.toLowerCase())) continue;
     risk.push(reason);
   }
@@ -586,17 +593,27 @@ export function Scorecard({
                 // a fixed-width points badge, then a bold label (+ small
                 // category tag) over a muted detail line — so the contributions
                 // read as a tidy list instead of a run-on sentence.
-                // Largest shared-fleet sibling, rendered INLINE on the relevant
-                // fleet factor (Linked authority / Equipment spread / Fleet
-                // shared) rather than as a separate line — so every risk-side row
-                // is a scored factor. Status is bold + color-coded: "when
-                // revoked" for a revoked sibling, otherwise its Augie level.
-                const FLEET_RE = /linked authority|equipment spread|fleet shared/i;
+                // Largest shared-fleet sibling, rendered INLINE under the
+                // fleet-sharing factor (Equipment spread / Shared fleet) so that
+                // factor carries the overlap detail itself and we don't show a
+                // separate "Fleet shared" row. Falls back to "Linked authority
+                // revoked" only if no fleet-sharing factor is present. The line
+                // names the sibling, how many VINs overlap, and its status
+                // (bold + color-coded: "when revoked" for a revoked sibling,
+                // otherwise its Augie level).
+                const FLEET_PRIMARY_RE = /equipment spread|shared fleet|fleet shared/i;
+                const FLEET_FALLBACK_RE = /linked authority/i;
+                const sharedVins = r.carrier.largestSiblingSharedVins;
+                const totalVins = r.carrier.largestSiblingTotalVins;
                 const sib =
                   r.siblingDot != null
                     ? {
                         name: r.siblingName ?? "carrier",
                         dot: r.siblingDot,
+                        vins:
+                          sharedVins > 0 && totalVins > 0
+                            ? `${sharedVins} of ${totalVins} VINs`
+                            : null,
                         statusText:
                           r.siblingStatus === "revoked"
                             ? `Revoked${r.siblingRevokedDate ? ` ${r.siblingRevokedDate}` : ""}`
@@ -615,7 +632,14 @@ export function Scorecard({
                                 : "text-ink-500",
                       }
                     : null;
-                let overlapShown = false;
+                // Index of the risk row the overlap sub-line attaches to: prefer
+                // the fleet-sharing factor, else the linked-authority factor.
+                const overlapIdx = !sib
+                  ? -1
+                  : (() => {
+                      const p = risk.findIndex((s) => FLEET_PRIMARY_RE.test(s.label));
+                      return p >= 0 ? p : risk.findIndex((s) => FLEET_FALLBACK_RE.test(s.label));
+                    })();
                 const renderGroup = (title: string, items: Signal[], dot: string) => (
                   <div>
                     <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-500">
@@ -625,8 +649,7 @@ export function Scorecard({
                     {items.length > 0 ? (
                       <ul className="mt-1.5 space-y-1.5 text-xs">
                         {items.map((s, i) => {
-                          const showOverlap = !!sib && !overlapShown && FLEET_RE.test(s.label);
-                          if (showOverlap) overlapShown = true;
+                          const showOverlap = !!sib && items === risk && i === overlapIdx;
                           return (
                             <li key={i} className="flex gap-2">
                               {s.points != null ? (
@@ -656,7 +679,8 @@ export function Scorecard({
                                 {showOverlap && sib ? (
                                   <div className="text-ink-600">
                                     <span className="font-medium text-ink-800">{sib.name}</span> (DOT{" "}
-                                    {sib.dot}) ·{" "}
+                                    {sib.dot})
+                                    {sib.vins ? ` · ${sib.vins}` : ""} ·{" "}
                                     <span className={`font-semibold ${sib.tone}`}>{sib.statusText}</span>
                                   </div>
                                 ) : null}
