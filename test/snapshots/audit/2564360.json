@@ -3,15 +3,24 @@
   "reasonNote": "CRITICAL: recent involuntary revocation",
   "carrierName": "TIMEKEEPER TRUCKING INC",
   "riskLevel": "Critical",
+  "riskScore": 68,
+  "riskTier": "High",
+  "riskContributions": [
+    "+30 [Authority / insurance] Recent involuntary revocation",
+    "+30 [Authority / insurance] $0/sub-minimum BIPD",
+    "+8 [Safety / compliance] Elevated safety context"
+  ],
   "reasonLabels": [
     "Insurance lapsed",
-    "Recent revocation"
+    "Recent revocation",
+    "Why the FMCSA SMS scores look clean"
   ],
   "axes": {
     "crash": "clean",
     "unsafeDriving": "na",
     "hos": "na",
     "driverOos": "na",
+    "controlledSubstances": "na",
     "vehicleOos": "na",
     "hazmatOos": "na",
     "revocations": "high",

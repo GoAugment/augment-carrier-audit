@@ -12,6 +12,8 @@
  *
  * For each DOT we snapshot the deterministic parts of the audit row:
  *   - riskLevel             (Critical / Severe / High / Elevated / Clean)
+ *   - riskScore / riskTier  (0-100 score + score band)
+ *   - riskContributions     (pointed factor labels)
  *   - reason labels         (the bulleted findings shown on the audit row)
  *   - axis cell statuses    (clean / elevated / high / severe / critical / na)
  *
@@ -57,8 +59,8 @@ const SNAPSHOT_DOTS: SnapshotDot[] = [
   { dot: 3670294,  reason: "CRITICAL: $0 BIPD" },
   { dot: 4546639,  reason: "CRITICAL: $0 BIPD" },
 
-  // Critical: rapid-replace + cancellations
-  { dot: 4223713,  reason: "CRITICAL: rapid replace + ≥3 cancellations" },
+  // Medium/Critical: rapid-replace + cancellations
+  { dot: 4223713,  reason: "MEDIUM: rapid replace + 2 cancellations" },
   { dot: 4170928,  reason: "CRITICAL: rapid replace + ≥3 cancellations" },
 
   // Critical: recent involuntary revocation
@@ -68,9 +70,9 @@ const SNAPSHOT_DOTS: SnapshotDot[] = [
   { dot: 1906024,  reason: "CRITICAL: prior-revoke chameleon" },
   { dot: 2285207,  reason: "CRITICAL: prior-revoke chameleon" },
 
-  // High: SMS BASIC alerts
+  // High/Critical: SMS BASIC alerts
   { dot: 3409034,  reason: "HIGH: Unsafe Driving alert" },
-  { dot: 4514597,  reason: "HIGH: Vehicle Maintenance alert" },
+  { dot: 4307204,  reason: "CRITICAL: Vehicle OOS alert" },
   { dot: 4223883,  reason: "HIGH: HOS alert" },
 
   // High: crash rate
@@ -81,8 +83,8 @@ const SNAPSHOT_DOTS: SnapshotDot[] = [
   { dot: 1429009,  reason: "FATAL: ≥1 fatal crash in 24mo" },
   { dot: 4208930,  reason: "FATAL: ≥1 fatal crash in 24mo" },
 
-  // New authority + low activity (chameleon-pattern contributor)
-  { dot: 4497948,  reason: "HIGH: new authority + low activity" },
+  // New authority
+  { dot: 4572009,  reason: "CRITICAL: new authority under 90 days" },
 
   // Address chameleon (already used in rule fixtures, included for coverage)
   { dot: 2763893,  reason: "CRITICAL: 66 OOS DOTs at same address" },
@@ -101,6 +103,9 @@ interface AuditSnapshot {
   reasonNote: string;
   carrierName: string | null;
   riskLevel: string;
+  riskScore: number;
+  riskTier: string;
+  riskContributions: string[];
   reasonLabels: string[];           // labels only — details have carrier-specific values
   axes: Record<string, string>;     // axis key → status
 }
@@ -122,6 +127,11 @@ async function snapshotDot(dot: number, reasonNote: string): Promise<AuditSnapsh
     reasonNote,
     carrierName: carrier.legalName ?? null,
     riskLevel: row.riskLevel,
+    riskScore: row.riskScore,
+    riskTier: row.riskTier,
+    riskContributions: row.riskContributions.map(
+      (f) => `+${f.points} [${f.category}] ${f.label}`
+    ),
     reasonLabels: row.reasons.map((r) => r.label),
     axes,
   };
@@ -141,6 +151,18 @@ function diffSnapshots(a: AuditSnapshot, b: AuditSnapshot): string[] {
   const diffs: string[] = [];
   if (a.riskLevel !== b.riskLevel) {
     diffs.push(`riskLevel: ${a.riskLevel} → ${b.riskLevel}`);
+  }
+  if (a.riskScore !== b.riskScore) {
+    diffs.push(`riskScore: ${a.riskScore} → ${b.riskScore}`);
+  }
+  if (a.riskTier !== b.riskTier) {
+    diffs.push(`riskTier: ${a.riskTier} → ${b.riskTier}`);
+  }
+  if (JSON.stringify(a.riskContributions) !== JSON.stringify(b.riskContributions)) {
+    const removed = a.riskContributions.filter((l) => !b.riskContributions.includes(l));
+    const added = b.riskContributions.filter((l) => !a.riskContributions.includes(l));
+    if (removed.length) diffs.push(`risk contributions removed: ${removed.join(" | ")}`);
+    if (added.length)   diffs.push(`risk contributions added:   ${added.join(" | ")}`);
   }
   if (JSON.stringify(a.reasonLabels) !== JSON.stringify(b.reasonLabels)) {
     const removed = a.reasonLabels.filter((l) => !b.reasonLabels.includes(l));

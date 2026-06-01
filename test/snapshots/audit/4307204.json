@@ -1,0 +1,38 @@
+{
+  "dot": 4307204,
+  "reasonNote": "CRITICAL: Vehicle OOS alert",
+  "carrierName": "NKB TRUCKING LLC",
+  "riskLevel": "Critical",
+  "riskScore": 93,
+  "riskTier": "Critical",
+  "riskContributions": [
+    "+35 [Safety / compliance] Unsatisfactory safety rating",
+    "+16 [Safety / compliance] FMCSA enforcement case",
+    "+18 [Safety / compliance] Hard safety signal",
+    "+24 [Identity / chameleon] Diffuse equipment sharing"
+  ],
+  "reasonLabels": [
+    "ISS — Inspect (top inspection priority)",
+    "Safety rating: Unsatisfactory",
+    "Acute/critical violations from FMCSA investigation",
+    "FAST Act High-Risk — triggered",
+    "Unsafe Driving",
+    "HOS Compliance",
+    "Driver OOS",
+    "Vehicle OOS",
+    "Recent enforcement",
+    "Equipment spread across multiple active DOTs"
+  ],
+  "axes": {
+    "crash": "na",
+    "unsafeDriving": "elevated",
+    "hos": "high",
+    "driverOos": "elevated",
+    "controlledSubstances": "high",
+    "vehicleOos": "high",
+    "hazmatOos": "na",
+    "revocations": "clean",
+    "authority": "critical",
+    "insurance": "na"
+  }
+}

@@ -20,6 +20,33 @@
  */
 import type { FmcsaCarrier } from "./fmcsa";
 import { getRule } from "./rules";
+import insurerRisk from "./data/insurer-risk.json";
+import zipRiskData from "./data/zip-risk.json";
+
+/** Empirical insurer-reputation lookup (built by build_insurer_risk.py): an
+ *  insurer's BIPD-portfolio involuntary-revocation rate vs the national base.
+ *  "Specialty"/RRG surplus-lines insurers write the carriers standard insurers
+ *  won't and their books revoke 3-5x more — a leading signal known at booking. */
+function lookupInsurerRisk(name: string | null): { tier: string; lift: number } | null {
+  if (!name) return null;
+  const e = (insurerRisk.insurers as Record<string, { tier: string; lift: number }>)[
+    name.toUpperCase().trim()
+  ];
+  return e ?? null;
+}
+
+/** Empirical ZIP-reputation lookup (built by build_zip_risk.py): a physical-
+ *  address ZIP's carrier shutdown rate (revoked/OOS ÷ total) vs the national
+ *  base. Independently reproduces the new-authority-surge hotspots. Soft marker
+ *  — these are also legit freight hubs, so it's lightly weighted and gated to
+ *  never flag alone. Keyed by the first 5 digits of the ZIP. */
+function lookupZipRisk(zip: string | null): { tier: string; lift: number } | null {
+  if (!zip) return null;
+  const z = zip.match(/\d{5}/)?.[0];
+  if (!z) return null;
+  const e = (zipRiskData.zips as Record<string, { tier: string; lift: number }>)[z];
+  return e ?? null;
+}
 import {
   getCutoffs,
   peerGroupForPU,
@@ -32,7 +59,11 @@ import {
   nationalThresholds,
 } from "./thresholds";
 
-export type RiskLevel = "Critical" | "Severe" | "High" | "Elevated";
+// Four-tier carrier verdict. "Low" is the clean baseline (nothing flagged);
+// Medium/High/Critical are the escalating flagged tiers. Critical absorbs what
+// used to be a separate "Severe" tier — a below-minimum/lapsed/revoked/fraud
+// carrier and a multi-signal chameleon are both "do not tender."
+export type RiskLevel = "Critical" | "High" | "Medium" | "Low";
 export type AxisStatus =
   | "critical"
   | "severe"
@@ -44,7 +75,7 @@ export type AxisStatus =
   | "clean"
   | "na";
 
-const TIER_ORDER: RiskLevel[] = ["Critical", "Severe", "High", "Elevated"];
+const TIER_ORDER: RiskLevel[] = ["Critical", "High", "Medium", "Low"];
 const ABSOLUTE_CRASH_FLOOR = 2.0; // crashes per million miles
 
 // Industry-standard insurance + tenure floors (mirrors what Armstrong Transport
@@ -88,11 +119,38 @@ export interface Reason {
   detail: string;
 }
 
+export type RiskFactorCategory =
+  | "Authority / insurance"
+  | "Identity / chameleon"
+  | "Operations"
+  | "Safety / compliance"
+  | "Context";
+
+export type RiskFactorKind = "core" | "context";
+
+export interface RiskFactorContribution {
+  category: RiskFactorCategory;
+  label: string;
+  points: number;
+  detail: string;
+  /** Core factors are allowed to unlock weak corroborators like free email. */
+  kind: RiskFactorKind;
+}
+
+export interface CarrierIdentityRiskSignals {
+  freeEmailDomain: string | null;
+  residentialAddressMarker: string | null;
+  shutdownIdentityLinks: string[];
+}
+
 /** One cell in the scorecard — covers one axis for one carrier. */
 export interface AxisCell {
   status: AxisStatus;
   /** Compact value to render in the cell (e.g. "43%", "1.19", "—"). */
   display: string;
+  /** Optional small secondary line under `display` (e.g. the absolute rate
+   *  anchoring a percentile headline). */
+  sub?: string;
   /** Longer explanation shown on hover/expand. */
   detail?: string;
 }
@@ -108,13 +166,49 @@ export interface CarrierRow {
   loadIds: string[];
   hazmatLoadIds: string[];
   hasFatalCrash: boolean;
-  /** Overall risk tier. "Clean" means no axis flagged. */
-  riskLevel: RiskLevel | "Clean";
+  /** Overall risk tier. "Low" is the clean baseline (no axis flagged). */
+  riskLevel: RiskLevel;
+  /** Estimated FMCSA ISS-CSA score (1-100) + tier ("Inspect"/"Optional"/"Pass")
+   *  + group label. Context only (not a tier driver). Null if unscored. */
+  issScore: number | null;
+  issTier: string | null;
+  issGroup: string | null;
+  /** Augie Safety Score (0-100, higher=worse) — peer-fair crash-risk roll-up of
+   *  the BASIC percentiles. Companion to ISS (fixes ISS's small-carrier blind
+   *  spot). + tier (High/Moderate/Low). Null if data-insufficient. */
+  safetyScore: number | null;
+  safetyTier: string | null;
+  /** Carrier Risk Score (0-100, higher=worse) — transparent additive score across
+   *  authority/insurance, identity/chameleon, operations, safety/compliance, and
+   *  contextual corroborators. It is a heuristic index, not a probability. */
+  riskScore: number;
+  riskTier: string;
+  riskFactors: string[];
+  riskContributions: RiskFactorContribution[];
+  /** Top named shared-fleet sibling (the single largest cross-DOT VIN-overlap
+   *  partner), surfaced when the chameleon-shared-fleet reason fires. `siblingTier`
+   *  is its own Augie verdict — filled in by the API route via a second scoring
+   *  pass so the broker can see at a glance whether the linked authority is itself
+   *  Critical/High. All three null when no concentrated sibling was named. */
+  siblingDot: number | null;
+  siblingName: string | null;
+  siblingTier: RiskLevel | null;
+  /** The linked sibling's own authority status. "revoked" (involuntary) is the
+   *  textbook chameleon-successor tell — its trucks reappearing under this DOT.
+   *  Null when no sibling was named. `siblingRevokedDate` is the involuntary
+   *  revocation date when status is "revoked". */
+  siblingStatus: "active" | "inactive" | "revoked" | null;
+  siblingRevokedDate: string | null;
+  /** Underlying FMCSA record — carried so the CSV export can emit the full FMCSA
+   *  (BASIC percentiles) + regulatory (insurance/revocation/authority) columns
+   *  beyond what the on-screen axes show. Not serialized into snapshots. */
+  carrier: FmcsaCarrier;
   axes: {
     crash: AxisCell;
     unsafeDriving: AxisCell;
     hos: AxisCell;
     driverOos: AxisCell;
+    controlledSubstances: AxisCell;
     vehicleOos: AxisCell;
     hazmatOos: AxisCell;
     revocations: AxisCell;
@@ -142,7 +236,7 @@ export interface AuditResult {
   totalLoads: number;
   totalCarriers: number;
   flaggedCarriers: number;
-  bySeverity: Record<RiskLevel, number>;
+  bySeverity: Record<Exclude<RiskLevel, "Low">, number>;
   rows: CarrierRow[];
   thresholdsUsed: typeof nationalThresholds;
   unresolvedDots: number[];
@@ -186,19 +280,530 @@ function statusRank(s: AxisStatus): number {
   }
 }
 
-function statusToRiskLevel(s: AxisStatus): RiskLevel | "Clean" {
-  if (s === "critical") return "Critical";
-  if (s === "severe") return "Severe";
+function statusToRiskLevel(s: AxisStatus): RiskLevel {
+  // critical + severe cell bands both map to the Critical carrier tier.
+  if (s === "critical" || s === "severe") return "Critical";
   if (s === "high") return "High";
-  if (s === "elevated") return "Elevated";
-  return "Clean";
+  if (s === "elevated") return "Medium";
+  return "Low";
 }
 
-function bumpUp(t: RiskLevel | "Clean"): RiskLevel | "Clean" {
-  if (t === "Clean") return "Elevated";
-  if (t === "Elevated") return "High";
-  if (t === "High") return "Severe";
-  return t; // Severe and Critical stay
+function ordinal(n: number): string {
+  const v = n % 100;
+  const suffix = v >= 11 && v <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th";
+  return `${n}${suffix}`;
+}
+
+/** Render a BASIC as its FMCSA SMS percentile (peer-ranked — what FMCSA alerts
+ *  on) instead of the raw rate, keeping the rate as a secondary anchor. Color
+ *  reflects FMCSA's alert: at/above intervention threshold → high (severe if
+ *  ≥90th); approaching → elevated. Falls back to the rate cell when the carrier
+ *  isn't data-sufficient for a percentile. */
+function basicPctCell(
+  percentile: number | null,
+  alert: string | null,
+  rateCell: AxisCell,
+  label: string,
+  estimate = false
+): AxisCell {
+  if (percentile == null) return rateCell;
+  const p = Math.round(percentile);
+  const alerted = alert === "Y";
+  // Tier bands. FMCSA's alert threshold is the 65th percentile (UD/HOS) — a low
+  // bar ~1/3 of carriers cross on some BASIC, so "any alert → High" floods the
+  // High tier. So a single alert only reaches High when it's ALSO ≥90th
+  // percentile (genuinely top-decile); an alert at 65–89th, or a non-alerted
+  // ≥75th, is Medium (awareness). Two crash-correlated BASICs ≥90th still
+  // escalate to Critical via FAST-Act at the carrier-tier level.
+  const status: AxisStatus =
+    alerted && p >= 90 ? "high" : alerted || p >= 75 ? "elevated" : "clean";
+  const rate = rateCell.display && rateCell.display !== "—" ? rateCell.display : null;
+  // estimate = FMCSA doesn't publish this BASIC's percentile (Crash Indicator,
+  // Hazmat Compliance) — we reproduce it, marked with * (see footnote).
+  const star = estimate ? "*" : "";
+  // One coherent story centered on the FMCSA percentile (the number that drives
+  // the verdict). We deliberately DON'T mix in our raw OOS-rate-vs-peer-cutoff
+  // ("below P85 cutoff…") or the national measure band — those are different
+  // lenses that contradict the peer percentile (a carrier can be 100th-percentile
+  // among peers yet below an absolute-rate cutoff). The raw inspection counts
+  // stay as factual support.
+  const countsMatch = rateCell.detail?.match(/^\d[\d,]* of [\d,]+ inspections/);
+  const counts = countsMatch ? countsMatch[0] : null;
+  const standing = alerted
+    ? " — at/above FMCSA's intervention threshold"
+    : p >= 75
+      ? " — elevated, below FMCSA's alert threshold"
+      : "";
+  return {
+    status,
+    // Just the percentile — the cell color already encodes the alert/elevated
+    // standing, so a ⚠ glyph next to the number was redundant noise. The
+    // intervention-threshold wording stays in the hover detail.
+    display: `${ordinal(p)}${star}`,
+    // Single number per cell (the peer percentile); the supporting counts live
+    // in the hover detail.
+    detail:
+      `${estimate ? "Estimated " : "FMCSA SMS "}${label}: ${ordinal(p)} percentile among peers${standing}` +
+      `${estimate ? " (estimate — FMCSA doesn't publish this BASIC)" : ""}.` +
+      `${counts ? ` Seen in ${counts}${rate ? ` (${rate})` : ""}.` : ""}`,
+  };
+}
+
+/** Map crashes-per-million-miles to an approximate peer percentile using the
+ *  fleet-size peer cutoffs. CI percentile is sparse (~21k carriers); cpm has full
+ *  coverage and backtested almost as well (1.64x vs CI 1.74x), so it's the
+ *  high-coverage fallback for the crash input. */
+function cpmToPercentile(cpm: number | null, peer: PeerGroup): number | null {
+  if (cpm == null) return null;
+  const cuts = getCutoffs("crashesPerMillionMiles" as AxisKey, peer);
+  if (cpm <= 0) return 0;
+  if (cuts.p85 > 0 && cpm < cuts.p85) return Math.round((cpm / cuts.p85) * 85);
+  if (cuts.p95 > cuts.p85 && cpm < cuts.p95)
+    return Math.round(85 + ((cpm - cuts.p85) / (cuts.p95 - cuts.p85)) * 10);
+  return cuts.p95 > 0 ? Math.min(99, Math.round(95 + (cpm / cuts.p95 - 1) * 4)) : 90;
+}
+
+/** Augie Safety Score (0-100, higher = worse): peer-fair, crash-calibrated roll-up
+ *  of the BASIC percentiles. Weights are the measured crash-prediction lift from
+ *  the temporal backtest — Crash Indicator/cpm (1.74x/1.64x) and Unsafe Driving
+ *  (1.35x) dominate; HOS/VM/DF are near-flat for *crashes* so they carry only a
+ *  token weight (they stay visible in their own cells for compliance). The
+ *  percentile basis + fleet-size peer grouping make this fairer to small carriers
+ *  than ISS, which under-ranks them on thin inspection exposure. Null when the
+ *  carrier has no percentile or crash inputs (data-insufficient). */
+// Crash-leaning but uses ALL 7 BASIC percentiles. Crash + Unsafe Driving carry
+// the most weight (backtest crash-prediction lift); the other BASICs get real —
+// not token — weight because they're genuine safety signals (and what ISS/brokers
+// recognize), so the score tracks ISS instead of contradicting it. Controlled
+// Substances (drug/alcohol) is safety- and crash-relevant; Hazmat is niche so it
+// gets the least. Weights sum to 1.0 over available inputs (renormalized).
+const SAFETY_WEIGHTS = { crash: 0.34, ud: 0.22, hos: 0.14, cs: 0.1, vm: 0.1, df: 0.06, hm: 0.04 };
+function computeSafetyScore(
+  c: FmcsaCarrier,
+  peer: PeerGroup
+): { score: number | null; tier: string | null } {
+  // Crash input = the WORSE of the cpm-derived percentile and the scraped Crash
+  // Indicator estimate. cpm has full coverage and is reliable; the CI estimate is
+  // sparse and occasionally bogus (e.g. an intermodal carrier at 18 cpm showing
+  // CI* 1st), so never let a low CI estimate mask a genuinely high crash rate.
+  // cpm-preferred (reliable); the noisy scraped CI estimate only fills the gap
+  // when there's no per-mile rate. (Avoids over-flagging big low-per-mile fleets.)
+  const crashPct = cpmToPercentile(c.crashesPerMillionMiles, peer) ?? c.crashIndicatorPercentile;
+  const parts: Array<[number | null, number]> = [
+    [crashPct, SAFETY_WEIGHTS.crash],
+    [c.unsafeDrivingPercentile, SAFETY_WEIGHTS.ud],
+    [c.hosPercentile, SAFETY_WEIGHTS.hos],
+    [c.controlledSubstancesPercentile, SAFETY_WEIGHTS.cs],
+    [c.vehicleMaintenancePercentile, SAFETY_WEIGHTS.vm],
+    [c.driverFitnessPercentile, SAFETY_WEIGHTS.df],
+    [c.hmCompliancePercentile, SAFETY_WEIGHTS.hm],
+  ];
+  // Weighted CUBIC mean (power-mean, k=3), not a linear average: risk is
+  // worst-driven, so a carrier with one or two severe BASICs must score high
+  // even when its other BASICs are clean (a flat average would dilute a
+  // 96th-percentile problem down to "Low"). The cube makes high percentiles
+  // dominate while still using all 7 inputs.
+  let num = 0;
+  let den = 0;
+  for (const [p, w] of parts) {
+    if (p != null) {
+      num += w * p * p * p;
+      den += w;
+    }
+  }
+  if (den === 0) return { score: null, tier: null };
+  const score = Math.round(Math.cbrt(num / den));
+  const tier = score >= 65 ? "High" : score >= 45 ? "Moderate" : "Low";
+  return { score, tier };
+}
+
+type RiskScoreResult = {
+  score: number;
+  tier: string;
+  factors: string[];
+  contributions: RiskFactorContribution[];
+};
+
+function formatRiskContribution(f: RiskFactorContribution): string {
+  return `+${f.points} ${f.label} — ${f.detail}`;
+}
+
+function refreshRiskScore(risk: RiskScoreResult): void {
+  risk.score = Math.min(
+    100,
+    risk.contributions.reduce((sum, f) => sum + f.points, 0)
+  );
+  risk.tier = riskTierOf(risk.score);
+  risk.factors = risk.contributions.map(formatRiskContribution);
+}
+
+function addRiskContribution(
+  risk: RiskScoreResult,
+  contribution: RiskFactorContribution
+): void {
+  if (contribution.points <= 0) return;
+  risk.contributions.push(contribution);
+  refreshRiskScore(risk);
+}
+
+function hasCoreRiskContribution(risk: RiskScoreResult): boolean {
+  return risk.contributions.some((f) => f.kind === "core");
+}
+
+function parseDateishMs(value: string | null): number | null {
+  if (!value) return null;
+  const s = value.trim();
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const ms = m
+    ? Date.UTC(Number(m[3]), Number(m[1]) - 1, Number(m[2]))
+    : Date.parse(s.slice(0, 10));
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function daysAgoDateish(value: string | null): number | null {
+  const ms = parseDateishMs(value);
+  if (ms == null) return null;
+  return (Date.now() - ms) / (1000 * 60 * 60 * 24);
+}
+
+/** Carrier Risk Score (0-100, higher = worse): one transparent score across
+ *  regulatory standing, identity/chameleon evidence, operating evidence, safety,
+ *  and weak corroborators. We use the "balanced" point schedule from the May
+ *  2026 shutdown/revocation review: strong signals move the score directly;
+ *  soft markers such as ZIP, insurer, free email, or residential address stay
+ *  low-weight and cannot create a high-risk call on their own. This is a
+ *  heuristic index, not a calibrated probability. */
+function computeRiskScore(
+  c: FmcsaCarrier,
+  safetyScore: number | null,
+  identitySignals?: CarrierIdentityRiskSignals
+): RiskScoreResult {
+  const risk: RiskScoreResult = {
+    score: 0,
+    tier: "None",
+    factors: [],
+    contributions: [],
+  };
+  const add = (
+    points: number,
+    category: RiskFactorCategory,
+    label: string,
+    detail: string,
+    kind: RiskFactorKind = "core"
+  ) => addRiskContribution(risk, { category, label, points, detail, kind });
+
+  // Phantom fleet (13.5x lift) — "claims tiny, runs hundreds": distinct power-unit
+  // VINs ≫ reported PU. Gated to reported PU ≤ 5 so it targets shells, not legit
+  // mid/large carriers with stale filings + leased owner-operators (e.g. CFI's
+  // 91 PU). Suggestive alone (legit drive-away/auto-haul also look phantom), so
+  // base is modest; a big bonus lands only when corroborated by financial-distress
+  // / new-authority — the backtest's phantom+sub-ins (73%) / +new-auth (82%) combo.
+  const phantom =
+    c.totalPowerUnits <= 5 && c.puVinsInspected >= 10 && c.puVinsInspected >= 4 * Math.max(c.totalPowerUnits, 1);
+  const bipdRelevant = c.bipdInsuranceRequired === "Y" || c.bipdRequiredAmount > 0;
+  const subMin =
+    bipdRelevant &&
+    (c.bipdInsuranceOnFile === 0 ||
+      (c.bipdRequiredAmount > 0 && c.bipdInsuranceOnFile < c.bipdRequiredAmount));
+  const insChurn =
+    c.rapidReplaceFlag ||
+    c.insuranceCancellations24mo >= 2 ||
+    c.insuranceDistinctPolicies24mo >= 3;
+  const newAuthDays = daysSinceAuthorityIssued(c.dotAddDate);
+  const newAuth = newAuthDays != null && newAuthDays < 365;
+  const code = (c.statusCode ?? "").toUpperCase();
+  const allowed = (c.allowedToOperate ?? "").toUpperCase();
+  if (code && code !== "A" && allowed !== "Y") {
+    add(
+      35,
+      "Authority / insurance",
+      "Operating authority not active",
+      `FMCSA status_code=${code}; carrier is not currently active.`
+    );
+  }
+  const rating = (c.safetyRating ?? "").trim().toUpperCase();
+  if (rating === "U" || rating === "UNSATISFACTORY") {
+    add(
+      35,
+      "Safety / compliance",
+      "Unsatisfactory safety rating",
+      "FMCSA safety rating is Unsatisfactory."
+    );
+  } else if (rating === "C" || rating === "CONDITIONAL") {
+    add(
+      20,
+      "Safety / compliance",
+      "Conditional safety rating",
+      "FMCSA safety rating is Conditional (milder than Unsatisfactory)."
+    );
+  }
+  const involDaysAgo = daysAgo(c.mostRecentInvoluntaryDate);
+  if (involDaysAgo != null && involDaysAgo <= 730) {
+    add(
+      30,
+      "Authority / insurance",
+      "Recent involuntary revocation",
+      `Own authority was involuntarily revoked within 24 months (${c.mostRecentInvoluntaryDate}).`
+    );
+  } else if (
+    c.priorRevokeFlag &&
+    c.priorRevokeDotNumber != null &&
+    c.priorRevokeDotNumber !== c.dotNumber
+  ) {
+    add(
+      24,
+      "Identity / chameleon",
+      "FMCSA predecessor-revoke flag",
+      c.priorRevokeDotNumber > 0
+        ? `FMCSA links this carrier to previously revoked DOT ${c.priorRevokeDotNumber}.`
+        : "FMCSA links this carrier to a previously revoked predecessor."
+    );
+  } else if (c.priorRevokeFlag) {
+    add(
+      12,
+      "Authority / insurance",
+      "Historical revocation context",
+      "FMCSA prior-revoke flag is present, but no separate predecessor DOT is recorded.",
+      "context"
+    );
+  }
+  if (subMin) {
+    add(
+      30,
+      "Authority / insurance",
+      "$0/sub-minimum BIPD",
+      c.bipdInsuranceOnFile === 0
+        ? `$0 BIPD on file vs ${fmtMoney(c.bipdRequiredAmount)} FMCSA-required.`
+        : `${fmtMoney(c.bipdInsuranceOnFile)} BIPD on file vs ${fmtMoney(c.bipdRequiredAmount)} FMCSA-required.`
+    );
+  } else if (c.bipdImminentLapse) {
+    add(
+      28,
+      "Authority / insurance",
+      "Imminent BIPD lapse",
+      `Terminal BIPD cancellation filed${
+        c.bipdPendingCancelDate ? ` for ${c.bipdPendingCancelDate}` : ""
+      } with no replacement${
+        c.bipdDaysToLapse != null
+          ? c.bipdDaysToLapse < 0
+            ? "; lapse is already past due"
+            : `; ${c.bipdDaysToLapse} day(s) to lapse`
+          : ""
+      }.`
+    );
+  }
+  if (phantom) {
+    add(
+      phantom && (subMin || insChurn || newAuth) ? 42 : 28,
+      "Identity / chameleon",
+      "Phantom fleet",
+      `${c.puVinsInspected} distinct trucks inspected vs ${c.totalPowerUnits} reported power unit(s)${
+        subMin || insChurn || newAuth ? "; corroborated by insurance distress or new authority." : "."
+      }`
+    );
+  }
+  if (insChurn) {
+    const bits: string[] = [];
+    if (c.insuranceCancellations24mo >= 2)
+      bits.push(`${c.insuranceCancellations24mo} cancellation(s) in 24mo`);
+    if (c.insuranceDistinctPolicies24mo >= 3)
+      bits.push(`${c.insuranceDistinctPolicies24mo} distinct policies in 24mo`);
+    if (c.rapidReplaceFlag) bits.push("rapid cancel+replace");
+    add(
+      16,
+      "Authority / insurance",
+      "Insurance churn",
+      bits.join("; ")
+    );
+  }
+  if (c.enforcementCasesCount >= 1) {
+    add(
+      16,
+      "Safety / compliance",
+      "FMCSA enforcement case",
+      `${c.enforcementCasesCount} closed enforcement case(s)${
+        c.enforcementRecentDate ? `, latest ${c.enforcementRecentDate}` : ""
+      }.`
+    );
+  }
+  // Chameleon contribution is added in scoreCarrier from the carrier-tier
+  // chameleon results (shared-fleet / diffuse-equipment / address-cluster tiers
+  // + the multi-signal cluster) — those use graduated thresholds with
+  // concentration guards, so they catch real sub-70%-overlap chameleons (e.g.
+  // VOXSER at 35% diffuse) that this function's old standalone VIN-check missed,
+  // without re-introducing the over-firing. Kept out of here to avoid two
+  // different chameleon thresholds disagreeing (score said Low, tier said
+  // Critical). See applyChameleonRisk below.
+
+  const months = newAuthDays != null ? Math.floor(newAuthDays / 30) : null;
+  if (newAuthDays != null) {
+    if (newAuthDays < 90)
+      add(
+        10,
+        "Operations",
+        "Very new authority",
+        `${months}mo old; below the 90-day industry tenure floor.`,
+        "context"
+      );
+    else if (newAuthDays < 180)
+      add(
+        6,
+        "Operations",
+        "New authority",
+        `${months}mo old; below the 180-day vetting breakpoint.`,
+        "context"
+      );
+    else if (newAuthDays < 365)
+      add(3, "Operations", "Authority under 1 year", `${months}mo old.`, "context");
+  }
+
+  if (c.cargoInsuranceRequired && !c.cargoInsuranceOnFile) {
+    add(
+      14,
+      "Authority / insurance",
+      "Cargo filing missing when required",
+      "FMCSA marks cargo insurance as required, but no cargo filing is on record."
+    );
+  }
+
+  const mcs150AgeDays = daysAgo(c.mcs150Date);
+  const bipdAgeDays = daysAgoDateish(c.bipdPolicyEffectiveDate);
+  const shelfActivation =
+    c.statusCode === "A" &&
+    c.hasPropertyAuthority &&
+    c.totalPowerUnits >= 3 &&
+    newAuthDays != null &&
+    newAuthDays >= 730 &&
+    mcs150AgeDays != null &&
+    mcs150AgeDays <= 365 &&
+    bipdAgeDays != null &&
+    bipdAgeDays <= 365 &&
+    c.fleetSizeFlag === "low-activity";
+  if (shelfActivation) {
+    add(
+      14,
+      "Operations",
+      "Dormant authority reactivation pattern",
+      `DOT is ${Math.floor(newAuthDays / 365)}y old, but has fresh MCS-150/insurance activity and low inspection activity for ${c.totalPowerUnits} PU.`
+    );
+  }
+
+  const safetyHard =
+    c.fastActHighRisk ||
+    c.hasSeriousViolation ||
+    c.issTier === "Inspect" ||
+    (c.crashesPerMillionMiles != null && c.crashesPerMillionMiles >= 5 && c.crashTotal >= 2);
+  const safetyContext =
+    !safetyHard &&
+    (c.issTier === "Optional" ||
+      (c.crashesPerMillionMiles != null && c.crashesPerMillionMiles >= 2 && c.crashTotal >= 2) ||
+      (safetyScore != null && safetyScore >= 65));
+  if (safetyHard) {
+    const bits: string[] = [];
+    if (c.issTier === "Inspect" && c.issScore != null) bits.push(`ISS ${c.issScore} Inspect`);
+    if (c.fastActHighRisk) bits.push("FAST Act high-risk");
+    if (c.hasSeriousViolation) bits.push(`${c.seriousViolationCount} acute/critical serious violation(s)`);
+    if (c.crashesPerMillionMiles != null && c.crashesPerMillionMiles >= 5)
+      bits.push(`${c.crashesPerMillionMiles.toFixed(2)} crashes per million miles`);
+    add(18, "Safety / compliance", "Hard safety signal", bits.join("; "));
+  } else if (safetyContext) {
+    const bits: string[] = [];
+    if (c.issTier === "Optional" && c.issScore != null) bits.push(`ISS ${c.issScore} Optional`);
+    if (c.crashesPerMillionMiles != null && c.crashesPerMillionMiles >= 2)
+      bits.push(`${c.crashesPerMillionMiles.toFixed(2)} crashes per million miles`);
+    if (safetyScore != null && safetyScore >= 65) bits.push(`safety score ${safetyScore}`);
+    add(8, "Safety / compliance", "Elevated safety context", bits.join("; "), "context");
+  }
+
+  const insr = lookupInsurerRisk(c.bipdInsurerName);
+  const zipRisk = lookupZipRisk(c.physicalZip);
+  const contextParts: string[] = [];
+  let contextPoints = 0;
+  if (insr) {
+    contextPoints = Math.max(contextPoints, insr.tier === "high" ? 8 : 4);
+    contextParts.push(
+      `${c.bipdInsurerName} insurer book revokes ${insr.lift}x average (${insr.tier})`
+    );
+  }
+  if (zipRisk) {
+    contextPoints = Math.max(contextPoints, zipRisk.tier === "high" ? 8 : 4);
+    contextParts.push(
+      `${c.physicalZip} ZIP shutdown/revoke lift ${zipRisk.lift}x (${zipRisk.tier})`
+    );
+  }
+  if (contextPoints > 0) {
+    add(
+      contextPoints,
+      "Context",
+      "Insurer / ZIP risk context",
+      contextParts.join("; "),
+      "context"
+    );
+  }
+
+  if (identitySignals?.shutdownIdentityLinks.length) {
+    const links = identitySignals.shutdownIdentityLinks;
+    // Email/phone shared with a shut-down revoked DOT is the real identity tell
+    // (2.5x revoke lift); an officer-name-only match is the weak majority of
+    // volume (2.1x) and prone to common-name collisions / disparate impact, so
+    // it gets a much lower weight. See officer-reuse-deadend + the 2026-05 lift test.
+    const hasContactLink = links.some(
+      (l) => l.startsWith("email") || l.startsWith("phone")
+    );
+    add(
+      hasContactLink ? 20 : 10,
+      "Identity / chameleon",
+      hasContactLink
+        ? "Identity tied to shut-down revoked DOT"
+        : "Officer name shared with shut-down revoked DOT",
+      links.slice(0, 3).join("; ")
+    );
+  }
+
+  return risk;
+}
+
+function addWeakIdentityContext(
+  risk: RiskScoreResult,
+  identitySignals?: CarrierIdentityRiskSignals
+): void {
+  if (!identitySignals || !hasCoreRiskContribution(risk)) return;
+  const markers: string[] = [];
+  if (identitySignals.freeEmailDomain) {
+    markers.push(`free email domain ${identitySignals.freeEmailDomain}`);
+  }
+  if (identitySignals.residentialAddressMarker) {
+    markers.push(`address marker ${identitySignals.residentialAddressMarker}`);
+  }
+  if (!markers.length) return;
+  addRiskContribution(risk, {
+    category: "Context",
+    label: "Personal contact/address corroborator",
+    points: 5,
+    detail: markers.join("; "),
+    kind: "context",
+  });
+}
+
+/** Risk-score tier. Bands match the balanced proposal:
+ *  80+ Critical, 60-79 High, 35-59 Medium, 15-34 Low/context, else None. */
+function riskTierOf(score: number): string {
+  return score >= 80
+    ? "Critical"
+    : score >= 60
+      ? "High"
+      : score >= 35
+        ? "Medium"
+        : score >= 15
+          ? "Low"
+          : "None";
+}
+
+function bumpUp(t: RiskLevel): RiskLevel {
+  if (t === "Low") return "Medium";
+  if (t === "Medium") return "High";
+  if (t === "High") return "Critical";
+  return t; // Critical stays
 }
 
 /** Empirical percentile-rarity label for an insurance-cancellation count
@@ -216,21 +821,35 @@ function bumpUp(t: RiskLevel | "Clean"): RiskLevel | "Clean" {
  *    n=8  ≈ top 0.16%  (P99.84)
  *    n=10+≈ top 0.07%  (P99.93)
  */
+/**
+ * Percentile labels for distinct policies cancelled in 24mo.
+ *
+ * Empirical distribution among carriers with any BIPD cancellation in 24mo:
+ *   P50 = 1 distinct policy, P75 = 2, P95 = 3, P99 = 4, P99.96 = 7+
+ *
+ * National rates among ALL active carriers are sharper still — only ~0.9%
+ * have ≥3 distinct cancelled policies, ~0.04% have ≥5.
+ *
+ * The labels here are aligned to the new "distinct policies" metric. Prior
+ * implementation labeled raw cancellation events, which over-stated the rarity
+ * for carriers with chronic billing-cycle issues (1 policy cancelled 6 times
+ * looked like top 0.4% nationally).
+ */
 export function cancelChurnPercentileText(n: number): string {
-  if (n >= 10) return "top 0.1%";
-  if (n >= 8) return "top 0.2%";
-  if (n >= 7) return "top 0.25%";
-  if (n >= 6) return "top 0.4%";
-  if (n >= 5) return "top 0.7%";
-  if (n >= 4) return "top 1.2%";
-  if (n >= 3) return "top 2.3%";
+  if (n >= 7) return "top 0.04% (P99.96)";
+  if (n >= 5) return "top 0.3% (P99.7)";
+  if (n >= 4) return "top 0.6% (P99.4)";
+  if (n >= 3) return "top 0.9% (P99.1)";
+  if (n >= 2) return "top 4.3% (P95.7)";
   return "uncommon";
 }
 
 function bandLabel(s: AxisStatus): string {
-  if (s === "severe") return "Severe/P95";
+  // Cell-band vocabulary matches the 4-tier carrier scale: a ≥P95 axis maps to
+  // the Critical tier, the floor-bumped band to High, P85 to Medium.
+  if (s === "severe") return "Critical/P95";
   if (s === "high") return "High/P90";
-  if (s === "elevated") return "Elevated/P85";
+  if (s === "elevated") return "Medium/P85";
   return "";
 }
 
@@ -309,7 +928,13 @@ function classifyOos(
   }
   const rate = oosCount / inspections;
   const cuts = getCutoffs(axisKey, peer);
-  const status = statTier(rate, cuts);
+  let status = statTier(rate, cuts);
+  // A single OOS-rate BASIC caps at High — one axis alone never forces Critical,
+  // especially on thin samples (e.g. FATEH: 2 of 3 inspections) or when FMCSA's
+  // own ISS says Pass. Critical is reserved for crash outliers, FAST-Act (2+
+  // BASICs ≥90th), and regulatory/fraud failures. statTier emits only severe
+  // (≥P95) or clean, so this caps the severe band down to High.
+  if (status === "severe") status = "high";
   const pctStr = `${(rate * 100).toFixed(0)}%`;
   const cell: AxisCell = {
     status,
@@ -366,6 +991,20 @@ function classifyCrash(
       reason: null,
     };
   }
+  if (c.crashTotal < 2) {
+    // A single crash is statistical noise, not a pattern — one event plus a low
+    // VMT denominator can spike the per-mile rate over the floor (e.g. 1 crash
+    // on a 10-truck fleet → 2.3/M mi). Show the rate for transparency, but a
+    // lone crash doesn't drive the tier; 2+ crashes in 24mo are needed to flag.
+    return {
+      cell: {
+        status: "clean",
+        display: cpm.toFixed(2),
+        detail: `${cpm.toFixed(2)} crashes per million miles — 1 crash on ${c.totalPowerUnits} PU in 24 months. A single crash isn't scored (one event can spike a small fleet's per-mile rate); 2+ crashes are needed to flag.`,
+      },
+      reason: null,
+    };
+  }
   const cuts = getCutoffs("crashesPerMillionMiles" as AxisKey, peer);
   // Note: thresholds.ts has the cutoffs under crashesPerMillionMiles via the
   // JSON file's `crashes_per_million_miles` field — getCutoffs handles it.
@@ -375,18 +1014,21 @@ function classifyCrash(
   let floorApplied = false;
   if (cpm >= ABSOLUTE_CRASH_FLOOR) {
     floorApplied = true;
-    status = (statusRank(status) > statusRank("elevated") ? status : null) ?? "elevated";
-    // Bump up one level when the absolute floor trips
-    const rl = statusToRiskLevel(status);
-    const bumped = bumpUp(rl === "Clean" ? "Elevated" : rl);
-    status =
-      bumped === "Severe"
-        ? "severe"
-        : bumped === "High"
-          ? "high"
-          : bumped === "Elevated"
-            ? "elevated"
-            : status;
+    // At least elevated, then bump one cell-severity notch when the absolute
+    // floor trips: clean/elevated → high, high → severe; severe/critical are
+    // already at or above the floor.
+    const notch: Partial<Record<AxisStatus, AxisStatus>> = {
+      clean: "high", na: "high", info: "high", elevated: "high",
+      high: "severe", severe: "severe", critical: "critical",
+    };
+    status = notch[status] ?? "high";
+  }
+  // Marginal demotion: a rate within 10% of its flagging cutoff is statistically
+  // indistinguishable from the line, so a hair over drops one notch (1.02× over
+  // P90 → Medium, not High). Keeps deep outliers (MJ 2.28×) untouched.
+  if (status === "severe" || status === "high") {
+    const c0 = cutoffForStatus(cuts, status);
+    if (c0 > 0 && cpm / c0 < 1.1) status = status === "severe" ? "high" : "elevated";
   }
   const sev: string[] = [];
   if (c.fatalCrash > 0) sev.push(`${c.fatalCrash} fatal`);
@@ -441,12 +1083,13 @@ function classifyRevocation(c: FmcsaCarrier): {
       detail: `${c.mostRecentInvoluntaryDate} — FMCSA pulled authority within the last 24 months.`,
     });
   } else if (c.revocationsTotal > 0) {
-    // Historical revocations only — surface as context (amber/info) without
-    // contributing to the carrier's overall risk tier. The "chronic" lifetime
-    // check that used to bump these to High has been dropped: a carrier with
-    // 6 involuntary revocations from 20 years ago who's been clean since is
-    // not a current risk. Brokers see the history in the tooltip.
-    status = "info";
+    // Historical revocations only — surface the count as neutral context (grey,
+    // no highlight) without contributing to the carrier's overall risk tier.
+    // Only a RECENT involuntary revocation (≤24mo, handled above) earns a cell
+    // color; a carrier with 6 involuntary revocations from 20 years ago who's
+    // been clean since is not a current risk, so the cell shouldn't draw the eye.
+    // The count + dates still render (display + tooltip) for anyone who looks.
+    status = "na";
     display =
       c.involuntaryRevocations > 0
         ? `${c.involuntaryRevocations}× hist.`
@@ -777,13 +1420,94 @@ const AXIS_RANK = {
   hazmatOos: 1,
 } as const;
 
+export type SiblingStatus = {
+  kind: "active" | "inactive" | "revoked";
+  date: string | null;
+};
+
+// Window for treating a linked authority's involuntary revocation as a live
+// chameleon-successor signal. FMCSA's status flag lags (a carrier can show
+// "Active" for months after its authority is pulled, or briefly reinstate), so
+// the revocation EVENT — not the current flag — is what we key on.
+const SIBLING_REVOKE_WINDOW_DAYS = 365 * 3;
+
+/** Authority status of a (sibling) carrier, for the linked-authority signal.
+ *  "revoked" = involuntary revocation within the last 3y (the chameleon-
+ *  predecessor case — its trucks reappearing under our carrier), regardless of
+ *  the current status flag, which lags. "inactive" = currently not allowed to
+ *  operate with no recent involuntary revocation (voluntary/dormant — benign-er). */
+export function siblingStatusOf(c: FmcsaCarrier): SiblingStatus {
+  const revokedDaysAgo = daysAgo(c.mostRecentInvoluntaryDate);
+  if (revokedDaysAgo != null && revokedDaysAgo <= SIBLING_REVOKE_WINDOW_DAYS)
+    return { kind: "revoked", date: c.mostRecentInvoluntaryDate };
+  const allowed = (c.allowedToOperate ?? "").toUpperCase();
+  if (allowed !== "Y" && allowed !== "") return { kind: "inactive", date: null };
+  return { kind: "active", date: null };
+}
+
 function scoreCarrier(
   c: FmcsaCarrier,
-  loadInfo: { loadIds: Set<string>; hazmatLoadIds: Set<string> }
+  loadInfo: { loadIds: Set<string>; hazmatLoadIds: Set<string> },
+  siblingStatusMap: Map<number, SiblingStatus> = new Map(),
+  identitySignalsMap: Map<number, CarrierIdentityRiskSignals> = new Map()
 ): CarrierRow {
   const peer = peerGroupForPU(c.totalPowerUnits);
 
+  const safety = computeSafetyScore(c, peer);
+  const identitySignals = c.dotNumber == null ? undefined : identitySignalsMap.get(c.dotNumber);
+  const risk = computeRiskScore(c, safety.score, identitySignals);
+  // Chameleon contribution to the risk score, derived from the carrier-tier
+  // chameleon findings computed below (so the score and the verdict agree).
+  // Strongest single facet, with the multi-signal cluster as a 30-pt floor;
+  // folded into the risk score just before the risk-score floor bump.
+  let fleetRiskContribution: RiskFactorContribution | null = null;
+  const setFleetRisk = (p: number, label: string, detail: string) => {
+    if (!fleetRiskContribution || p > fleetRiskContribution.points) {
+      fleetRiskContribution = {
+        category: "Identity / chameleon",
+        label,
+        points: p,
+        detail,
+        kind: "core",
+      };
+    }
+  };
   const crash = classifyCrash(c, peer);
+  // Crash column is percentile-primary like the other BASICs: the TOP line is our
+  // crash peer-percentile, the SUBTITLE is crashes-per-million-miles. The
+  // percentile is the WORSE of the cpm-derived rank and the scraped Crash
+  // Indicator estimate — so a high crash rate can never be masked by a bad CI
+  // value (the 18-cpm carrier the scrape put at "CI* 1st" still shows ~99th).
+  // Marked * because FMCSA doesn't publish a crash percentile. Color comes from
+  // the (reliable) cpm-based crash status, so the number and color agree.
+  let crashEstReason: Reason | null = null;
+  {
+    const cpm = c.crashesPerMillionMiles;
+    const cpmPct = cpmToPercentile(cpm, peer);
+    const ci = c.crashIndicatorPercentile;
+    // cpm (crashes-per-mile) is the reliable crash signal; the scraped CI estimate
+    // is noisy (per-PU, can over-flag big low-per-mile carriers like Werner, and
+    // has bogus values). So trust cpm when present; the CI estimate only fills the
+    // gap when there's NO cpm (no mileage on file). This catches missing-mileage
+    // carriers with real crashes without false-flagging good-per-mile fleets.
+    const noCpm = cpm == null;
+    if (c.crashIndicatorAlert === "Y" && noCpm && statusRank(crash.cell.status) < statusRank("elevated")) {
+      crash.cell.status = "elevated";
+      crashEstReason = {
+        label: "Estimated Crash Indicator — elevated",
+        detail: `Estimated Crash Indicator at the ${ordinal(Math.round(ci ?? 0))} percentile (at/above FMCSA's intervention threshold), from ${c.crashTotal} crash(es) — no mileage on file to compute a per-mile rate. FMCSA does not publish this BASIC; treat as an estimate.`,
+      };
+    }
+    const crashPct = cpmPct ?? ci;
+    if (crashPct != null) {
+      // Cell color encodes the alert standing — no ⚠ glyph in the number.
+      crash.cell.display = `${ordinal(Math.round(crashPct))}*`;
+      crash.cell.sub = cpm != null ? `${cpm.toFixed(2)} /mi` : undefined;
+    }
+    crash.cell.detail = `${crash.cell.detail ?? ""} Crash %ile* is our estimate (FMCSA does not publish Crash Indicator)${
+      ci != null ? `; scraped CI estimate ${ordinal(Math.round(ci))} percentile` : ""
+    }.`.trim();
+  }
   const unsafeDriving = classifyOos(
     "unsafeDriving",
     c.unsafeDrivingViolations,
@@ -819,6 +1543,14 @@ function scoreCarrier(
     peer,
     getRule("hazmat-oos-rate").label
   );
+  // NB: we do NOT let the HM Compliance estimate drive the hazmat tier. Unlike
+  // crash (where missing mileage leaves no reliable signal), an HM percentile
+  // implies the carrier has hazmat inspections, so the OOS rate is available and
+  // reliable — letting the severity-weighted HM estimate override it just
+  // over-flags big carriers (e.g. Werner runs hazmat at scale). HM stays as a
+  // displayed percentile + Safety-score input + tooltip context.
+  const hmEstReason: Reason | null = null;
+
   const revocation = classifyRevocation(c);
   const authority = classifyAuthority(c);
   const hasHazmatLoad = loadInfo.hazmatLoadIds.size > 0;
@@ -840,6 +1572,29 @@ function scoreCarrier(
   // the closest broker-facing analog of FMCSA's Driver Fitness BASIC, so we
   // surface that measure here as the most-relevant FMCSA cross-reference.
   enrichAxisDetailWithFmcsa(driver.cell, c.driverFitnessMeasure, c.driverFitnessAlert, "driverFitness");
+
+  // FMCSA publishes real percentiles for these four BASICs, so the published
+  // percentile + alert is AUTHORITATIVE for both display and tier — our cruder
+  // violations÷inspections rate is only the fallback when FMCSA hasn't scored
+  // the carrier (data-insufficient). This stops a carrier FMCSA itself rates
+  // clean (e.g. ARAB CARTAGE: HOS 62nd, no alert) from being flagged on our raw
+  // rate, and keeps the visible cell and the carrier tier in agreement. Built
+  // after the enrichment above so the cell detail carries the FMCSA measure.
+  const udCell = basicPctCell(c.unsafeDrivingPercentile, c.unsafeDrivingAlert, unsafeDriving.cell, "Unsafe Driving");
+  const hosCell = basicPctCell(c.hosPercentile, c.hosAlert, hos.cell, "HOS Compliance");
+  const driverCell = basicPctCell(c.driverFitnessPercentile, c.driverFitnessAlert, driver.cell, "Driver Fitness");
+  const vehicleCell = basicPctCell(c.vehicleMaintenancePercentile, c.vehicleMaintenanceAlert, vehicle.cell, "Vehicle Maintenance");
+  // The reason for a percentile-backed BASIC is derived from the authoritative
+  // cell, so a flag and its explanation always agree (no "clean cell, flagged
+  // reason" mismatch — and an alert with a low raw rate still produces a reason).
+  const pctReason = (cell: AxisCell, ruleId: string): Reason | null =>
+    cell.status === "clean" || cell.status === "na" || cell.status === "info"
+      ? null
+      : { label: getRule(ruleId).label, detail: cell.detail ?? "" };
+  const udReason = pctReason(udCell, "unsafe-driving-rate");
+  const hosReason = pctReason(hosCell, "hos-compliance-rate");
+  const driverReason = pctReason(driverCell, "driver-oos-rate");
+  const vehicleReason = pctReason(vehicleCell, "vehicle-oos-rate");
 
   // MCS-150 staleness — if the form is >24mo old, our crashes-per-million-miles
   // denominator is built from a stale mileage report. Surface in the crash
@@ -906,8 +1661,13 @@ function scoreCarrier(
     c.priorRevokeDotNumber != null &&
     c.priorRevokeDotNumber !== c.dotNumber
   ) {
+    // priorRevokeFlag is the signal; the predecessor DOT is just for the detail.
+    // It's often recorded as 0 (unknown) — flag the chameleon either way, but
+    // don't print "prior DOT: 0".
     revocation.cell.status = "critical";
-    const detail = `FMCSA flags this DOT as a re-incarnation of a previously-revoked predecessor (prior DOT: ${c.priorRevokeDotNumber}).`;
+    const detail = c.priorRevokeDotNumber > 0
+      ? `FMCSA flags this DOT as a re-incarnation of a previously-revoked predecessor (prior DOT: ${c.priorRevokeDotNumber}).`
+      : `FMCSA flags this DOT as a re-incarnation of a previously-revoked carrier (predecessor DOT not recorded).`;
     revocation.cell.detail = revocation.cell.detail
       ? `${revocation.cell.detail}\n${detail}`
       : detail;
@@ -922,7 +1682,7 @@ function scoreCarrier(
   // replace AND repeated cancellations) is the actual re-incarnation move.
   if (c.rapidReplaceFlag && c.insuranceCancellations24mo >= 3) {
     insurance.cell.status = "critical";
-    const detail = `Insurance policy cancelled and replaced within ~30 days, alongside ${c.insuranceCancellations24mo} true cancellations in 24 months — re-incarnation pattern.`;
+    const detail = `Insurance policy cancelled and replaced within ~30 days, alongside ${c.insuranceCancellations24mo} distinct policies cancelled in 24 months — re-incarnation pattern.`;
     insurance.cell.detail = insurance.cell.detail ? `${insurance.cell.detail}\n${detail}` : detail;
     insurance.reason = { label: getRule("insurance-rapid-replace").label, detail };
   } else if (c.rapidReplaceFlag) {
@@ -952,14 +1712,14 @@ function scoreCarrier(
   // with the same evidence).
   if (!c.rapidReplaceFlag) {
     const n = c.insuranceCancellations24mo;
-    if (n >= 7) {
+    if (n >= 5) {
       if (statusRank(insurance.cell.status) < statusRank("severe")) {
         insurance.cell.status = "severe";
       }
       if (!insurance.reason) {
         insurance.reason = {
           label: getRule("insurance-severe-churn").label,
-          detail: `${n} true insurance cancellations in last 24 months — ${cancelChurnPercentileText(n)} of carriers nationally. Carrier is on the edge of insurer dropout.`,
+          detail: `${n} distinct policies cancelled in last 24 months — ${cancelChurnPercentileText(n)} of carriers nationally. Carrier is on the edge of insurer dropout.`,
         };
       }
     } else if (n >= 3) {
@@ -969,21 +1729,182 @@ function scoreCarrier(
       if (!insurance.reason) {
         insurance.reason = {
           label: getRule("insurance-churn").label,
-          detail: `${n} true insurance cancellations in last 24 months — ${cancelChurnPercentileText(n)} of active carriers nationally. Verify carrier is on a stable policy before tendering.`,
+          detail: `${n} distinct policies cancelled in last 24 months — ${cancelChurnPercentileText(n)} of active carriers nationally. Verify carrier is on a stable policy before tendering.`,
         };
       }
     }
   }
 
+  // Insurance rules added after the primary classification (A0/A1/A2/A3). These
+  // can coexist with the primary insurance reason — e.g. a carrier can be both
+  // currently lapsed AND historically sub-minimum, both signals deserve their
+  // own row. Pushed into a local array and merged into `reasons` at collection
+  // time.
+  const extraInsuranceReasons: Reason[] = [];
+
+  // A4. Sub-minimum BIPD coverage. Federal minimum for general-freight property
+  // carriers is $750k. Filed coverage below that — when not zero ($0 = lapsed,
+  // already covered by A0) — means the carrier has under-stated coverage on
+  // file. Brokers cannot legally tender loads requiring higher coverage to a
+  // carrier filing below that load's minimum.
+  if (c.bipdInsuranceOnFile > 0 && c.bipdInsuranceOnFile < 750 && c.allowedToOperate === "Y") {
+    if (statusRank(insurance.cell.status) < statusRank("severe")) {
+      insurance.cell.status = "severe";
+    }
+    extraInsuranceReasons.push({
+      label: getRule("insurance-sub-minimum-bipd").label,
+      detail: `Filed BIPD is $${c.bipdInsuranceOnFile}k, below the federal $750k minimum for general-freight property carriers.`,
+    });
+  }
+
+  // A5. All-cancel insurance pattern — multiple distinct policies in 24mo with
+  // zero Replaced events. Indicates the carrier is shopping a new insurer each
+  // policy term rather than renewing with the same one. Distinct from churn
+  // (raw cancellation count) and rapid-replace (cancel + immediate re-bind).
+  if (
+    c.insuranceDistinctPolicies24mo >= 3 &&
+    c.insuranceReplaces24mo === 0 &&
+    !c.rapidReplaceFlag
+  ) {
+    const distinct = c.insuranceDistinctPolicies24mo;
+    const tier: "high" | "caution" = distinct >= 5 ? "high" : "caution";
+    const newStatus: AxisStatus = tier === "high" ? "severe" : "elevated";
+    if (statusRank(insurance.cell.status) < statusRank(newStatus)) {
+      insurance.cell.status = newStatus;
+    }
+    extraInsuranceReasons.push({
+      label: getRule("insurance-all-cancel-pattern").label,
+      detail: `${distinct} distinct BIPD policies in 24 months with zero recorded renewals — every policy ended as a cancellation. Carrier is shopping insurers each term rather than renewing, which usually means the prior insurer declined to continue.`,
+    });
+  }
+
+  // C1b. FAST Act §5305 High-Risk — 2+ of {Unsafe Driving, Crash Indicator,
+  // HOS, Vehicle Maintenance} at ≥90th percentile: FMCSA's own threshold for
+  // targeting a carrier for an onsite investigation. Precomputed in the parquet
+  // (fastActHighRisk). Individual BASIC alerts still surface on their own axes;
+  // this is the only multi-BASIC aggregate signal (FMCSA's actual rule).
+  const fastActBasicNames: Record<string, string> = {
+    UD: "Unsafe Driving", CI: "Crash Indicator",
+    HOS: "Hours-of-Service", VM: "Vehicle Maintenance",
+  };
+  const fastActReason: Reason | null = c.fastActHighRisk
+    ? {
+        label: getRule("fast-act-high-risk").label,
+        detail: `${(c.fastActHighRiskBasics ?? "")
+          .split("+")
+          .map((code) => fastActBasicNames[code] ?? code)
+          .join(" + ")} at ≥90th percentile — the bar FMCSA uses under the FAST Act (§5305) to prioritize a carrier for onsite investigation.`,
+      }
+    : null;
+
+  // C1c. Serious Violations — acute/critical violations cited during an FMCSA
+  // investigation in the last 12 months (scraped per-carrier). Direct evidence
+  // of non-compliance found in an audit; FMCSA's ISS forces the affected BASIC
+  // to the 100th percentile. Critical when broad (2+ BASICs).
+  const svBasicNames: Record<string, string> = {
+    UD: "Unsafe Driving", CI: "Crash Indicator", HOS: "Hours-of-Service",
+    DF: "Driver Fitness", CS: "Controlled Substances", VM: "Vehicle Maintenance",
+    HM: "Hazmat",
+  };
+  const svBasicCodes = (c.seriousViolationBasics ?? "").split("+").filter(Boolean);
+  const seriousViolationReason: Reason | null = c.hasSeriousViolation
+    ? {
+        label: getRule("serious-violations").label,
+        detail: `FMCSA investigation in the last 12 months cited ${c.seriousViolationCount} acute/critical violation${c.seriousViolationCount === 1 ? "" : "s"}${
+          svBasicCodes.length
+            ? ` in ${svBasicCodes.map((x) => svBasicNames[x] ?? x).join(" + ")}`
+            : ""
+        }. These are findings from an on-site/off-site audit — FMCSA's ISS forces the affected BASIC to the 100th percentile. Verify corrective action before tendering.`,
+      }
+    : null;
+
+  // C2. Imminent BIPD lapse — the carrier STILL shows active BIPD coverage but
+  // its last/only policy has a cancellation filed with no replacement, so it's
+  // about to lose the insurance that authorizes it to operate. Gated on
+  // bipdInsuranceOnFile >= 1 so it does NOT double-report with the standard
+  // "$0 BIPD on file" insurance check (which already covers carriers that have
+  // already lapsed to zero). This rule is the forward-looking early warning.
+  const lapseReason: Reason | null =
+    c.bipdImminentLapse && c.bipdInsuranceOnFile >= 1
+      ? {
+          label: getRule("insurance-imminent-lapse").label,
+          detail:
+            `Last BIPD liability policy is cancelling (effective ${c.bipdPendingCancelDate})${
+              c.bipdDaysToLapse != null
+                ? c.bipdDaysToLapse >= 0
+                  ? ` — about ${c.bipdDaysToLapse} day(s) out`
+                  : ` — already past due`
+                : ""
+            }, with no replacement filed and no other active BIPD coverage. The carrier is at imminent risk of losing operating authority. (Insurance data as of the latest snapshot — confirm against live FMCSA before relying on it.)`,
+        }
+      : null;
+  if (lapseReason) {
+    const d = c.bipdDaysToLapse;
+    // Within 2 weeks of losing its only BIPD policy with no replacement → treat
+    // as Critical (red). The carrier is insured today but you can't safely tender
+    // a load that picks up after the lapse date. 15-45 days out → Elevated warning.
+    // Because insurance.cell.status feeds the row's worst-status, marking it
+    // "critical" here floors the whole row at Critical.
+    const within2wk = d != null && d <= 14;
+    const newStatus: AxisStatus = within2wk ? "critical" : "elevated";
+    if (statusRank(insurance.cell.status) < statusRank(newStatus)) {
+      insurance.cell.status = newStatus;
+    }
+    // Surface the countdown in the cell itself, next to the coverage amount.
+    insurance.cell.sub =
+      d == null ? "lapse pending"
+      : d < 0 ? "lapse overdue"
+      : d === 0 ? "lapses today"
+      : `lapses in ${d}d`;
+  }
+  // Show the BIPD cancellation count under the amount — churn is a leading
+  // instability/fraud signal even when the carrier is currently insured.
+  if (c.insuranceCancellations24mo > 0) {
+    const cx = `${c.insuranceCancellations24mo} cancel${c.insuranceCancellations24mo === 1 ? "" : "s"}/24mo`;
+    insurance.cell.sub = insurance.cell.sub ? `${insurance.cell.sub} · ${cx}` : cx;
+  }
+
+  // FMCSA ISS-CSA score — surfaced as CONTEXT only (not a tier driver: ISS is
+  // FMCSA's roadside-inspection-priority score, which over-weights large
+  // carriers with inspection exposure and under-weights data-poor small ones,
+  // so the underlying alerts/rules drive our tier, not ISS). Show only the
+  // top "Inspect" tier — Optional/Pass are too noisy to surface per-audit.
+  const issReason: Reason | null =
+    c.issTier === "Inspect" && c.issScore != null
+      ? {
+          label: "ISS — Inspect (top inspection priority)",
+          detail: `Estimated ISS ≈ ${c.issScore}/100${
+            c.issGroup ? ` · ${c.issGroup}` : ""
+          }.`,
+        }
+      : null;
+
   // Collect reasons (for tooltip/expand)
   const reasons: Reason[] = [];
+  if (issReason) reasons.push(issReason);
   if (insurance.reason) reasons.push(insurance.reason);
+  reasons.push(...extraInsuranceReasons);
+  if (lapseReason) reasons.push(lapseReason);
+  // Insurer reputation — surface high-risk-specialist insurers in the issue list.
+  {
+    const insr = lookupInsurerRisk(c.bipdInsurerName);
+    if (insr && insr.tier === "high") {
+      reasons.push({
+        label: "High-risk insurer",
+        detail: `Insured by ${c.bipdInsurerName} — carriers it covers are revoked ${insr.lift}× more often than the national average (surplus-lines / high-risk-specialist insurer). Not disqualifying on its own, but verify coverage and standing before tendering.`,
+      });
+    }
+  }
   reasons.push(...authority.reasons);
+  if (seriousViolationReason) reasons.push(seriousViolationReason);
+  if (fastActReason) reasons.push(fastActReason);
   if (crash.reason) reasons.push(crash.reason);
-  if (unsafeDriving.reason) reasons.push(unsafeDriving.reason);
-  if (hos.reason) reasons.push(hos.reason);
-  if (driver.reason) reasons.push(driver.reason);
-  if (vehicle.reason) reasons.push(vehicle.reason);
+  if (crashEstReason) reasons.push(crashEstReason);
+  if (hmEstReason) reasons.push(hmEstReason);
+  if (udReason) reasons.push(udReason);
+  if (hosReason) reasons.push(hosReason);
+  if (driverReason) reasons.push(driverReason);
+  if (vehicleReason) reasons.push(vehicleReason);
   if (hazmat.reason) reasons.push(hazmat.reason);
   reasons.push(...revocation.reasons);
   if (enforcement.reason) reasons.push(enforcement.reason);
@@ -992,10 +1913,10 @@ function scoreCarrier(
   // Start with the worst per-axis status
   const cellStatuses: AxisStatus[] = [
     crash.cell.status,
-    unsafeDriving.cell.status,
-    hos.cell.status,
-    driver.cell.status,
-    vehicle.cell.status,
+    udCell.status,
+    hosCell.status,
+    driverCell.status,
+    vehicleCell.status,
     hazmat.cell.status,
     revocation.cell.status,
     authority.cell.status,
@@ -1005,25 +1926,45 @@ function scoreCarrier(
   for (const s of cellStatuses) {
     if (statusRank(s) > statusRank(worst)) worst = s;
   }
-  let level: RiskLevel | "Clean" = statusToRiskLevel(worst);
+  let level: RiskLevel = statusToRiskLevel(worst);
 
   // Bumps for compound signals
+  const isSignal = (s: AxisStatus) => s !== "clean" && s !== "na" && s !== "info";
   const hasStatisticalSignal =
-    (crash.cell.status !== "clean" && crash.cell.status !== "na") ||
-    (unsafeDriving.cell.status !== "clean" && unsafeDriving.cell.status !== "na") ||
-    (hos.cell.status !== "clean" && hos.cell.status !== "na") ||
-    (driver.cell.status !== "clean" && driver.cell.status !== "na") ||
-    (vehicle.cell.status !== "clean" && vehicle.cell.status !== "na") ||
-    (hazmat.cell.status !== "clean" && hazmat.cell.status !== "na");
+    isSignal(crash.cell.status) ||
+    isSignal(udCell.status) ||
+    isSignal(hosCell.status) ||
+    isSignal(driverCell.status) ||
+    isSignal(vehicleCell.status) ||
+    isSignal(hazmat.cell.status);
   if (revocation.recent && hasStatisticalSignal) {
-    // Recent revocation + any statistical signal → Severe
-    if (level !== "Critical") level = "Severe";
+    // Recent revocation + any statistical signal → Critical
+    level = "Critical";
+  }
+
+  // FAST Act High-Risk tier bump → Critical. This is FMCSA's own onsite-
+  // investigation bar (2+ crash-correlated BASICs at ≥90th) and is now the
+  // safety path to Critical: a single alerted BASIC tops out at High (see
+  // basicPctCell), and only this multi-signal pattern escalates to Critical.
+  if (fastActReason) {
+    level = "Critical";
+  }
+
+  // Serious Violations tier bump — acute/critical violations found in an FMCSA
+  // investigation are direct non-compliance findings. Broad (2+ BASICs) →
+  // Critical; any → floor at High.
+  if (seriousViolationReason) {
+    if (svBasicCodes.length >= 2) {
+      level = "Critical";
+    } else if (level !== "Critical") {
+      level = "High";
+    }
   }
   // (Chronic lifetime-count bump removed — see classifyRevocation. Carriers
   // are flagged only on actual activity in the last 24 months.)
 
   // D10. Chameleon-pattern cluster — if 2+ independent chameleon signals fire,
-  // escalate row tier to Severe minimum. Any single signal on its own is
+  // escalate row tier to Critical minimum. Any single signal on its own is
   // already handled by its axis cell (prior_revoke → critical revocation,
   // rapid_replace → critical insurance, etc.) — this is the *combined* signal.
   const chameleonSignals: string[] = [];
@@ -1035,7 +1976,11 @@ function scoreCarrier(
     c.priorRevokeDotNumber != null &&
     c.priorRevokeDotNumber !== c.dotNumber
   ) {
-    chameleonSignals.push(`FMCSA prior-revoke flag (prior DOT ${c.priorRevokeDotNumber})`);
+    chameleonSignals.push(
+      c.priorRevokeDotNumber > 0
+        ? `FMCSA prior-revoke flag (prior DOT ${c.priorRevokeDotNumber})`
+        : `FMCSA prior-revoke flag (predecessor not recorded)`
+    );
   }
   // Insurance signals are bucketed together — rapid-replace and ≥2 cancellations
   // are both views of the same churn evidence, not independent corroboration.
@@ -1086,16 +2031,40 @@ function scoreCarrier(
       // Contribute to the multi-signal chameleon-cluster escalator below.
       chameleonSignals.push(`${oos} OOS DOTs at same address`);
       // Direct level escalation: critical-tier address cluster floors the
-      // carrier at Severe minimum (preserves Critical); high-tier floors at
-      // High; caution alone doesn't escalate level (it just appears as a
-      // reason on the carrier audit row).
-      if (addrTier === "critical" && level !== "Critical") {
-        level = "Severe";
-      } else if (addrTier === "high" && level !== "Critical" && level !== "Severe") {
+      // carrier at Critical; high-tier floors at High; caution alone doesn't
+      // escalate level (it just appears as a reason on the carrier audit row).
+      if (addrTier === "critical") {
+        level = "Critical";
+      } else if (addrTier === "high" && level !== "Critical") {
         level = "High";
       }
+      addRiskContribution(risk, {
+        category: "Identity / chameleon",
+        label: "Address OOS cluster",
+        points: addrTier === "critical" ? 18 : addrTier === "high" ? 13 : 8,
+        detail: `${oos} out-of-service DOTs share this carrier's physical address.`,
+        kind: "core",
+      });
     }
   }
+
+  // Tracks whether the shared-fleet rule contributed a chameleon-cluster
+  // signal. Used by the diffuse-equipment rule (D10d) to avoid double-counting
+  // the same VIN overlaps: when both rules fire, the concentrated 76%-with-
+  // single-sibling overlap is a subset of the diffuse 86%-across-N-siblings
+  // count, so they describe overlapping evidence. We still surface both as
+  // separate reasons (they tell different stories to the broker), but only
+  // one of them counts toward the cluster threshold.
+  let firedFleetSharingClusterSignal = false;
+  // The single named shared-fleet sibling (top concentrated VIN-overlap partner),
+  // captured when the chameleon-shared-fleet reason fires so the API route can
+  // score it and show its own verdict alongside this carrier's.
+  let siblingRef: { dot: number; name: string | null } | null = null;
+  // The named sibling's authority status (filled when siblingRef is set + the
+  // status map has an entry). A "revoked" sibling whose fleet now runs here is
+  // the chameleon-successor tell — it escalates the verdict + fraud score below.
+  let siblingStatusKind: "active" | "inactive" | "revoked" | null = null;
+  let siblingRevokedDate: string | null = null;
 
   // D10c. Chameleon shared-fleet — % of inspected VINs that also appear under
   // another active DOT. Per the chameleon-shared-fleet rule in the registry:
@@ -1108,10 +2077,15 @@ function scoreCarrier(
     const shared = c.largestSiblingSharedVins;
     const siblingDot = c.largestSiblingDot;
     const siblingName = c.largestSiblingLegalName;
-    // Minimum data sufficiency: at least 5 inspected VINs (smaller fleets
-    // produce noisy overlap %), at least 5 shared VINs (one truck swapped
-    // for a load shouldn't fire the rule).
-    if (siblingDot && pct >= 50 && shared >= 5 && c.largestSiblingTotalVins >= 5) {
+    // Data sufficiency scales with fleet size: a SMALL fleet needs ≥5 inspected
+    // VINs, but a LARGE fleet (>20 PU) needs ≥30 — large carriers share VINs
+    // legitimately (leased owner-operators, intermodal chassis, multi-DOT
+    // structures), so the overlap % is only trustworthy on a rich sample. This
+    // catches the real large shared-fleet ring (DK MAX: 60 PU, 140 VINs, 107
+    // shared) while dropping the thin-sample false positive (HIGHLIGHT: 80 PU,
+    // 10 VINs, 19-yr, all-clean — leasing, not a ring). Plus ≥5 shared VINs.
+    const minVins = c.totalPowerUnits <= 20 ? 5 : 30;
+    if (siblingDot && pct >= 50 && shared >= 5 && c.largestSiblingTotalVins >= minVins) {
       // Name-similarity check: do the two DOTs share a meaningful name root?
       // Cheap heuristic — first significant word matches (skip stop words).
       const stopWords = new Set(["INC", "LLC", "CORP", "CO", "COMPANY", "LTD", "INCORPORATED", "THE"]);
@@ -1153,33 +2127,198 @@ function scoreCarrier(
           `also run under DOT ${siblingDot} (${sibling})${sameBuilding}. ${read}`;
         reasons.push({ label: fleetRule.label, detail });
         chameleonSignals.push(`${pct.toFixed(0)}% VIN overlap with active DOT ${siblingDot}`);
-        if (fleetTier === "critical" && level !== "Critical") {
-          level = "Severe";
-        } else if (fleetTier === "high" && level !== "Critical" && level !== "Severe") {
+        firedFleetSharingClusterSignal = true;
+        siblingRef = { dot: siblingDot, name: siblingName };
+        if (fleetTier === "critical") {
+          level = "Critical";
+        } else if (fleetTier === "high" && level !== "Critical") {
           level = "High";
+        }
+        setFleetRisk(
+          fleetTier === "caution" ? 8 : 28,
+          "Shared fleet with another DOT",
+          `${pct.toFixed(0)}% of inspected VINs shared with active DOT ${siblingDot}.`
+        );
+        // Linked-authority status: a concentrated fleet shared with a sibling
+        // whose authority was involuntarily REVOKED is the chameleon-successor
+        // pattern (the dead carrier's trucks reappearing here) → force Critical
+        // and make it the dominant fraud-score facet.
+        const sStat = siblingStatusMap.get(siblingDot);
+        if (sStat) {
+          siblingStatusKind = sStat.kind;
+          siblingRevokedDate = sStat.date;
+          if (sStat.kind === "revoked") {
+            level = "Critical";
+            addRiskContribution(risk, {
+              category: "Identity / chameleon",
+              label: "Linked authority revoked",
+              points: 24,
+              detail: `Runs the fleet of DOT ${siblingDot}, whose authority was involuntarily revoked${
+                sStat.date ? ` ${sStat.date}` : ""
+              }.`,
+              kind: "core",
+            });
+          }
         }
       }
     }
   }
 
-  if (chameleonSignals.length >= CHAMELEON_CLUSTER_THRESHOLD) {
-    // Escalate to Severe minimum (preserve Critical if already there).
-    if (level !== "Critical" && level !== "Severe") {
-      level = "Severe";
+  // D10d. Chameleon diffuse equipment sharing. Distinct from chameleon-shared-fleet
+  // which catches concentrated two-DOT pairs — this catches operators who spread
+  // the same trucks across 2+ other active DOTs. Min total VINs floor prevents
+  // 1-2 VIN artifacts (e.g. a single inspection under a giant legit fleet).
+  //
+  // Concentration guard: require the largest single sibling to share enough of
+  // this carrier's VINs to distinguish a real ring from a leasing pool. Default
+  // floor is 10% — a Cincinnati carrier running Ryder rentals will have a high
+  // diffuse % across 100+ siblings, but no single sibling (including Ryder)
+  // holds more than a handful of VINs.
+  //
+  // Empirical relaxation: when this carrier already shows a chameleon-specific
+  // signal (prior-revoke, recent involuntary revocation, rapid-replace, lapsed
+  // BIPD, address cluster, or the all-cancel insurance pattern), drop the floor
+  // to 5%. Reasoning: the 10% guard exists to suppress legit leasing
+  // operations, but a carrier that's already showing other chameleon evidence
+  // is clearly not a clean leasing operation. The 5% floor is still well above
+  // the NOOR-style pure-rental noise floor (~4%) — see /tmp/concentration_*
+  // distributions: 5% is roughly the 2-3rd percentile of real-ring carriers
+  // but well above the 1st percentile of clean-diffuse leasing carriers.
+  const hasChameleonSpecificSignal =
+    c.priorRevokeFlag ||
+    revocation.recent ||
+    c.rapidReplaceFlag ||
+    (c.bipdInsuranceOnFile === 0 && c.allowedToOperate === "Y") ||
+    c.addressDupeOosCount >= 3 ||
+    (c.insuranceDistinctPolicies24mo >= 3 && c.insuranceReplaces24mo === 0);
+  const concentrationFloor = hasChameleonSpecificSignal ? 5 : 10;
+
+  {
+    const diffuseRule = getRule("chameleon-diffuse-equipment");
+    const diffPct = c.diffuseVinSharePct;
+    const nSibs = c.diffuseVinShareNSiblings;
+    const totalVins = c.largestSiblingTotalVins;
+    const topConcentration = c.largestSiblingOverlapPct;
+    // Same PU-scaled VIN floor as shared-fleet: small fleets need ≥5 inspected
+    // VINs, large fleets (>20 PU) need ≥30 — large carriers spread VINs across
+    // DOTs legitimately (leasing / intermodal), so a thin sample (e.g. 10 VINs
+    // for an 80-PU carrier) produces a meaningless diffuse %.
+    const minVinsDiffuse = c.totalPowerUnits <= 20 ? 5 : 30;
+    if (totalVins >= minVinsDiffuse && diffPct >= 25 && nSibs >= 2 && topConcentration >= concentrationFloor) {
+      let diffuseTier: "critical" | "high" | "caution" | null = null;
+      if (diffPct >= 50 && nSibs >= 5) diffuseTier = "critical";
+      else if (diffPct >= 30 && nSibs >= 3) diffuseTier = "high";
+      else if (diffPct >= 25 && nSibs >= 2) diffuseTier = "caution";
+
+      if (diffuseTier) {
+        const read =
+          diffuseTier === "critical"
+            ? "Equipment laundered across a ring of active authorities."
+            : diffuseTier === "high"
+              ? "Operator likely controls multiple authorities sharing the same fleet."
+              : "Worth verifying which authority each truck operates under.";
+        // Name the single largest of the N siblings (the only one we store) so
+        // the broker has a concrete authority to check — and set siblingRef so
+        // the UI can show ITS own verdict. The other N-1 siblings aren't stored
+        // individually (would need a top-N pipeline column); this is the biggest.
+        const topSib = c.largestSiblingDot
+          ? ` Largest overlap: ${c.largestSiblingLegalName ?? `DOT ${c.largestSiblingDot}`} (DOT ${c.largestSiblingDot}).`
+          : "";
+        const detail =
+          `${diffPct.toFixed(0)}% of this carrier's VINs also run under ${nSibs} other active DOTs. ${read}${topSib}`;
+        reasons.push({ label: diffuseRule.label, detail });
+        if (!siblingRef && c.largestSiblingDot) {
+          siblingRef = { dot: c.largestSiblingDot, name: c.largestSiblingLegalName };
+        }
+        if (!firedFleetSharingClusterSignal) {
+          chameleonSignals.push(`${diffPct.toFixed(0)}% diffuse VIN overlap across ${nSibs} DOTs`);
+        }
+        if (diffuseTier === "critical" || diffuseTier === "high") {
+          // Diffuse equipment-sharing alone caps at High. Spreading VINs across
+          // many DOTs is indistinguishable from a leasing / owner-operator pool
+          // without corroboration, so it must NOT hard-gate Critical — that
+          // over-fired on low-concentration cases (DEFUZE/SHER-TRANS at ~17-25%
+          // top overlap scored 28-29 yet were forced Critical). Critical for a
+          // diffuse carrier now comes only from corroboration: a revoked linked
+          // sibling (below), concentrated shared-fleet + name match (other rule),
+          // or the additive score reaching 80.
+          if (level !== "Critical") level = "High";
+        } else if (
+          diffuseTier === "caution" &&
+          level !== "Critical" &&
+          level !== "High"
+        ) {
+          level = "Medium";
+        }
+        setFleetRisk(
+          diffuseTier === "caution" ? 8 : 24,
+          "Diffuse equipment sharing",
+          `${diffPct.toFixed(0)}% of inspected VINs spread across ${nSibs} other active DOTs.`
+        );
+        // Largest of the diffuse siblings is a revoked authority → chameleon-
+        // successor tell. Milder than the concentrated case (diffuse is noisier):
+        // escalate to at least High rather than forcing Critical. Only when the
+        // shared-fleet block above didn't already capture this sibling's status.
+        if (siblingRef && siblingStatusKind === null) {
+          const sStat = siblingStatusMap.get(siblingRef.dot);
+          if (sStat) {
+            siblingStatusKind = sStat.kind;
+            siblingRevokedDate = sStat.date;
+            if (sStat.kind === "revoked") {
+              if (level !== "Critical") level = "High";
+              addRiskContribution(risk, {
+                category: "Identity / chameleon",
+                label: "Linked authority revoked",
+                points: 24,
+                detail: `Largest linked authority DOT ${siblingRef.dot} was involuntarily revoked${
+                  sStat.date ? ` ${sStat.date}` : ""
+                }.`,
+                kind: "core",
+              });
+            }
+          }
+        }
+      }
     }
-    reasons.push({
-      label: getRule("chameleon-cluster").label,
-      detail: `${chameleonSignals.length} independent re-incarnation signals: ${chameleonSignals.join("; ")}.`,
-    });
   }
+
+  // Chameleon-pattern CLUSTER removed: the "2+ independent re-incarnation
+  // signals → Critical" escalator over-called on weak combos (e.g. 2 insurance
+  // cancellations + 33% diffuse VIN on an insured, established carrier → false
+  // Critical). Carriers now flag on their strongest INDIVIDUAL chameleon signal
+  // (shared-fleet / diffuse-equipment / address-cluster, each with PU-scaled VIN
+  // floors) and on the hard regulatory/fraud signals — no loose combined escalator.
   if (enforcement.hit) {
     if (enforcement.large) {
       // Large settlement floor at High
-      if (level !== "Critical" && level !== "Severe") level = "High";
-    } else if (level !== "Critical" && level !== "Clean") {
+      if (level !== "Critical") level = "High";
+    } else if (level !== "Critical" && level !== "Low") {
       // Bump existing tier up one for non-large enforcement
       level = bumpUp(level);
     }
+  }
+
+  // Fold the strongest equipment-sharing signal into the carrier risk score.
+  // Address clusters and revoked-linked authorities are added independently
+  // above because they are different evidence, not the same VIN-overlap facet.
+  if (fleetRiskContribution) {
+    addRiskContribution(risk, fleetRiskContribution);
+  }
+  addWeakIdentityContext(risk, identitySignals);
+
+  // Risk-score floor — the balanced bands drive the row tier only upward. Hard
+  // regulatory gates can still force a row Critical even when their standalone
+  // point contribution is below 80, because a legal tendering gate is not the
+  // same thing as a learned fraud-proxy weight.
+  const hasNonSafetyCoreRisk = risk.contributions.some(
+    (f) => f.kind === "core" && f.category !== "Safety / compliance"
+  );
+  if (risk.score >= 80) {
+    level = "Critical";
+  } else if (risk.score >= 60 && level !== "Critical") {
+    level = "High";
+  } else if (risk.score >= 15 && hasNonSafetyCoreRisk && level === "Low") {
+    level = "Medium";
   }
 
   // Compute sort metadata: which statistical axis fired worst, and how badly.
@@ -1251,6 +2390,34 @@ function scoreCarrier(
     }
   }
 
+  // Reconciliation note: when we flag a carrier but its FMCSA SMS/ISS scores
+  // look clean, the two are answering different questions and it reads as a
+  // contradiction without a word of explanation. This fires only when the tier
+  // is driven by NON-safety signals (regulatory / insurance / identity) AND no
+  // on-road safety signal is visible — the exact divergence case (e.g. a
+  // chameleon shell with few inspections, or an insurance lapse).
+  const smsSafetyVisible =
+    hasStatSignal ||
+    c.issTier === "Inspect" ||
+    [
+      c.unsafeDrivingAlert, c.hosAlert, c.driverFitnessAlert,
+      c.controlledSubstancesAlert, c.vehicleMaintenanceAlert, c.crashIndicatorAlert,
+    ].some((a) => a === "Y") ||
+    [
+      c.unsafeDrivingPercentile, c.hosPercentile, c.driverFitnessPercentile,
+      c.vehicleMaintenancePercentile, c.crashIndicatorPercentile,
+    ].some((p) => p != null && p >= 75);
+  if ((level === "Critical" || level === "High") && !smsSafetyVisible) {
+    reasons.push({
+      label: "Why the FMCSA SMS scores look clean",
+      detail:
+        "This carrier is flagged on regulatory, insurance, or identity signals above — not on-road safety. " +
+        "Its FMCSA SMS percentiles and ISS rank within normal range, which is common for recently-formed or " +
+        "low-inspection carriers (including chameleon shells). The SMS columns rank crash and violation history " +
+        "against peers; they don't capture authority, insurance, or fraud red flags.",
+    });
+  }
+
   return {
     rank: 0, // assigned after sort
     dot: c.dotNumber ?? 0,
@@ -1263,13 +2430,42 @@ function scoreCarrier(
     hazmatLoadIds: Array.from(loadInfo.hazmatLoadIds).sort(),
     hasFatalCrash: c.fatalCrash > 0,
     riskLevel: level,
+    issScore: c.issScore,
+    issTier: c.issTier,
+    issGroup: c.issGroup,
+    safetyScore: safety.score,
+    safetyTier: safety.tier,
+      riskScore: risk.score,
+      riskTier: risk.tier,
+      riskFactors: risk.factors,
+      riskContributions: risk.contributions,
+      siblingDot: siblingRef?.dot ?? null,
+    siblingName: siblingRef?.name ?? null,
+    siblingTier: null,
+    siblingStatus: siblingStatusKind,
+    siblingRevokedDate,
+    carrier: c,
     axes: {
       crash: crash.cell,
-      unsafeDriving: unsafeDriving.cell,
-      hos: hos.cell,
-      driverOos: driver.cell,
-      vehicleOos: vehicle.cell,
-      hazmatOos: hazmat.cell,
+      // UD/HOS/Driver Fitness/Vehicle Maintenance: the FMCSA-percentile cell is
+      // authoritative for both display and tier (computed once, above), with the
+      // raw OOS rate as the data-insufficient fallback baked into basicPctCell.
+      unsafeDriving: udCell,
+      hos: hosCell,
+      driverOos: driverCell,
+      // Controlled Substances (drug/alcohol). Sparse — "—" for carriers without
+      // enough relevant inspections to be data-sufficient. Display-only.
+      controlledSubstances: basicPctCell(
+        c.controlledSubstancesPercentile, c.controlledSubstancesAlert,
+        { status: "na", display: "—", detail: "Not data-sufficient for a Controlled Substances percentile." },
+        "Controlled Substances"
+      ),
+      vehicleOos: vehicleCell,
+      // Hazmat Compliance percentile (estimate — FMCSA doesn't publish it),
+      // falling back to the hazmat OOS rate when not data-sufficient.
+      hazmatOos: basicPctCell(
+        c.hmCompliancePercentile, c.hmComplianceAlert, hazmat.cell, "Hazmat Compliance", true
+      ),
       revocations: revocation.cell,
       authority: authority.cell,
       insurance: insurance.cell,
@@ -1281,7 +2477,9 @@ function scoreCarrier(
 
 export function analyze(
   loads: LoadInput[],
-  carriers: Map<number, FmcsaCarrier>
+  carriers: Map<number, FmcsaCarrier>,
+  siblingStatusMap: Map<number, SiblingStatus> = new Map(),
+  identitySignalsMap: Map<number, CarrierIdentityRiskSignals> = new Map()
 ): AuditResult {
   const byCarrier = new Map<
     number,
@@ -1307,49 +2505,44 @@ export function analyze(
       unresolvedDots.push(dot);
       continue;
     }
-    rows.push(scoreCarrier(c, g));
+    rows.push(scoreCarrier(c, g, siblingStatusMap, identitySignalsMap));
   }
 
-  const SORT_ORDER: Array<RiskLevel | "Clean"> = [
-    "Critical",
-    "Severe",
-    "High",
-    "Elevated",
-    "Clean",
-  ];
-  // Sort: tier first, then within tier put statistical-signal carriers
-  // (drivers/trucks doing dangerous things on the road) above pattern-only
-  // carriers (regulatory/admin history). Within statistical-signal: rank by
-  // worst axis severity, then by magnitude (how far above P95 cutoff).
+  const SORT_ORDER: RiskLevel[] = ["Critical", "High", "Medium", "Low"];
+  // Sort: tier first, then WITHIN tier by a worst-first severity composite so
+  // the review queue (Critical + High) surfaces the most-actionable carriers at
+  // the top. Severity = Risk score (fraud/distress, 0–100) + ISS (safety
+  // inspection priority, 1–100) — a carrier extreme on EITHER axis floats up.
+  // Remaining ties broken by on-road axis magnitude, then load count.
+  const severity = (r: CarrierRow) => r.riskScore + (r.issScore ?? 0);
   rows.sort((a, b) => {
     const td =
       SORT_ORDER.indexOf(a.riskLevel) - SORT_ORDER.indexOf(b.riskLevel);
     if (td !== 0) return td;
-    // Statistical-signal carriers first
+    // Worst-first within tier: Risk + ISS composite.
+    const sv = severity(b) - severity(a);
+    if (sv !== 0) return sv;
+    // Tiebreak: statistical-signal carriers, then worst axis rank / magnitude.
     if (a.sortMeta.hasStatSignal !== b.sortMeta.hasStatSignal) {
       return a.sortMeta.hasStatSignal ? -1 : 1;
     }
-    // Among statistical-signal carriers, higher axis rank first
     const ar = b.sortMeta.worstAxisRank - a.sortMeta.worstAxisRank;
     if (ar !== 0) return ar;
-    // Same axis rank — higher magnitude first
     const am = b.sortMeta.worstAxisMagnitude - a.sortMeta.worstAxisMagnitude;
     if (am !== 0) return am;
-    // Fall back to load count desc
     return b.loadCount - a.loadCount;
   });
   rows.forEach((r, i) => (r.rank = i + 1));
 
-  const bySeverity: Record<RiskLevel, number> = {
+  const bySeverity: Record<Exclude<RiskLevel, "Low">, number> = {
     Critical: 0,
-    Severe: 0,
     High: 0,
-    Elevated: 0,
+    Medium: 0,
   };
   for (const r of rows) {
-    if (r.riskLevel !== "Clean") bySeverity[r.riskLevel] += 1;
+    if (r.riskLevel !== "Low") bySeverity[r.riskLevel] += 1;
   }
-  const flaggedCarriers = rows.filter((r) => r.riskLevel !== "Clean").length;
+  const flaggedCarriers = rows.filter((r) => r.riskLevel !== "Low").length;
 
   return {
     totalLoads: loads.length,

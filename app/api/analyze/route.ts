@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseInput, analyze } from "@/lib/analyzer";
-import { fetchCarriers } from "@/lib/fmcsa";
+import {
+  parseInput,
+  analyze,
+  siblingStatusOf,
+  type CarrierIdentityRiskSignals,
+  type SiblingStatus,
+} from "@/lib/analyzer";
+import { fetchCarriers, type FmcsaCarrier } from "@/lib/fmcsa";
 import { nationalThresholds, maxLoadsPerSubmission } from "@/lib/thresholds";
 import { logEvent, hashIp } from "@/lib/log";
 
@@ -40,9 +46,55 @@ export async function POST(req: NextRequest) {
   const t0 = Date.now();
   const dots = Array.from(new Set(loads.map((l) => l.dot)));
   const carriers = await fetchCarriers(dots);
+  let identitySignals = new Map<number, CarrierIdentityRiskSignals>();
+  try {
+    const { fetchIdentityRiskSignals } = await import("@/lib/fmcsa-identity");
+    identitySignals = await fetchIdentityRiskSignals(dots);
+  } catch (err) {
+    console.warn("identity risk signals unavailable", err);
+  }
+
+  // Pre-fetch every carrier's largest cross-DOT VIN-overlap sibling (a raw field
+  // on the FMCSA record) so we know each sibling's authority STATUS before
+  // scoring. A sibling whose authority was involuntarily revoked — its trucks
+  // now running here — is the chameleon-successor tell, and we want it to drive
+  // this carrier's verdict + fraud score (handled inside analyze).
+  const dotSet = new Set(dots);
+  const siblingDots = Array.from(
+    new Set(
+      Array.from(carriers.values())
+        .map((c) => c.largestSiblingDot)
+        .filter((d): d is number => typeof d === "number" && d > 0 && !dotSet.has(d))
+    )
+  );
+  const siblingCarriers: Map<number, FmcsaCarrier> = siblingDots.length
+    ? await fetchCarriers(siblingDots)
+    : new Map();
   const t1 = Date.now();
 
-  const result = analyze(loads, carriers);
+  const siblingStatusMap = new Map<number, SiblingStatus>();
+  for (const c of [...carriers.values(), ...siblingCarriers.values()]) {
+    if (c.dotNumber != null) siblingStatusMap.set(c.dotNumber, siblingStatusOf(c));
+  }
+
+  const result = analyze(loads, carriers, siblingStatusMap, identitySignals);
+
+  // Score the named siblings for the DISPLAY tier chip (shown only when the
+  // sibling is still active; revoked/inactive siblings show their status
+  // instead). Reuse the already-fetched sibling records + the input carriers'
+  // own verdicts.
+  const tierByDot = new Map<number, (typeof result.rows)[number]["riskLevel"]>();
+  for (const r of result.rows) tierByDot.set(r.dot, r.riskLevel);
+  if (siblingCarriers.size) {
+    const siblingResult = analyze(
+      Array.from(siblingCarriers.keys()).map((dot) => ({ dot, isHazmat: false })),
+      siblingCarriers
+    );
+    for (const sr of siblingResult.rows) tierByDot.set(sr.dot, sr.riskLevel);
+  }
+  for (const r of result.rows) {
+    if (r.siblingDot != null) r.siblingTier = tierByDot.get(r.siblingDot) ?? null;
+  }
   const t2 = Date.now();
 
   const ipHash = await hashIp(
@@ -54,9 +106,9 @@ export async function POST(req: NextRequest) {
     nLoads: result.totalLoads,
     nCarriers: result.totalCarriers,
     nFlagged: result.flaggedCarriers,
-    severe: result.bySeverity.Severe,
+    critical: result.bySeverity.Critical,
     high: result.bySeverity.High,
-    elevated: result.bySeverity.Elevated,
+    medium: result.bySeverity.Medium,
     nUnresolved: result.unresolvedDots.length,
     nParseErrors: errors.length,
     fmcsaCacheMissMs: t1 - t0,

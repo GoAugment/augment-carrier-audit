@@ -2,20 +2,29 @@
   "dot": 4208930,
   "reasonNote": "FATAL: ≥1 fatal crash in 24mo",
   "carrierName": "KP MARTIN ENTERPRISE LLC",
-  "riskLevel": "Severe",
+  "riskLevel": "High",
+  "riskScore": 54,
+  "riskTier": "Medium",
+  "riskContributions": [
+    "+30 [Authority / insurance] Recent involuntary revocation",
+    "+16 [Authority / insurance] Insurance churn",
+    "+8 [Safety / compliance] Elevated safety context"
+  ],
   "reasonLabels": [
-    "Severe insurance churn",
-    "Recent revocation"
+    "Insurance churn",
+    "Recent revocation",
+    "Why the FMCSA SMS scores look clean"
   ],
   "axes": {
     "crash": "na",
     "unsafeDriving": "clean",
     "hos": "clean",
     "driverOos": "clean",
+    "controlledSubstances": "na",
     "vehicleOos": "clean",
     "hazmatOos": "na",
     "revocations": "high",
     "authority": "clean",
-    "insurance": "severe"
+    "insurance": "elevated"
   }
 }

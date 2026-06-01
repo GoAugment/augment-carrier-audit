@@ -202,6 +202,12 @@ export default function Home() {
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !loading && input.trim()) {
+                e.preventDefault();
+                runAudit();
+              }
+            }}
             rows={10}
             spellCheck={false}
             placeholder={"3621624\n2049859, INF31459-18990\n3168296, L-1007, HAZMAT"}
@@ -216,6 +222,7 @@ export default function Home() {
             >
               {loading ? "Auditing…" : "Audit now"}
             </button>
+            <span className="text-xs text-ink-400">⌘ + ↵</span>
             <span className="text-xs text-ink-500">
               Anonymous. We don&apos;t store your carrier or load IDs.
             </span>
@@ -232,35 +239,6 @@ export default function Home() {
       {result && (
         <section className="border-b border-ink-100 bg-ink-50">
           <div className="mx-auto max-w-5xl px-6 py-12">
-            <h2 className="text-xl font-semibold text-ink-900">Audit result</h2>
-            <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm text-ink-700">
-              <span>
-                {result.totalLoads} load{result.totalLoads === 1 ? "" : "s"} ·{" "}
-                {result.totalCarriers} carrier{result.totalCarriers === 1 ? "" : "s"} ·{" "}
-                <strong>{result.flaggedCarriers} flagged</strong>
-              </span>
-              {(["Critical", "Severe", "High", "Elevated"] as const).map((tier) => {
-                const v = result.bySeverity[tier];
-                if (v === 0) return null;
-                const cls =
-                  tier === "Critical"
-                    ? "bg-red-200 text-red-950 font-semibold"
-                    : tier === "Severe"
-                      ? "bg-red-100 text-red-900"
-                      : tier === "High"
-                        ? "bg-orange-100 text-orange-900"
-                        : "bg-amber-50 text-amber-900";
-                return (
-                  <span
-                    key={tier}
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${cls}`}
-                  >
-                    <strong className="tabular-nums">{v}</strong> {tier}
-                  </span>
-                );
-              })}
-            </div>
-
             {result.rows.length > 0 ? (
               <Scorecard rows={result.rows} result={result} />
             ) : (
@@ -376,7 +354,9 @@ export default function Home() {
           <div className="mt-8">
             <p className="text-sm font-semibold text-ink-900">Risk tiers</p>
             <p className="mt-2 text-sm text-ink-700">
-              The overall tier is the worst per-axis status, with bumps for compound signals.
+              The overall tier is the worst per-axis status, with bumps for compound
+              signals and the carrier&apos;s risk score. Four tiers: Critical, High,
+              Medium, Low.
             </p>
             <div className="mt-3 overflow-x-auto rounded-lg border border-ink-200 bg-white">
               <table className="w-full text-left text-sm">
@@ -396,21 +376,11 @@ export default function Home() {
                     </td>
                     <td className="px-3 py-2 align-top">Refuse to tender</td>
                     <td className="px-3 py-2 align-top">
-                      Binary regulatory failure: insurance lapsed (BIPD on file &lt; required),
-                      FMCSA safety rating Unsatisfactory, or operating authority not Active.
-                    </td>
-                  </tr>
-                  <tr className="border-t border-ink-100">
-                    <td className="px-3 py-2 align-top">
-                      <span className="inline-flex rounded-full border border-red-200 bg-red-100 px-2 py-0.5 text-xs font-medium text-red-900">
-                        Severe
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 align-top">Refuse unless extraordinary reason</td>
-                    <td className="px-3 py-2 align-top">
-                      Worst 5% within peer group on at least one axis; or recent involuntary
-                      revocation combined with any statistical signal; or chronic revocations
-                      bumping a High to Severe.
+                      Binary regulatory failure (insurance lapsed / BIPD on file &lt; required,
+                      FMCSA rating Unsatisfactory, authority not Active); or worst 5% within
+                      peer group on an axis; or recent involuntary revocation with any
+                      statistical signal; or a multi-signal chameleon cluster; or a high risk
+                      score (≥60).
                     </td>
                   </tr>
                   <tr className="border-t border-ink-100">
@@ -422,20 +392,33 @@ export default function Home() {
                     <td className="px-3 py-2 align-top">Needs documented override</td>
                     <td className="px-3 py-2 align-top">
                       Worst 10% within peer group; or recent involuntary revocation (≤24mo);
-                      or chronic ≥3 involuntary revocations; or large enforcement settlement
-                      ≥$25k; or crash rate ≥2.0 per million miles (absolute floor).
+                      or large enforcement settlement ≥$25k; or crash rate ≥2.0 per million
+                      miles (absolute floor); or FAST-Act high-risk; or a moderate risk score
+                      (≥30 — e.g. insurance churn + high-risk insurer, or $0 BIPD + new authority).
                     </td>
                   </tr>
                   <tr className="border-t border-ink-100">
                     <td className="px-3 py-2 align-top">
                       <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">
-                        Elevated
+                        Medium
                       </span>
                     </td>
                     <td className="px-3 py-2 align-top">Operator awareness</td>
                     <td className="px-3 py-2 align-top">
                       Worst 15% within peer group on at least one axis. Not blocking — surface
                       the signal in your audit trail.
+                    </td>
+                  </tr>
+                  <tr className="border-t border-ink-100">
+                    <td className="px-3 py-2 align-top">
+                      <span className="inline-flex rounded-full border border-augment-200 bg-augment-50 px-2 py-0.5 text-xs font-medium text-augment-900">
+                        Low
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 align-top">Clear to tender</td>
+                    <td className="px-3 py-2 align-top">
+                      No axis flagged and no regulatory, insurance, or risk-score signal — the
+                      clean baseline.
                     </td>
                   </tr>
                 </tbody>
@@ -476,7 +459,7 @@ export default function Home() {
               Sample cutoffs — Small fleet (2-50 PU)
             </p>
             <p className="mt-2 text-sm text-ink-700">
-              Statistical axes flag <span className="font-semibold">Severe</span> only at the
+              Statistical axes flag <span className="font-semibold">Critical</span> only at the
               95th percentile of the carrier&apos;s peer group — a ≈1-in-20 outlier. Below are
               the P95 cutoffs for a Small fleet. The actual cutoff depends on the carrier&apos;s
               peer group; hover any cell in the result table to see the exact value used.
@@ -486,7 +469,7 @@ export default function Home() {
                 <thead className="bg-ink-50 text-xs uppercase tracking-wide text-ink-600">
                   <tr>
                     <th className="px-3 py-2">Signal</th>
-                    <th className="px-3 py-2">Severe cutoff (P95)</th>
+                    <th className="px-3 py-2">Critical cutoff (P95)</th>
                   </tr>
                 </thead>
                 <tbody className="text-ink-700">
@@ -527,8 +510,9 @@ export default function Home() {
                 </li>
                 <li>
                   <strong>Compound signals</strong>: recent revocation + any statistical
-                  signal = Severe. Chronic revocations bump tier up one. Large enforcement
-                  settlements (≥$25k) trigger High on their own.
+                  signal = Critical; a multi-signal chameleon cluster = Critical. Large
+                  enforcement settlements (≥$25k) trigger High on their own, as does a
+                  moderate risk score (≥30).
                 </li>
               </ul>
             </div>

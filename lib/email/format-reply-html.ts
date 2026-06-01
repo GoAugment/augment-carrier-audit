@@ -48,22 +48,21 @@ const C = {
   ctaInk: "#ffffff",
 };
 
-/** Website-aligned 5-tier scale (analyzer.riskLevel) used for the top pill.
- *  We surface the carrier's audit tier here directly so "Severe" on the
- *  website is "Severe" in the email — same scale, same colors. */
+/** Website-aligned 4-tier scale (analyzer.riskLevel) used for the top pill.
+ *  We surface the carrier's audit tier here directly so "Critical" on the
+ *  website is "Critical" in the email — same scale, same colors. */
 type TierStyle = { bg: string; ink: string; headline: string };
-// Severe + Critical use white text on solid red for mobile-dark-mode safety.
+// Critical uses white text on solid red for mobile-dark-mode safety.
 // Gmail/iOS mobile inverts light-background pills (light pink → dark gray)
 // while leaving the text color alone — so dark red text on (inverted) dark
 // gray becomes invisible. White ink on saturated red survives the inversion.
-// Light tiers (Clean/Elevated/High) use dark ink on a tinted background;
-// they stay legible in dark mode because mobile clients typically leave
+// Light tiers (Low/Medium/High) use dark ink on a tinted background; they
+// stay legible in dark mode because mobile clients typically leave
 // dark-on-light tinted pills alone (or invert symmetrically).
 const AUDIT_TIER_STYLES: Record<string, TierStyle> = {
-  Clean:    { bg: "#dcfce7", ink: "#14532d", headline: "Looks legitimate" },
-  Elevated: { bg: "#fffbeb", ink: "#78350f", headline: "Worth a closer look" },
+  Low:      { bg: "#dcfce7", ink: "#14532d", headline: "Looks legitimate" },
+  Medium:   { bg: "#fffbeb", ink: "#78350f", headline: "Worth a closer look" },
   High:     { bg: "#ffedd5", ink: "#7c2d12", headline: "Verify before tendering" },
-  Severe:   { bg: "#ef4444", ink: "#ffffff", headline: "Verify carefully before tendering" },
   Critical: { bg: "#b91c1c", ink: "#ffffff", headline: "Do not engage without verification" },
 };
 // Default style used when no carrier was resolved (no DOT/MC in the email,
@@ -128,8 +127,8 @@ function composePreheader(verdict: Verdict): string {
   );
   const dominant = auditReasonLabel || hardSignals[0]?.label;
 
-  if (tierLabel === "Clean") {
-    return `Clean · ${carrierName} · all checks passed.`;
+  if (tierLabel === "Low") {
+    return `Low · ${carrierName} · all checks passed.`;
   }
   if (dominant) {
     return `${tierLabel} · ${carrierName} · ${dominant}.`;
@@ -152,16 +151,16 @@ function renderPreheader(text: string): string {
   );
 }
 
-/** For Critical/Severe verdicts, pick a finding-specific headline instead of
- *  the generic "Do not engage without verification" — verification can't
- *  change a revoked authority or $0 insurance, so the action is "stop," not
- *  "verify." Returns the base headline unchanged for non-critical tiers or
- *  when no specific finding pattern matches. */
+/** For Critical verdicts, pick a finding-specific headline instead of the
+ *  generic "Do not engage without verification" — verification can't change a
+ *  revoked authority or $0 insurance, so the action is "stop," not "verify."
+ *  Returns the base headline unchanged for non-critical tiers or when no
+ *  specific finding pattern matches. */
 function criticalHeadline(verdict: Verdict, base: string): string {
   const c = verdict.carrier;
   if (!c) return base;
   const tier = c.audit.tier;
-  if (tier !== "Critical" && tier !== "Severe") return base;
+  if (tier !== "Critical") return base;
 
   const reasonsText = c.audit.reasonLabels.join(" ").toLowerCase();
   const findings: string[] = [];
@@ -191,24 +190,24 @@ function criticalHeadline(verdict: Verdict, base: string): string {
   return `${first} · ${rest}. Do not tender.`;
 }
 
-/** Decide which 5-scale tier the pill should display. Starts from the
+/** Decide which 4-scale tier the pill should display. Starts from the
  *  carrier's audit tier and escalates if email-side signals (identity_
  *  coherence, lane_viability, email_authenticity, chameleon_cluster) fire
- *  harder. Without this, an audit-Clean carrier with a sender-domain
- *  mismatch would show "Clean" + green pill while the body explained an
+ *  harder. Without this, an audit-Low carrier with a sender-domain
+ *  mismatch would show "Low" + green pill while the body explained an
  *  impersonation pattern — exactly the contradiction we want to avoid. */
 function computeDisplayTier(verdict: Verdict): string {
   const RANK: Record<string, number> = {
-    Clean: 0, Elevated: 1, High: 2, Severe: 3, Critical: 4, Verify: 1,
+    Low: 0, Medium: 1, High: 2, Critical: 3, Verify: 1,
   };
-  const TIERS = ["Clean", "Elevated", "High", "Severe", "Critical"];
+  const TIERS = ["Low", "Medium", "High", "Critical"];
   const auditTier = verdict.carrier?.audit.tier ?? "Verify";
   let maxRank = RANK[auditTier] ?? 1;
   for (const s of verdict.signals) {
     if (s.tier === "info" || s.category === "audit_tier") continue;
-    // Map signal-tier to 5-scale rank conservatively:
-    //   critical → Critical (4), high → High (2), caution → Elevated (1)
-    const r = s.tier === "critical" ? 4 : s.tier === "high" ? 2 : 1;
+    // Map signal-tier to 4-scale rank conservatively:
+    //   critical → Critical (3), high → High (2), caution → Medium (1)
+    const r = s.tier === "critical" ? 3 : s.tier === "high" ? 2 : 1;
     if (r > maxRank) maxRank = r;
   }
   return TIERS[maxRank];

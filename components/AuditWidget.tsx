@@ -131,17 +131,15 @@ export function AuditWidget({ compact = false }: { compact?: boolean }) {
               {result.totalCarriers} carrier{result.totalCarriers === 1 ? "" : "s"} ·{" "}
               <strong>{result.flaggedCarriers} flagged</strong>
             </span>
-            {(["Critical", "Severe", "High", "Elevated"] as const).map((tier) => {
+            {(["Critical", "High", "Medium"] as const).map((tier) => {
               const v = result.bySeverity[tier];
               if (v === 0) return null;
               const cls =
                 tier === "Critical"
                   ? "bg-red-200 text-red-950 font-semibold"
-                  : tier === "Severe"
-                    ? "bg-red-100 text-red-900"
-                    : tier === "High"
-                      ? "bg-orange-100 text-orange-900"
-                      : "bg-amber-50 text-amber-900";
+                  : tier === "High"
+                    ? "bg-orange-100 text-orange-900"
+                    : "bg-amber-50 text-amber-900";
               return (
                 <span
                   key={tier}

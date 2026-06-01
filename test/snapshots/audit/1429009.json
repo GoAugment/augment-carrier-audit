@@ -2,16 +2,22 @@
   "dot": 1429009,
   "reasonNote": "FATAL: ≥1 fatal crash in 24mo",
   "carrierName": "MCHUGH GROUP INC",
-  "riskLevel": "Clean",
+  "riskLevel": "Low",
+  "riskScore": 8,
+  "riskTier": "None",
+  "riskContributions": [
+    "+8 [Safety / compliance] Elevated safety context"
+  ],
   "reasonLabels": [],
   "axes": {
     "crash": "clean",
     "unsafeDriving": "clean",
     "hos": "clean",
     "driverOos": "clean",
+    "controlledSubstances": "na",
     "vehicleOos": "clean",
     "hazmatOos": "na",
-    "revocations": "info",
+    "revocations": "na",
     "authority": "clean",
     "insurance": "clean"
   }

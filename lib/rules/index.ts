@@ -72,7 +72,7 @@ export const RULES: Rule[] = [
       critical: "Safety rating = Unsatisfactory.",
     },
     fixtures: {
-      critical: { dot: 4004854, reason: "BLACK HILLS TRENCHING & BORING LLC: Unsatisfactory rated 2026-04-20." },
+      critical: { dot: 3173438, reason: "MECCA TRUCKING LLC: Unsatisfactory rated 2026-05-05." },
       none: { dot: 53467, reason: "Werner: Satisfactory." },
     },
   },
@@ -125,7 +125,7 @@ export const RULES: Rule[] = [
       critical: "Rapid-replace flag AND ≥3 true cancellations in 24 months.",
     },
     fixtures: {
-      critical: { dot: 4223713, reason: "DJI EXPRESS LLC: rapid replace + cancellations (used in snapshot baseline)." },
+      critical: { dot: 3440451, reason: "UMAX INC: rapid replace flag + 4 distinct policies cancelled in 24mo." },
       none: { dot: 53467, reason: "Werner: stable insurance, no rapid replace." },
     },
   },
@@ -134,13 +134,13 @@ export const RULES: Rule[] = [
     category: "insurance",
     label: "Severe insurance churn",
     definition:
-      "Seven or more true insurance cancellations in the last 24 months — the top 1% (P99) of carriers nationally. Repeated insurer dropouts indicate the carrier is on the edge of becoming uninsurable; the next cancellation may not be replaced, leaving the broker exposed.",
+      "Five or more distinct insurance policies cancelled in the last 24 months — the top 0.3% (P99.7) of carriers nationally. Each distinct policy means a separate underwriter dropped this carrier (multiple cancellation notices on the same policy don't count). Repeated insurer dropouts indicate the carrier is on the edge of becoming uninsurable; the next cancellation may not be replaced. Distinct from administrative billing-cycle issues, where a single insurer repeatedly cancels and reinstates the same policy — that pattern doesn't fire this rule.",
     thresholds: {
-      critical: "≥7 true insurance cancellations in 24 months.",
+      critical: "≥5 distinct policies cancelled in 24 months.",
     },
     fixtures: {
-      critical: { dot: 3461031, reason: "FRESNO LOGISTICS LLC: 25 insurance cancellations in 24mo." },
-      none: { dot: 53467, reason: "Werner: 0 cancellations in 24mo." },
+      critical: { dot: 3904606, reason: "CIRCLE W TRANSPORT LLC: 11 distinct policies cancelled in 24mo." },
+      none: { dot: 53467, reason: "Werner: 0 distinct policies cancelled in 24mo." },
     },
   },
   {
@@ -148,13 +148,43 @@ export const RULES: Rule[] = [
     category: "insurance",
     label: "Insurance churn",
     definition:
-      "Three to six true insurance cancellations in the last 24 months — between the 95th and 99th national percentiles. Frequent insurer changes suggest the carrier is being shopped between insurers, often due to claim history or premium nonpayment. Worth confirming the current policy is stable before tendering. At 7+ cancellations the rule escalates to Severe insurance churn.",
+      "Three to four distinct insurance policies cancelled in the last 24 months — between the 99th and 99.6th national percentiles. The signal counts unique policy numbers, not cancellation events, so a carrier whose single insurer repeatedly cancels and reinstates the same policy (billing-cycle issues) does not trigger here. Frequent distinct-insurer dropouts suggest the carrier is being shopped between underwriters, often due to claim history or premium nonpayment. At 5+ distinct cancellations the rule escalates to Severe insurance churn.",
     thresholds: {
-      caution: "3 to 6 true insurance cancellations in 24 months (P95 to P99 band).",
+      caution: "3 or 4 distinct policies cancelled in 24 months (P99-P99.6 band).",
     },
     fixtures: {
-      caution: { dot: 3016491, reason: "JDS TRUCKING OF NC LLC: 4 cancellations in 24mo, no rapid replace." },
-      none: { dot: 53467, reason: "Werner: 0 cancellations." },
+      caution: { dot: 3534523, reason: "GLB TRUCKING CORP: 3 distinct policies cancelled in 24mo, no rapid replace, no revocations." },
+      none: { dot: 53467, reason: "Werner: 0 distinct cancelled policies." },
+    },
+  },
+  {
+    id: "insurance-sub-minimum-bipd",
+    category: "insurance",
+    label: "Insurance below federal minimum",
+    definition:
+      "FMCSA's filed BIPD coverage is below the federal $750,000 minimum for general-freight property carriers. Either the carrier is licensed for a coverage class that allows lower limits (rare on a property authority), or they have understated coverage on file. Even when a current policy exists, brokers cannot legally tender to a carrier whose filed limits are below the load's required minimum.",
+    thresholds: {
+      high: "BIPD on file > $0 and < $750,000 with active property authority.",
+    },
+    fixtures: {
+      // Sampled from May 2026 snapshot. Refresh if filing updates.
+      high: { dot: 3881024, reason: "IN A RUSH DELIVERY LLC: $300k BIPD on file, below $750k minimum, otherwise clean." },
+      none: { dot: 53467, reason: "Werner: $1M+ BIPD on file." },
+    },
+  },
+  {
+    id: "insurance-all-cancel-pattern",
+    category: "insurance",
+    label: "All-cancel insurance pattern",
+    definition:
+      "Three or more distinct BIPD policies in the last 24 months, with zero Replaced events recorded — i.e. every policy ends as a Cancellation rather than a continuous Replacement. The pattern indicates the carrier is shopping a new insurer each policy term rather than renewing with the same one, which usually means the prior insurer declined to continue. Distinct from rapid-replace (cancel then immediately re-bind) and from churn (raw cancellation count).",
+    thresholds: {
+      high:    "≥5 distinct BIPD policies in 24mo with zero Replaced events.",
+      caution: "3 or 4 distinct BIPD policies in 24mo with zero Replaced events.",
+    },
+    fixtures: {
+      caution: { dot: 3432788, reason: "PUNIA TRANS INC: 3 distinct policies in 24mo, 0 replaces." },
+      none: { dot: 53467, reason: "Werner: single renewing policy, normal replacement pattern." },
     },
   },
 
@@ -207,26 +237,11 @@ export const RULES: Rule[] = [
       none: { dot: 53467, reason: "Werner: no prior-revoke flag." },
     },
   },
-  {
-    id: "chameleon-cluster",
-    category: "chameleon",
-    label: "Chameleon-pattern cluster",
-    definition:
-      "Two or more independent chameleon signals fire on the same carrier — combinations like prior-revoke flag + insurance rapid-replace + new authority + low activity. Any single signal is already flagged by its own rule; this is the combined-signal escalator that pushes the carrier to Severe minimum because multiple unrelated indicators agree.",
-    thresholds: {
-      high: "≥2 of {prior-revoke flag, rapid replace, ≥2 cancellations, new authority + low activity, ≥3 OOS DOTs at same address} fire together.",
-    },
-    fixtures: {
-      // Needs ≥2 TRULY INDEPENDENT chameleon signals. Insurance sub-signals
-      // (rapid-replace + cancellation count) now count as ONE bucket — they
-      // describe the same evidence. So a DOT firing only insurance won't
-      // trigger chameleon-cluster anymore. DK MAX TRUCKING has insurance
-      // churn (5 cancellations) AND fleet-sharing with DK MAX PRIME — two
-      // genuinely independent kinds of evidence corroborating each other.
-      high: { dot: 3621624, reason: "DK MAX TRUCKING INC: insurance churn + fleet-shared with DK MAX PRIME = 2 independent chameleon signals." },
-      none: { dot: 53467, reason: "Werner: no chameleon signals." },
-    },
-  },
+  // chameleon-cluster REMOVED: the "2+ independent signals → Critical" escalator
+  // over-called on weak combos (e.g. 2 cancellations + 33% diffuse on an insured,
+  // established carrier → false Critical). Carriers now flag on their strongest
+  // INDIVIDUAL chameleon signal (shared-fleet / diffuse-equipment / address-
+  // cluster, each PU/VIN-gated) plus the hard regulatory/fraud signals.
 
   // ---------------------------------------------------------------------
   // IDENTITY COHERENCE — email-only rules comparing what the email claims
@@ -350,7 +365,7 @@ export const RULES: Rule[] = [
     category: "chameleon",
     label: "Phone shared with multiple DOTs (corporate switchboard)",
     definition:
-      "Sender's phone matches three or more other DOTs in FMCSA. Large fleets commonly share an 800-line across subsidiary authorities — this isn't a fraud signal by itself, but worth surfacing as context so brokers know the phone belongs to a corporate dispatch line, not the specific carrier they're tendering to.",
+      "Sender's phone matches three or more other DOTs in FMCSA. Large fleets and dispatch services commonly share one line across many authorities, and at this scale the pattern skews toward legitimate dispatchers (a lift test found very large clusters less elevated than 1-2 DOT matches) — weaker than a 1-2 DOT match. Surfaced as context so brokers know the phone belongs to a shared dispatch line, not uniquely to the carrier they're tendering to.",
     thresholds: {
       info: "Phone matches ≥3 other DOTs (corporate switchboard pattern).",
     },
@@ -378,11 +393,11 @@ export const RULES: Rule[] = [
   {
     id: "phone-shared-one-other-dot",
     category: "chameleon",
-    label: "Phone shared with one other DOT",
+    label: "Phone shared with another active carrier",
     definition:
-      "Sender's phone matches exactly one other DOT in FMCSA, and that other DOT has no revocation history. Common owner-operator pattern (one person operating multiple authorities, often spouse-and-spouse or family-owned). Surfaced as info so the broker knows about the sibling, not as a flag.",
+      "Sender's phone matches one or two other active DOTs in FMCSA with no revocation history. Often a legitimate multi-authority owner-operator — but a lift test (2026-05) against internal do-not-use outcomes found carriers sharing a phone are flagged ~1.3x more often than carriers on a unique line, and the 1-2 sibling case is the most elevated bucket. So it is a weak fraud corroborator, not benign. Surfaced at caution: confirm it is the same legitimate operator before tendering.",
     thresholds: {
-      info: "Phone matches exactly one other DOT AND that DOT has no revocation history.",
+      caution: "Phone matches 1-2 other active DOTs with no revocation history.",
     },
   },
 
@@ -637,6 +652,50 @@ export const RULES: Rule[] = [
       none: { dot: 53467, reason: "Werner: clean hazmat record (when hazmat inspections present)." },
     },
   },
+  {
+    id: "fast-act-high-risk",
+    category: "smsBasic",
+    label: "FAST Act High-Risk — triggered",
+    definition:
+      "Two or more of the four crash-correlated BASICs — Unsafe Driving, Crash Indicator, Hours-of-Service, Vehicle Maintenance — are at or above the 90th percentile. This is the threshold FMCSA uses under the FAST Act (§5305) to prioritize a carrier for an onsite safety investigation. Computed from the current monthly SMS snapshot's percentiles; FMCSA's non-passenger rule additionally requires the condition to persist two consecutive months and excludes carriers investigated in the last 18 months, so this flags carriers that meet the percentile bar (a superset). Crash Indicator percentile is only available for carriers with sufficient crash data, so CI-driven high-risk is undercounted.",
+    thresholds: {
+      high: "≥2 of {Unsafe Driving, Crash Indicator, HOS, Vehicle Maintenance} at ≥90th percentile.",
+    },
+    fixtures: {
+      high: { dot: 4238066, reason: "C&M CARRIERS LLC: Unsafe Driving, HOS, and Vehicle Maintenance all ≥98th percentile." },
+      none: { dot: 53467, reason: "Werner: fewer than 2 of the four crash-correlated BASICs at ≥90th percentile." },
+    },
+  },
+  {
+    id: "serious-violations",
+    category: "smsBasic",
+    label: "Acute/critical violations from FMCSA investigation",
+    definition:
+      "FMCSA conducted an on-site or off-site investigation in the last 12 months and cited one or more acute or critical (Serious) violations. Acute violations require immediate corrective action (e.g., no controlled-substances testing program); critical violations indicate a breakdown in management controls (e.g., a pattern of false records of duty status). Under FMCSA's own ISS algorithm a Serious Violation forces the associated BASIC to the 100th percentile. This is direct evidence FMCSA found the carrier non-compliant during an audit — far stronger than roadside percentiles. Sourced from the per-carrier SMS investigation results.",
+    thresholds: {
+      critical: "≥1 acute/critical violation in 2+ BASICs, or any controlled-substances/HOS acute violation.",
+      high: "≥1 acute/critical violation from an investigation in the last 12 months.",
+    },
+    fixtures: {
+      high: { dot: 4004854, reason: "BLACK HILLS TRENCHING & BORING: 4 acute/critical violations (Controlled Substances + Driver Fitness + Vehicle Maintenance)." },
+      none: { dot: 53467, reason: "Werner: no acute/critical violations from investigation." },
+    },
+  },
+  {
+    id: "insurance-imminent-lapse",
+    category: "insurance",
+    label: "BIPD insurance about to lapse — no replacement on file",
+    definition:
+      "The carrier's most recent BIPD (liability) insurance filing is a cancellation, with no replacement policy on file and no other active BIPD coverage — so the carrier is days from losing the financial responsibility required to operate, or has already lost it. A carrier that loses insurance loses its authority and is a major tender risk. NOTE: computed against the insurance-data snapshot, so it must be run on fresh insurance data to be operationally accurate.",
+    thresholds: {
+      critical: "Cancellation already in effect (lapsed) or within ~10 days, no replacement.",
+      high: "Cancellation effective within ~45 days, no replacement on file.",
+    },
+    fixtures: {
+      high: { dot: 3293950, reason: "LUMY MOVING INC: last BIPD policy cancelling in ~15 days, no replacement on file." },
+      none: { dot: 53467, reason: "Werner: active BIPD insurance, no pending lapse." },
+    },
+  },
 
   // ---------------------------------------------------------------------
   // CHAMELEON — fleet sharing (cross-DOT VIN overlap)
@@ -662,6 +721,34 @@ export const RULES: Rule[] = [
         dot: 53467,
         reason: "Werner: no significant cross-DOT VIN sharing.",
       },
+    },
+  },
+
+  // ---------------------------------------------------------------------
+  // CHAMELEON — diffuse equipment sharing
+  // ---------------------------------------------------------------------
+  {
+    id: "chameleon-diffuse-equipment",
+    category: "chameleon",
+    label: "Equipment spread across multiple active DOTs",
+    definition:
+      "A meaningful share of this carrier's inspected trucks have also been inspected under multiple OTHER active DOTs — equipment is laundered across a ring of sister authorities rather than shared with a single twin. Distinct from chameleon-shared-fleet, which catches concentrated two-DOT pairs (DK MAX / DK MAX PRIME). Distinct from leasing pools (a carrier running Ryder rentals will share VINs with 100+ other lessees but no single sibling holds more than a handful of trucks) by requiring that the largest single sibling share at least 10% of the fleet — proving the sharing is concentrated enough to be a real ring rather than rental turnover. The concentration floor is relaxed to 5% when another chameleon-specific signal (prior revoke, recent involuntary revocation, rapid replace, lapsed BIPD, address cluster, or all-cancel insurance pattern) has already fired, since a carrier corroborated by other chameleon evidence is not a legitimate leasing operation.",
+    thresholds: {
+      critical: "≥50% of own VINs run under any other active DOT, spread across ≥5 distinct siblings, AND top sibling shares ≥10% of fleet (≥5% when corroborated by another chameleon signal).",
+      high:     "≥30% of own VINs run under any other active DOT, spread across ≥3 distinct siblings, AND top sibling shares ≥10% of fleet (≥5% when corroborated by another chameleon signal).",
+      caution:  "≥25% of own VINs run under any other active DOT, spread across ≥2 distinct siblings, AND top sibling shares ≥10% of fleet (≥5% when corroborated by another chameleon signal).",
+    },
+    fixtures: {
+      critical: { dot: 3621624, reason: "DK MAX TRUCKING INC: 86% of its 140 inspected VINs run under 24 other active DOTs (rich sample, 60 PU)." },
+      high:     { dot: 4198159, reason: "ALAKE LOGISTICS INC: 43% of 7 VINs run under 3 other active DOTs, top sibling 14% concentration." },
+      caution:  { dot: 3432788, reason: "PUNIA TRANS INC (relaxed-floor): 27% diffuse / 3 siblings, top sibling 9% — fires only because other chameleon signals (lapsed BIPD + revoke + all-cancel) relax the concentration floor from 10% to 5%." },
+      none: [
+        { dot: 53467, reason: "Werner: trucks unique to the operating fleet." },
+        {
+          dot: 3863705,
+          reason: "NOOR EXPRESS LOGISTICS INC (leasing-pool guard): 54% diffuse share across 109 siblings (Ryder, UPS, New Prime) but top sibling shares only 4% AND no chameleon-specific corroborating signals — rule must not fire on rental-fleet turnover even with churn.",
+        },
+      ],
     },
   },
 

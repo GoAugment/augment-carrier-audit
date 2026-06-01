@@ -2,13 +2,19 @@
   "dot": 264184,
   "reasonNote": "CLEAN-BIG: Schneider National",
   "carrierName": "SCHNEIDER NATIONAL CARRIERS INC",
-  "riskLevel": "Clean",
+  "riskLevel": "Low",
+  "riskScore": 8,
+  "riskTier": "None",
+  "riskContributions": [
+    "+8 [Safety / compliance] Elevated safety context"
+  ],
   "reasonLabels": [],
   "axes": {
     "crash": "clean",
     "unsafeDriving": "clean",
     "hos": "clean",
     "driverOos": "clean",
+    "controlledSubstances": "clean",
     "vehicleOos": "clean",
     "hazmatOos": "clean",
     "revocations": "clean",

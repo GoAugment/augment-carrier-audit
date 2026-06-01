@@ -30,13 +30,12 @@ const nextConfig = {
         // Email pipeline is a single Vercel function: receives SendGrid
         // Inbound Parse webhook, calls Anthropic Claude for Stage 1
         // extraction, runs the deterministic verdict (imports
-        // checkCarrierEmail from lib/email/check.ts → needs both parquets),
-        // then sends a SendGrid outbound reply.
-        // Bundle: ~158MB parquets + 62MB duckdb/lib + ~13MB SDKs ≈ 238MB.
-        // Tight under Vercel's 250MB limit. If we add more data later,
-        // consider splitting LLM-extraction into its own function.
+        // checkCarrierEmail from lib/email/check.ts), then sends a reply.
+        // carrier_identity.parquet is NOT bundled — it's fetched from Vercel
+        // Blob at runtime (see lib/parquet-source.ts) because bundling both
+        // parquets (~190MB) + duckdb (62MB) exceeds Vercel's 250MB limit.
+        // Aggregates stays bundled: 95MB + 62MB duckdb ≈ 157MB, under the cap.
         "./data/carrier_aggregates.parquet",
-        "./data/carrier_identity.parquet",
         "./data/national_thresholds.json",
         "./node_modules/duckdb/lib/**/*",
         "./node_modules/duckdb/package.json",
@@ -47,6 +46,11 @@ const nextConfig = {
     },
     outputFileTracingExcludes: {
       "/api/analyze": [
+        // carrier_identity.parquet is fetched from Vercel Blob at runtime
+        // (lib/parquet-source.ts) — must NOT be bundled or the function busts
+        // the 250MB limit. Next's tracer auto-includes it from the literal
+        // path string, so exclude it explicitly.
+        "data/carrier_identity.parquet",
         "node_modules/duckdb/src/**",
         "node_modules/duckdb/test/**",
         "node_modules/duckdb/scripts/**",
@@ -55,6 +59,7 @@ const nextConfig = {
         "node_modules/.pnpm/duckdb@*/**/scripts/**",
       ],
       "/api/email/inbound": [
+        "data/carrier_identity.parquet",
         "node_modules/duckdb/src/**",
         "node_modules/duckdb/test/**",
         "node_modules/duckdb/scripts/**",

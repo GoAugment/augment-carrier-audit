@@ -1,0 +1,28 @@
+{
+  "dot": 4572009,
+  "reasonNote": "CRITICAL: new authority under 90 days",
+  "carrierName": "VFV TRANSPORT LLC",
+  "riskLevel": "Critical",
+  "riskScore": 18,
+  "riskTier": "Low",
+  "riskContributions": [
+    "+10 [Operations] Very new authority",
+    "+8 [Safety / compliance] Elevated safety context"
+  ],
+  "reasonLabels": [
+    "New authority",
+    "Why the FMCSA SMS scores look clean"
+  ],
+  "axes": {
+    "crash": "na",
+    "unsafeDriving": "na",
+    "hos": "na",
+    "driverOos": "na",
+    "controlledSubstances": "na",
+    "vehicleOos": "na",
+    "hazmatOos": "na",
+    "revocations": "clean",
+    "authority": "critical",
+    "insurance": "na"
+  }
+}
