@@ -139,17 +139,21 @@ function Cell({ cell, className = "" }: { cell: AxisCell; className?: string }) 
 // carrier risk score is the product score that includes safety, authority,
 // insurance, identity/chameleon, operations, and corroborating context.
 
-/** Carrier Risk Score → AxisCell. Just the number, color-banded by score
- *  severity; the contribution math lives in hover detail and expanded rows. */
+/** Carrier Risk Score → AxisCell. The number, colored by the carrier's VERDICT
+ *  TIER (not a separate score banding) so the cell matches the tier dot + label
+ *  exactly: one consistent ramp where red = Critical, orange = High, amber =
+ *  Medium, green = Low/None. (Previously banded the raw score to severe/high/
+ *  elevated, which made a Critical carrier show red-100 here but red-200 on its
+ *  tier badge — two reds for the same verdict.) */
 function riskCellOf(r: CarrierRow): AxisCell {
   const status: AxisStatus =
-    r.riskScore >= 80
-      ? "severe"
-    : r.riskScore >= 60
-      ? "high"
-      : r.riskScore >= 35
-        ? "elevated"
-        : "clean";
+    r.riskTier === "Critical"
+      ? "critical"
+      : r.riskTier === "High"
+        ? "high"
+        : r.riskTier === "Medium"
+          ? "elevated"
+          : "clean"; // Low / None — low concern, green
   const factorBody =
     r.riskContributions.length > 0
       ? `\n\nContributions:\n• ${r.riskContributions
