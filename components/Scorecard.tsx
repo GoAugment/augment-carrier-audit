@@ -601,9 +601,21 @@ export function Scorecard({
                       <ul className="mt-1.5 space-y-1.5 text-xs">
                         {items.map((s, i) => (
                           <li key={i} className="flex gap-2">
-                            <span className="mt-px inline-flex h-[18px] min-w-[34px] shrink-0 items-center justify-center rounded bg-white/70 text-[10px] font-semibold tabular-nums text-ink-700">
-                              {s.points != null ? `+${s.points}` : ""}
-                            </span>
+                            {s.points != null ? (
+                              // Scored factor (Carrier-risk side): points badge.
+                              <span className="mt-px inline-flex h-[18px] min-w-[34px] shrink-0 items-center justify-center rounded bg-white/70 text-[10px] font-semibold tabular-nums text-ink-700">
+                                +{s.points}
+                              </span>
+                            ) : (
+                              // Descriptive finding (On-road safety side): these
+                              // aren't scored individually (they roll up into the
+                              // "Hard safety signal" factor on the risk side), so
+                              // a quiet bullet instead of an empty score box.
+                              <span
+                                aria-hidden
+                                className="mt-[7px] inline-block h-1 w-1 shrink-0 rounded-full bg-ink-300"
+                              />
+                            )}
                             <div className="leading-snug">
                               <div>
                                 <strong className="font-semibold text-ink-900">{s.label}</strong>
