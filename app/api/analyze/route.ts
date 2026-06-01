@@ -16,6 +16,28 @@ export const maxDuration = 60; // Vercel Pro: 60s
 // binary) during the build container's static-page-data step.
 export const dynamic = "force-dynamic";
 
+// Keep-warm primer, hit by the Vercel cron defined in vercel.json
+// ("*/5 * * * *"). Primes a Fluid Compute instance — the duckdb native
+// binding, the bundled aggregates parquet, and the identity parquet's /tmp
+// cache (downloaded from Blob once per instance) — so real user POSTs land on
+// a hot instance instead of paying the ~8s cold start (96MB Blob fetch +
+// duckdb init). Gated on the x-vercel-cron header so a bare public GET can't
+// be used to spin up compute.
+export async function GET(req: NextRequest) {
+  if (!req.headers.get("x-vercel-cron")) {
+    return NextResponse.json({ ok: true });
+  }
+  const t0 = Date.now();
+  await fetchCarriers([64]); // DOT 64 — a known clean carrier in the snapshot
+  try {
+    const { fetchIdentityRiskSignals } = await import("@/lib/fmcsa-identity");
+    await fetchIdentityRiskSignals([64]);
+  } catch {
+    /* identity parquet unavailable — warm what we can */
+  }
+  return NextResponse.json({ ok: true, warmedMs: Date.now() - t0 });
+}
+
 export async function POST(req: NextRequest) {
   let body: { input?: string };
   try {

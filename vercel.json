@@ -1,10 +1,15 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    { "path": "/api/analyze", "schedule": "*/5 * * * *" }
+  ],
   "functions": {
     "app/api/analyze/route.ts": {
+      "memory": 3009,
       "includeFiles": "{data/carrier_aggregates.parquet,data/national_thresholds.json,node_modules/duckdb/lib/**,node_modules/duckdb/package.json,node_modules/@mapbox/node-pre-gyp/**}"
     },
     "app/api/email/inbound/route.ts": {
+      "memory": 3009,
       "includeFiles": "{data/carrier_aggregates.parquet,data/national_thresholds.json,node_modules/duckdb/lib/**,node_modules/duckdb/package.json,node_modules/@mapbox/node-pre-gyp/**}"
     }
   }
