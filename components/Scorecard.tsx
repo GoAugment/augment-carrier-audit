@@ -233,13 +233,18 @@ const SAFETY_RE =
   /crash|unsafe driving|hos compliance|driver oos|vehicle oos|hazmat|fast.?act|acute|serious viol|iss,|multiple basic|safety rating|sms scores look clean/i;
 // Descriptive reasons that restate a signal already shown as a scored factor,
 // so they'd render as a duplicate bullet in the panel:
-//   • "Fleet shared with another active DOT" — same VIN overlap as the scored
-//     "Equipment spread …" factor (the sibling now renders inline under it).
+//   • "Fleet shared with another active DOT" / "Equipment spread across …" —
+//     same VIN-overlap evidence as the scored fleet factor (the largest sibling
+//     renders inline under it). When the concentrated + diffuse rules both fire,
+//     setFleetRisk keeps one scored factor, so the other's reason is the dup.
+//   • "All-cancel insurance pattern" — same cancellations as the scored
+//     "Insurance churn" factor (a sharper read of the same policy churn).
 //   • "High-risk insurer" — same insurer-book revoke lift as the scored
 //     "Insurer / ZIP risk context" factor.
-// Dropped from the panel here only; both stay in reasons[] for the email reply
+// Dropped from the panel here only; all stay in reasons[] for the email reply
 // (more advisory) + the rules test.
-const PANEL_DUP_REASON_RE = /^fleet shared with another|^high-risk insurer/i;
+const PANEL_DUP_REASON_RE =
+  /^fleet shared with another|^equipment spread across|^all-cancel insurance|^high-risk insurer/i;
 
 type Signal = { label: string; detail: string; points?: number; category?: string };
 function splitSignals(r: CarrierRow): {
