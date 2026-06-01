@@ -21,7 +21,7 @@
     "Equipment spread across multiple active DOTs"
   ],
   "axes": {
-    "crash": "na",
+    "crash": "elevated",
     "unsafeDriving": "clean",
     "hos": "high",
     "driverOos": "clean",
