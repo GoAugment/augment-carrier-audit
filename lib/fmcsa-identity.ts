@@ -302,6 +302,7 @@ interface RiskSignalRow {
   free_email_domain: string | null;
   residential_marker: string | null;
   shutdown_links: string | null;
+  shared_policy_links: string | null;
 }
 
 /**
@@ -328,13 +329,14 @@ export async function fetchIdentityRiskSignals(
       freeEmailDomain: null,
       residentialAddressMarker: null,
       shutdownIdentityLinks: [],
+      sharedPolicyLinks: [],
     });
   }
 
   const placeholders = unique.map(() => "?").join(",");
   const signalsPath = (await getRiskSignalsParquetPath()).replace(/'/g, "''");
   const sql = `
-    SELECT DOT_NUMBER, free_email_domain, residential_marker, shutdown_links
+    SELECT DOT_NUMBER, free_email_domain, residential_marker, shutdown_links, shared_policy_links
     FROM read_parquet('${signalsPath}')
     WHERE DOT_NUMBER IN (${placeholders})
   `;
@@ -345,6 +347,9 @@ export async function fetchIdentityRiskSignals(
       residentialAddressMarker: r.residential_marker ?? null,
       shutdownIdentityLinks: r.shutdown_links
         ? r.shutdown_links.split(" | ").slice(0, 5)
+        : [],
+      sharedPolicyLinks: r.shared_policy_links
+        ? r.shared_policy_links.split(" | ").slice(0, 3)
         : [],
     });
   }

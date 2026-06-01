@@ -141,6 +141,10 @@ export interface CarrierIdentityRiskSignals {
   freeEmailDomain: string | null;
   residentialAddressMarker: string | null;
   shutdownIdentityLinks: string[];
+  /** DOT(s) this carrier shares an insurance POLICY NUMBER with that were
+   *  involuntarily revoked — a strong same-operator chameleon edge (~6x revoke
+   *  lift). Precomputed in scripts/build_risk_signals.cjs from the L&I history. */
+  sharedPolicyLinks: string[];
 }
 
 /** One cell in the scorecard, covers one axis for one carrier. */
@@ -790,6 +794,19 @@ function computeRiskScore(
         ? "Identity tied to shut-down revoked DOT"
         : "Officer name shared with shut-down revoked DOT",
       links.slice(0, 3).join("; ")
+    );
+  }
+
+  if (identitySignals?.sharedPolicyLinks?.length) {
+    // Sharing an insurance POLICY NUMBER with an involuntarily-revoked DOT is a
+    // strong same-operator tell (~6x revoke lift vs base; lift test 2026-05) and
+    // is independent of shared trucks — one policy can't legitimately cover two
+    // separate carriers. Weighted like the other core chameleon edges.
+    add(
+      24,
+      "Identity / chameleon",
+      "Shares insurance policy with revoked carrier",
+      identitySignals.sharedPolicyLinks.slice(0, 3).join("; ")
     );
   }
 
