@@ -597,16 +597,18 @@ export function Scorecard({
                 // a fixed-width points badge, then a bold label (+ small
                 // category tag) over a muted detail line — so the contributions
                 // read as a tidy list instead of a run-on sentence.
-                // Largest shared-fleet sibling, rendered INLINE under the
-                // fleet-sharing factor (Equipment spread / Shared fleet) so that
-                // factor carries the overlap detail itself and we don't show a
-                // separate "Fleet shared" row. Falls back to "Linked authority
-                // revoked" only if no fleet-sharing factor is present. The line
-                // names the sibling, how many VINs overlap, and its status
-                // (bold + color-coded: "when revoked" for a revoked sibling,
-                // otherwise its Augie level).
-                const FLEET_PRIMARY_RE = /equipment spread|shared fleet|fleet shared/i;
-                const FLEET_FALLBACK_RE = /linked authority/i;
+                // Largest shared-fleet sibling, rendered INLINE under the one
+                // factor it actually explains — names the sibling, the shared-VIN
+                // count, and its status (bold + color-coded). Attach order:
+                //   1. "Linked authority revoked" — when the top overlap partner
+                //      is itself revoked, that factor IS about this sibling, so
+                //      the name + VIN count + revoke date belong there (and
+                //      "Equipment spread" stays a clean breadth statement).
+                //   2. else the fleet-sharing factor (Equipment spread / Shared
+                //      fleet) — the sibling is the concrete authority behind it.
+                // Avoids showing the sibling's revoked status twice.
+                const LINKED_AUTH_RE = /linked authority/i;
+                const FLEET_SHARE_RE = /equipment spread|shared fleet|fleet shared/i;
                 const sharedVins = r.carrier.largestSiblingSharedVins;
                 const totalVins = r.carrier.largestSiblingTotalVins;
                 const sib =
@@ -637,12 +639,13 @@ export function Scorecard({
                       }
                     : null;
                 // Index of the risk row the overlap sub-line attaches to: prefer
-                // the fleet-sharing factor, else the linked-authority factor.
+                // the sibling-specific "Linked authority revoked" factor, else
+                // the fleet-sharing factor.
                 const overlapIdx = !sib
                   ? -1
                   : (() => {
-                      const p = risk.findIndex((s) => FLEET_PRIMARY_RE.test(s.label));
-                      return p >= 0 ? p : risk.findIndex((s) => FLEET_FALLBACK_RE.test(s.label));
+                      const la = risk.findIndex((s) => LINKED_AUTH_RE.test(s.label));
+                      return la >= 0 ? la : risk.findIndex((s) => FLEET_SHARE_RE.test(s.label));
                     })();
                 const renderGroup = (title: string, items: Signal[], dot: string) => (
                   <div>
