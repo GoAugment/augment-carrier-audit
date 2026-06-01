@@ -10,8 +10,7 @@
     "+8 [Safety / compliance] Elevated safety context"
   ],
   "reasonLabels": [
-    "Safety rating: Conditional",
-    "Why the FMCSA SMS scores look clean"
+    "Safety rating: Conditional"
   ],
   "axes": {
     "crash": "clean",

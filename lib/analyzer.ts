@@ -2538,7 +2538,14 @@ function scoreCarrier(
     [
       c.unsafeDrivingPercentile, c.hosPercentile, c.driverFitnessPercentile,
       c.vehicleMaintenancePercentile, c.crashIndicatorPercentile,
-    ].some((p) => p != null && p >= 75);
+    ].some((p) => p != null && p >= 75) ||
+    // A hard safety contribution (e.g. fatal/repeat crashes scored as a "Hard
+    // safety signal") means the carrier IS flagged on safety even if the
+    // per-mile percentiles read clean — so the "not on-road safety" note would
+    // contradict it. Treat that as a visible safety signal.
+    risk.contributions.some(
+      (f) => f.category === "Safety / compliance" && f.kind === "core"
+    );
   if ((level === "Critical" || level === "High") && !smsSafetyVisible) {
     reasons.push({
       label: "Why the FMCSA SMS scores look clean",
