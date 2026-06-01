@@ -563,12 +563,17 @@ async function evalChameleonCluster(
         detail: `Phone matches DOT ${o.dotNumber} (${c.legalName ?? "unnamed"}), which has revocation history. Timing doesn't fit a re-incarnation pattern (focal carrier is older or the revocation is more recent than focal registration). Likely a sibling/family entity; verify if uncertain.`,
       });
     } else {
-      // Single non-revoked match — common owner-operator pattern.
+      // Few live siblings on the same phone. Previously dismissed as a benign
+      // owner-operator pattern — but a lift test (2026-05, internal do-not-use
+      // outcomes) found carriers sharing a phone are flagged ~1.3x more often
+      // than carriers on a unique line, and the 1-2 sibling case is the most
+      // elevated bucket. So it's a weak fraud corroborator, not benign: surface
+      // at caution and let the broker confirm it's the same legitimate operator.
       signals.push({
         category: "chameleon_cluster",
-        tier: "info",
+        tier: "caution",
         label: getRule("phone-shared-one-other-dot").label,
-        detail: `Phone matches DOT ${o.dotNumber} (${c.legalName ?? "unnamed"}). Common when an operator holds multiple authorities; not necessarily suspicious.`,
+        detail: `Sender's phone also belongs to active DOT ${o.dotNumber} (${c.legalName ?? "unnamed"}), which has no revocation history. Shared contact between separate active carriers can mean one operator running multiple authorities — verify they're the same legitimate business before tendering.`,
       });
     }
   }

@@ -365,7 +365,7 @@ export const RULES: Rule[] = [
     category: "chameleon",
     label: "Phone shared with multiple DOTs (corporate switchboard)",
     definition:
-      "Sender's phone matches three or more other DOTs in FMCSA. Large fleets commonly share an 800-line across subsidiary authorities — this isn't a fraud signal by itself, but worth surfacing as context so brokers know the phone belongs to a corporate dispatch line, not the specific carrier they're tendering to.",
+      "Sender's phone matches three or more other DOTs in FMCSA. Large fleets and dispatch services commonly share one line across many authorities, and at this scale the pattern skews toward legitimate dispatchers (a lift test found very large clusters less elevated than 1-2 DOT matches) — weaker than a 1-2 DOT match. Surfaced as context so brokers know the phone belongs to a shared dispatch line, not uniquely to the carrier they're tendering to.",
     thresholds: {
       info: "Phone matches ≥3 other DOTs (corporate switchboard pattern).",
     },
@@ -393,11 +393,11 @@ export const RULES: Rule[] = [
   {
     id: "phone-shared-one-other-dot",
     category: "chameleon",
-    label: "Phone shared with one other DOT",
+    label: "Phone shared with another active carrier",
     definition:
-      "Sender's phone matches exactly one other DOT in FMCSA, and that other DOT has no revocation history. Common owner-operator pattern (one person operating multiple authorities, often spouse-and-spouse or family-owned). Surfaced as info so the broker knows about the sibling, not as a flag.",
+      "Sender's phone matches one or two other active DOTs in FMCSA with no revocation history. Often a legitimate multi-authority owner-operator — but a lift test (2026-05) against internal do-not-use outcomes found carriers sharing a phone are flagged ~1.3x more often than carriers on a unique line, and the 1-2 sibling case is the most elevated bucket. So it is a weak fraud corroborator, not benign. Surfaced at caution: confirm it is the same legitimate operator before tendering.",
     thresholds: {
-      info: "Phone matches exactly one other DOT AND that DOT has no revocation history.",
+      caution: "Phone matches 1-2 other active DOTs with no revocation history.",
     },
   },
 
