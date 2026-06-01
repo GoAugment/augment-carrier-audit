@@ -2311,51 +2311,80 @@ function scoreCarrier(
         if (!firedFleetSharingClusterSignal) {
           chameleonSignals.push(`${diffPct.toFixed(0)}% diffuse VIN overlap across ${nSibs} DOTs`);
         }
-        if (diffuseTier === "critical" || diffuseTier === "high") {
-          // Diffuse equipment-sharing alone caps at High. Spreading VINs across
-          // many DOTs is indistinguishable from a leasing / owner-operator pool
-          // without corroboration, so it must NOT hard-gate Critical, that
-          // over-fired on low-concentration cases (DEFUZE/SHER-TRANS at ~17-25%
-          // top overlap scored 28-29 yet were forced Critical). Critical for a
-          // diffuse carrier now comes only from corroboration: a revoked linked
-          // sibling (below), concentrated shared-fleet + name match (other rule),
-          // or the additive score reaching 80.
+        // Resolve the largest diffuse sibling's authority status up front (the
+        // shared-fleet block above may already have done it) so the verdict gate
+        // can weigh corroboration. A revoked linked sibling is the chameleon-
+        // successor tell → its own scored factor and forces at least High.
+        if (siblingRef && siblingStatusKind === null) {
+          const sStat = siblingStatusMap.get(siblingRef.dot);
+          if (sStat) {
+            siblingStatusKind = sStat.kind;
+            siblingRevokedDate = sStat.date;
+          }
+        }
+        const linkedRevoked = siblingStatusKind === "revoked";
+        if (
+          linkedRevoked &&
+          !risk.contributions.some((f) => f.label === "Linked authority revoked")
+        ) {
+          addRiskContribution(risk, {
+            category: "Identity / chameleon",
+            label: "Linked authority revoked",
+            points: 24,
+            detail: "Operating a recently-revoked sibling authority's fleet; chameleon-successor pattern.",
+            kind: "core",
+          });
+        }
+
+        // Corroboration separates a real ring from a legitimate leasing /
+        // owner-operator / multi-authority pool: a revoked linked sibling, any
+        // other chameleon-specific signal, or a dormant-authority reactivation.
+        const diffuseCorroborated =
+          linkedRevoked ||
+          hasChameleonSpecificSignal ||
+          risk.contributions.some(
+            (f) => f.label === "Dormant authority reactivation pattern"
+          );
+        // A long-tenured, continuously-active authority (NOT a reactivated shell —
+        // that's caught by the dormant-reactivation signal above) sharing
+        // equipment is almost always a
+        // legit leasing/multi-authority pool, so diffuse spread is weak evidence
+        // on it: damp its points to the caution weight when uncorroborated.
+        const diffuseAuthAgeYears = (() => {
+          const d = daysSinceAuthorityIssued(c.dotAddDate);
+          return d == null ? null : d / 365;
+        })();
+        const weakDiffuse =
+          !diffuseCorroborated && diffuseAuthAgeYears != null && diffuseAuthAgeYears >= 10;
+
+        setFleetRisk(
+          diffuseTier === "caution" || weakDiffuse ? 8 : 24,
+          // Rule-registry label so the scored contribution and the reason share a
+          // label and the expanded panel collapses them into one item.
+          getRule("chameleon-diffuse-equipment").label,
+          `${diffPct.toFixed(0)}% of inspected VINs spread across ${nSibs} other active DOTs.`
+        );
+
+        // Verdict gate. A revoked linked sibling forces at least High. Diffuse
+        // sharing alone NEVER hard-gates Critical (indistinguishable from a
+        // leasing pool) — and UNcorroborated diffuse no longer hard-gates High
+        // either: it floors at Medium ("worth a look"), leaving the additive
+        // score to carry a genuinely bad carrier up via the score gates at the
+        // end. Corroborated diffuse keeps the High escalation.
+        if (linkedRevoked) {
           if (level !== "Critical") level = "High";
+        } else if (diffuseTier === "critical" || diffuseTier === "high") {
+          if (diffuseCorroborated) {
+            if (level !== "Critical") level = "High";
+          } else if (level !== "Critical" && level !== "High") {
+            level = "Medium";
+          }
         } else if (
           diffuseTier === "caution" &&
           level !== "Critical" &&
           level !== "High"
         ) {
           level = "Medium";
-        }
-        setFleetRisk(
-          diffuseTier === "caution" ? 8 : 24,
-          // Use the rule-registry label (not a hardcoded one) so the scored
-          // contribution and the reason for this signal share a label and the
-          // expanded panel collapses them into one item instead of two.
-          getRule("chameleon-diffuse-equipment").label,
-          `${diffPct.toFixed(0)}% of inspected VINs spread across ${nSibs} other active DOTs.`
-        );
-        // Largest of the diffuse siblings is a revoked authority → chameleon-
-        // successor tell. Milder than the concentrated case (diffuse is noisier):
-        // escalate to at least High rather than forcing Critical. Only when the
-        // shared-fleet block above didn't already capture this sibling's status.
-        if (siblingRef && siblingStatusKind === null) {
-          const sStat = siblingStatusMap.get(siblingRef.dot);
-          if (sStat) {
-            siblingStatusKind = sStat.kind;
-            siblingRevokedDate = sStat.date;
-            if (sStat.kind === "revoked") {
-              if (level !== "Critical") level = "High";
-              addRiskContribution(risk, {
-                category: "Identity / chameleon",
-                label: "Linked authority revoked",
-                points: 24,
-                detail: "Operating a recently-revoked sibling authority's fleet; chameleon-successor pattern.",
-                kind: "core",
-              });
-            }
-          }
         }
       }
     }
