@@ -12,6 +12,7 @@
   ],
   "reasonLabels": [
     "Insurance churn",
+    "Crashes",
     "Recent revocation"
   ],
   "axes": {
