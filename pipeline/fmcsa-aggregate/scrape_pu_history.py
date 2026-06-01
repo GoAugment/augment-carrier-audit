@@ -342,12 +342,16 @@ class AsyncScraper:
     paces us to exactly TARGET_RPS regardless of per-request latency."""
 
     def __init__(self, target_rps: float = TARGET_RPS, concurrency: int = CONCURRENCY) -> None:
-        # Proxy support — required when FMCSA's WAF has banned our direct IP.
-        # We read SCRAPE_PROXY_URL from env so the credential doesn't live in
-        # source. Set to a URL like
-        #   http://API_KEY:mode=auto@api.zenrows.com:8001
-        # to route every request through a third-party proxy.
+        # Proxy support — required because FMCSA's WAF 403-blocks direct IPs.
+        # Prefer an explicit SCRAPE_PROXY_URL; otherwise build the ZenRows proxy
+        # URL from ZENROWS_API_KEY (which lives in .env.local) so the scrape uses
+        # the credential we already have instead of silently falling back to a
+        # direct connection that gets banned.
         proxy_url = os.environ.get("SCRAPE_PROXY_URL")
+        if not proxy_url:
+            zr_key = os.environ.get("ZENROWS_API_KEY")
+            if zr_key:
+                proxy_url = f"http://{zr_key}:mode=auto@api.zenrows.com:8001"
         client_kwargs: dict = dict(
             headers={"User-Agent": USER_AGENT},
             timeout=60,  # proxy adds latency; bump from 30 → 60
