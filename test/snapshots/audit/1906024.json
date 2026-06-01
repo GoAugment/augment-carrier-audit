@@ -6,7 +6,7 @@
   "riskScore": 32,
   "riskTier": "Low",
   "riskContributions": [
-    "+24 [Identity / chameleon] FMCSA predecessor-revoke flag",
+    "+24 [Identity / chameleon] FMCSA prior-revoke flag (chameleon)",
     "+8 [Safety / compliance] Elevated safety context"
   ],
   "reasonLabels": [

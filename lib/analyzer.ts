@@ -534,7 +534,7 @@ function computeRiskScore(
     add(
       35,
       "Authority / insurance",
-      "Operating authority not active",
+      getRule("authority-not-active").label,
       `FMCSA status_code=${code}; carrier is not currently active.`
     );
   }
@@ -559,7 +559,7 @@ function computeRiskScore(
     add(
       30,
       "Authority / insurance",
-      "Recent involuntary revocation",
+      getRule("recent-revocation").label,
       `Own authority was involuntarily revoked within 24 months (${c.mostRecentInvoluntaryDate}).`
     );
   } else if (
@@ -570,7 +570,7 @@ function computeRiskScore(
     add(
       24,
       "Identity / chameleon",
-      "FMCSA predecessor-revoke flag",
+      getRule("chameleon-prior-revoke").label,
       c.priorRevokeDotNumber > 0
         ? `FMCSA links this carrier to previously revoked DOT ${c.priorRevokeDotNumber}.`
         : "FMCSA links this carrier to a previously revoked predecessor."
@@ -588,7 +588,7 @@ function computeRiskScore(
     add(
       30,
       "Authority / insurance",
-      "$0/sub-minimum BIPD",
+      getRule("insurance-lapsed").label,
       c.bipdInsuranceOnFile === 0
         ? `$0 BIPD on file vs ${fmtMoney(c.bipdRequiredAmount)} FMCSA-required.`
         : `${fmtMoney(c.bipdInsuranceOnFile)} BIPD on file vs ${fmtMoney(c.bipdRequiredAmount)} FMCSA-required.`
@@ -597,7 +597,7 @@ function computeRiskScore(
     add(
       28,
       "Authority / insurance",
-      "Imminent BIPD lapse",
+      getRule("insurance-imminent-lapse").label,
       `Terminal BIPD cancellation filed${
         c.bipdPendingCancelDate ? ` for ${c.bipdPendingCancelDate}` : ""
       } with no replacement${
@@ -2112,7 +2112,7 @@ function scoreCarrier(
       }
       addRiskContribution(risk, {
         category: "Identity / chameleon",
-        label: "Address OOS cluster",
+        label: getRule("chameleon-address-cluster").label,
         points: addrTier === "critical" ? 18 : addrTier === "high" ? 13 : 8,
         detail: `${oos} out-of-service DOTs share this carrier's physical address.`,
         kind: "core",
