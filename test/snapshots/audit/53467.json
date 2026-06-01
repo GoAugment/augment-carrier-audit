@@ -9,7 +9,7 @@
     "+18 [Safety / compliance] Hard safety signal"
   ],
   "reasonLabels": [
-    "ISS — Inspect (top inspection priority)"
+    "ISS, Inspect (top inspection priority)"
   ],
   "axes": {
     "crash": "clean",
