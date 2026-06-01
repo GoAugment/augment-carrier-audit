@@ -9,13 +9,6 @@ import type {
 } from "@/lib/analyzer";
 import { toCsv } from "@/lib/csv";
 
-const riskStyles: Record<RiskLevel, string> = {
-  Critical: "bg-red-200 text-red-950 border-red-400 font-semibold",
-  High: "bg-orange-100 text-orange-900 border-orange-200",
-  Medium: "bg-amber-50 text-amber-900 border-amber-200",
-  Low: "bg-augment-50 text-augment-900 border-augment-200",
-};
-
 // The "Low" tier is shown as "Clean", for a broker, the bottom tier means
 // "nothing flagged," which reads more clearly than "Low".
 const verdictLabel: Record<RiskLevel, string> = {
@@ -36,16 +29,19 @@ const barColor: Record<RiskLevel, string> = {
 
 // Tier section-header styling (the "● CRITICAL · N carriers" divider rows that
 // group the matrix by verdict, replacing the per-row verdict pill).
+// Four hues only — red (Critical), orange (High), amber (Medium), green (Clean).
+// Medium uses the same amber as the cell tints so the matrix never shows a
+// second yellow/gold.
 const tierDot: Record<RiskLevel, string> = {
   Critical: "bg-[#D7453C]",
   High: "bg-[#E89432]",
-  Medium: "bg-[#D4AA28]",
+  Medium: "bg-amber-400",
   Low: "bg-[#2EB873]",
 };
 const tierText: Record<RiskLevel, string> = {
   Critical: "text-[#7E1A14]",
   High: "text-[#8A4A0E]",
-  Medium: "text-[#92400E]",
+  Medium: "text-amber-700",
   Low: "text-[#0F5A41]",
 };
 
@@ -61,9 +57,10 @@ const cellStyles: Record<AxisStatus, string> = {
   severe: "bg-red-100 text-red-900",
   high: "bg-orange-100 text-orange-900",
   elevated: "bg-amber-100/60 text-amber-900",
-  /** info = contextual signal (e.g. old revocations), amber, lighter than elevated.
-   *  Does NOT contribute to overall risk tier; just surfaces in the cell. */
-  info: "bg-amber-50 text-amber-800",
+  /** info = contextual signal (e.g. old revocations). Same single amber as
+   *  `elevated` (we keep the palette to four hues); it just doesn't contribute
+   *  to the overall risk tier. */
+  info: "bg-amber-100/60 text-amber-900",
   clean: "bg-augment-50 text-augment-800",
   na: "bg-ink-50 text-ink-400",
 };
@@ -234,6 +231,12 @@ function issCellOf(r: CarrierRow): AxisCell {
 // findings.
 const SAFETY_RE =
   /crash|unsafe driving|hos compliance|driver oos|vehicle oos|hazmat|fast.?act|acute|serious viol|iss,|multiple basic|safety rating/i;
+// The concentrated single-sibling "Fleet shared with another active DOT" reason
+// is the same VIN-overlap evidence as the scored "Equipment spread …" / "Shared
+// fleet …" factor; we surface the named sibling (+ shared-VIN count + status) as
+// an inline sub-line under that factor instead of as its own bullet. Dropped
+// from the panel here only — it stays in reasons[] for the email reply + rules.
+const FLEET_SHARED_REASON_RE = /^fleet shared with another/i;
 
 type Signal = { label: string; detail: string; points?: number; category?: string };
 function splitSignals(r: CarrierRow): {
@@ -253,6 +256,7 @@ function splitSignals(r: CarrierRow): {
       safety.push(reason);
       continue;
     }
+    if (FLEET_SHARED_REASON_RE.test(reason.label)) continue;
     if (seen.has(reason.label.toLowerCase())) continue;
     risk.push(reason);
   }
@@ -362,7 +366,11 @@ export function Scorecard({
       </div>
       <ReadingNote />
 
-      <div className="rounded-lg border border-ink-200 bg-white">
+      {/* overflow-x-auto clips the table to the rounded corners and keeps the
+          border wrapped around the full content: if the 14 columns ever exceed
+          the container they scroll inside the bordered box instead of spilling
+          past the right edge. */}
+      <div className="overflow-x-auto rounded-lg border border-ink-200 bg-white">
         <table className="w-full text-left text-sm">
           <thead className="sticky top-0 z-10 bg-white text-[11px] font-semibold uppercase tracking-wide text-[#596560] shadow-sm">
             {/* Group band: makes explicit that the verdict, the FMCSA SMS
@@ -561,7 +569,7 @@ export function Scorecard({
                       {r.carrierName ?? <span className="text-ink-400">unknown</span>}
                     </span>
                   </div>
-                  <div className={`mt-0.5 text-[11px] text-ink-500 ${hasDetail ? "pl-4" : ""}`}>
+                  <div className={`mt-0.5 whitespace-nowrap text-[11px] text-ink-500 ${hasDetail ? "pl-4" : ""}`}>
                     DOT {r.dot} · {r.peerGroupLabel}
                     {r.loadCount > 0 && ` · ${r.loadCount} load${r.loadCount === 1 ? "" : "s"}`}
                   </div>
@@ -586,17 +594,27 @@ export function Scorecard({
                 // a fixed-width points badge, then a bold label (+ small
                 // category tag) over a muted detail line — so the contributions
                 // read as a tidy list instead of a run-on sentence.
-                // Largest shared-fleet sibling, rendered INLINE on the relevant
-                // fleet factor (Linked authority / Equipment spread / Fleet
-                // shared) rather than as a separate line — so every risk-side row
-                // is a scored factor. Status is bold + color-coded: "when
-                // revoked" for a revoked sibling, otherwise its Augie level.
-                const FLEET_RE = /linked authority|equipment spread|fleet shared/i;
+                // Largest shared-fleet sibling, rendered INLINE under the
+                // fleet-sharing factor (Equipment spread / Shared fleet) so that
+                // factor carries the overlap detail itself and we don't show a
+                // separate "Fleet shared" row. Falls back to "Linked authority
+                // revoked" only if no fleet-sharing factor is present. The line
+                // names the sibling, how many VINs overlap, and its status
+                // (bold + color-coded: "when revoked" for a revoked sibling,
+                // otherwise its Augie level).
+                const FLEET_PRIMARY_RE = /equipment spread|shared fleet|fleet shared/i;
+                const FLEET_FALLBACK_RE = /linked authority/i;
+                const sharedVins = r.carrier.largestSiblingSharedVins;
+                const totalVins = r.carrier.largestSiblingTotalVins;
                 const sib =
                   r.siblingDot != null
                     ? {
                         name: r.siblingName ?? "carrier",
                         dot: r.siblingDot,
+                        vins:
+                          sharedVins > 0 && totalVins > 0
+                            ? `${sharedVins} of ${totalVins} VINs`
+                            : null,
                         statusText:
                           r.siblingStatus === "revoked"
                             ? `Revoked${r.siblingRevokedDate ? ` ${r.siblingRevokedDate}` : ""}`
@@ -615,7 +633,14 @@ export function Scorecard({
                                 : "text-ink-500",
                       }
                     : null;
-                let overlapShown = false;
+                // Index of the risk row the overlap sub-line attaches to: prefer
+                // the fleet-sharing factor, else the linked-authority factor.
+                const overlapIdx = !sib
+                  ? -1
+                  : (() => {
+                      const p = risk.findIndex((s) => FLEET_PRIMARY_RE.test(s.label));
+                      return p >= 0 ? p : risk.findIndex((s) => FLEET_FALLBACK_RE.test(s.label));
+                    })();
                 const renderGroup = (title: string, items: Signal[], dot: string) => (
                   <div>
                     <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-500">
@@ -625,8 +650,7 @@ export function Scorecard({
                     {items.length > 0 ? (
                       <ul className="mt-1.5 space-y-1.5 text-xs">
                         {items.map((s, i) => {
-                          const showOverlap = !!sib && !overlapShown && FLEET_RE.test(s.label);
-                          if (showOverlap) overlapShown = true;
+                          const showOverlap = !!sib && items === risk && i === overlapIdx;
                           return (
                             <li key={i} className="flex gap-2">
                               {s.points != null ? (
@@ -656,7 +680,8 @@ export function Scorecard({
                                 {showOverlap && sib ? (
                                   <div className="text-ink-600">
                                     <span className="font-medium text-ink-800">{sib.name}</span> (DOT{" "}
-                                    {sib.dot}) ·{" "}
+                                    {sib.dot})
+                                    {sib.vins ? ` · ${sib.vins}` : ""} ·{" "}
                                     <span className={`font-semibold ${sib.tone}`}>{sib.statusText}</span>
                                   </div>
                                 ) : null}

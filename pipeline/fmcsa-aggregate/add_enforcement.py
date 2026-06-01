@@ -20,14 +20,15 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 from pathlib import Path
 
 import polars as pl
 
 HERE = Path(__file__).parent
 T1_DIR = HERE.parent / "t1-fmcsa-2026-05-14"
-ENF_XLSX = Path("/Users/art/Downloads/closed_enforcement_cases_20260515005306.xlsx")
-PARQUET = HERE / "carrier_aggregates.parquet"
+ENF_XLSX = Path(os.environ.get("FMCSA_ENFORCEMENT_XLSX", "/Users/art/Downloads/closed_enforcement_cases_20260515005306.xlsx"))
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", HERE / "carrier_aggregates.parquet"))
 CARRIERS_JSON = T1_DIR / "carriers.json"
 T1_OUT_CSV = T1_DIR / "enforcement_t1.csv"
 T1_OUT_MD = T1_DIR / "enforcement_t1.md"

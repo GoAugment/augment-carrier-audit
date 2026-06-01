@@ -28,6 +28,7 @@ import io
 import os
 import time
 from datetime import datetime
+import os
 from pathlib import Path
 
 import httpx
@@ -35,9 +36,9 @@ import openpyxl
 import polars as pl
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-PARQUET = Path("/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/carrier_aggregates.parquet")
-CENSUS = Path("/Users/art/Downloads/Company_Census_File.csv")
-OUT_DIR = Path("/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/fmcsa_scrape")
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/carrier_aggregates.parquet"))
+CENSUS = Path(os.environ.get("FMCSA_COMPANY_CENSUS", "/Users/art/Downloads/Company_Census_File.csv"))
+OUT_DIR = Path(os.environ.get("FMCSA_SCRAPE_DIR", "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/fmcsa_scrape"))
 TAG = "20260514"
 URL = "https://ai.fmcsa.dot.gov/SMS/Carrier/{dot}/Download.aspx?BASIC=0&FileType=XLSX"
 UA = "augment-carrier-audit-research/0.1 (+research@goaugment.com; polite scraper)"

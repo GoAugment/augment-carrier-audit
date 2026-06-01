@@ -54,13 +54,19 @@ def _refreshable(refresh_name: str, fallback: Path) -> Path:
     return fallback
 
 
-OUTPUT_DIR = Path(__file__).parent
+OUTPUT_DIR = Path(os.environ.get("FMCSA_OUTPUT_DIR", Path(__file__).parent))
 
-CENSUS_PATH = _refreshable(
-    "SMS_Input_-_Motor_Carrier_Census_Information.csv",
-    INPUT_DIR / "SMS_Input_-_Motor_Carrier_Census_Information_20260514.csv",
-)
-PASSPROP_PATH = INPUT_DIR / "SMS_AB_PassProperty_20260514.csv"
+CENSUS_PATH = Path(os.environ.get(
+    "FMCSA_MOTOR_CARRIER_CENSUS",
+    _refreshable(
+        "SMS_Input_-_Motor_Carrier_Census_Information.csv",
+        INPUT_DIR / "SMS_Input_-_Motor_Carrier_Census_Information_20260514.csv",
+    ),
+))
+PASSPROP_PATH = Path(os.environ.get(
+    "FMCSA_PASSPROP",
+    INPUT_DIR / "SMS_AB_PassProperty_20260514.csv",
+))
 CRASH_PATH = INPUT_DIR / "Crash_File.csv"
 # Hazmat counts source: SMS_Input_-_Inspection (NOT the raw Vehicle_Inspection_File).
 # Verified empirically: aggregating from this file with `Total_Hazmat_Sent > 0`
@@ -68,19 +74,29 @@ CRASH_PATH = INPUT_DIR / "Crash_File.csv"
 # approach (raw inspection file with HAZMAT_PLACARD_REQ='Y') produced 86 — way
 # under SAFER, because PLACARD_REQ is the strict regulatory-placard subset
 # while SAFER counts any inspection where hazmat was being transported.
-INSPECTION_PATH = _refreshable(
-    "SMS_Input_-_Inspection.csv", INPUT_DIR / "SMS_Input_-_Inspection_20260518.csv"
-)
+INSPECTION_PATH = Path(os.environ.get(
+    "FMCSA_INSPECTION_FILE",
+    _refreshable(
+        "SMS_Input_-_Inspection.csv", INPUT_DIR / "SMS_Input_-_Inspection_20260518.csv"
+    ),
+))
 # Critical-tier data sources (DOT Open Data Portal bulk extracts)
-COMPANY_CENSUS_PATH = _refreshable(
-    "Company_Census_File.csv", INPUT_DIR / "Company_Census_File.csv"
-)
-CARRIER_AUTH_PATH = INPUT_DIR / "Carrier_All_With_History.csv"
-ACTPEND_INSUR_PATH = INPUT_DIR / "ActPendInsur_All_With_History.csv"
+COMPANY_CENSUS_PATH = Path(os.environ.get(
+    "FMCSA_COMPANY_CENSUS",
+    _refreshable("Company_Census_File.csv", INPUT_DIR / "Company_Census_File.csv"),
+))
+CARRIER_AUTH_PATH = Path(os.environ.get(
+    "FMCSA_CARRIER_AUTH",
+    INPUT_DIR / "Carrier_All_With_History.csv",
+))
+ACTPEND_INSUR_PATH = Path(os.environ.get(
+    "FMCSA_ACTPEND",
+    INPUT_DIR / "ActPendInsur_All_With_History.csv",
+))
 
-OUT_PARQUET = OUTPUT_DIR / "carrier_aggregates.parquet"
-OUT_IDENTITY = OUTPUT_DIR / "carrier_identity.parquet"
-OUT_THRESHOLDS = OUTPUT_DIR / "national_thresholds.json"
+OUT_PARQUET = Path(os.environ.get("FMCSA_PARQUET", OUTPUT_DIR / "carrier_aggregates.parquet"))
+OUT_IDENTITY = Path(os.environ.get("FMCSA_IDENTITY_PARQUET", OUTPUT_DIR / "carrier_identity.parquet"))
+OUT_THRESHOLDS = Path(os.environ.get("FMCSA_THRESHOLDS_OUT", OUTPUT_DIR / "national_thresholds.json"))
 
 # Minimum inspections for a carrier's OOS rate to count toward the national
 # threshold distribution. FMCSA SMS uses a data-sufficiency threshold; we use 3.
@@ -551,7 +567,7 @@ def aggregate_chameleon() -> pl.LazyFrame:
       OOS — registered agent. Cluster size alone confuses the two; OOS
       count separates them.
 
-    Address normalization (must match chameleon_check.py if used together):
+    Address normalization:
       - Excluded: PO boxes ("P.O. BOX ...", "POST OFFICE BOX ..."), blank
         / "UNKNOWN" street rows, and any cluster ≥ MEGA_CLUSTER_CUTOFF
         (definite registered-agent / virtual-mailbox services).
@@ -989,7 +1005,7 @@ def build_identity(dot_universe: pl.DataFrame | None = None) -> pl.DataFrame:
         "CARRIER_MAILING_STATE", "CARRIER_MAILING_ZIP",
         "PHONE", "FAX", "CELL_PHONE", "EMAIL_ADDRESS",
         "COMPANY_OFFICER_1", "COMPANY_OFFICER_2",
-        "DUN_BRADSTREET_NO", "MCSIPSTEP", "MCSIPDATE",
+        "DUN_BRADSTREET_NO", "MCSIPSTEP", "MCSIPDATE", "HM_Ind",
     ]
     # INTERSTATE_*/INTRASTATE_* are DRIVER COUNTS by operating mode (not Y/N
     # flags as the column names suggest). Schneider has 2,660 interstate-far
@@ -1042,9 +1058,9 @@ def build_identity(dot_universe: pl.DataFrame | None = None) -> pl.DataFrame:
     )
 
     # Email domain derivation: extract the part after @, lowercase, for cheap
-    # chameleon-clustering by domain. Full email kept too — the size delta is
-    # ~3x as we measured (34MB vs 11MB) and brokers may want to actually
-    # contact the carrier.
+    # chameleon-clustering by domain. Full email is kept too because the email
+    # verification flow compares sender local-part@domain against FMCSA's
+    # registered address, especially for free-mail providers.
     email_domain = (
         pl.when(pl.col("EMAIL_ADDRESS").str.contains("@"))
         .then(pl.col("EMAIL_ADDRESS").str.split("@").list.get(-1).str.to_lowercase())
@@ -1053,11 +1069,6 @@ def build_identity(dot_universe: pl.DataFrame | None = None) -> pl.DataFrame:
 
     # Trims applied to fit identity parquet under GitHub's 100MB blob limit
     # (full schema was 144MB before these drops). What was cut and why:
-    #   - email_address (full): replaced by email_domain — full email costs
-    #     ~24MB to store the ~95%-unique values, vs ~11MB for the ~520k
-    #     unique domains, and chameleon-clustering only needs the domain.
-    #     Brokers who actually need to email a carrier can look it up
-    #     directly on FMCSA SAFER.
     #   - mail_street/city/state/zip: ~32MB. Mailing address is often the
     #     carrier's registered agent (Sentry Insurance, etc.), not where
     #     trucks operate. Less useful for chameleon than physical.
@@ -1076,6 +1087,7 @@ def build_identity(dot_universe: pl.DataFrame | None = None) -> pl.DataFrame:
             pl.col("PHY_ZIP").alias("phy_zip"),
             # Contact
             pl.col("PHONE").alias("phone"),
+            pl.col("EMAIL_ADDRESS").str.to_lowercase().alias("email_address"),
             email_domain.alias("email_domain"),
             # Officers + corporate identity
             pl.col("COMPANY_OFFICER_1").alias("company_officer_1"),
@@ -1101,6 +1113,7 @@ def build_identity(dot_universe: pl.DataFrame | None = None) -> pl.DataFrame:
             pl.col("MCSIPDATE").str.head(8).str.strptime(
                 pl.Date, format="%Y%m%d", strict=False
             ).dt.strftime("%Y-%m-%d").alias("mcsip_date"),
+            (pl.col("HM_Ind") == "Y").alias("hazmat_flag"),
             # Cargo capability flags (30 booleans)
             *cargo_exprs,
         )
@@ -1118,6 +1131,10 @@ def build_identity(dot_universe: pl.DataFrame | None = None) -> pl.DataFrame:
 # --- main -------------------------------------------------------------------
 
 def main() -> None:
+    OUT_PARQUET.parent.mkdir(parents=True, exist_ok=True)
+    OUT_IDENTITY.parent.mkdir(parents=True, exist_ok=True)
+    OUT_THRESHOLDS.parent.mkdir(parents=True, exist_ok=True)
+
     df = build_aggregate()
 
     log(f"Writing {OUT_PARQUET}")

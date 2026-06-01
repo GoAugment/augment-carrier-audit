@@ -21,11 +21,12 @@ For each (DOT_A, DOT_B) pair sharing a VIN, count distinct VINs. Keep
 only the largest sibling per DOT_A. O(N) Polars, no Python loops.
 """
 from pathlib import Path
+import os
 import polars as pl
 
 HERE = Path(__file__).parent
-PARQUET = HERE / "carrier_aggregates.parquet"
-INSP = Path("/Users/art/Downloads/SMS_Input_-_Inspection_20260518.csv")
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", HERE / "carrier_aggregates.parquet"))
+INSP = Path(os.environ.get("FMCSA_INSPECTION_FILE", "/Users/art/Downloads/SMS_Input_-_Inspection_20260518.csv"))
 
 def log(msg): print(f"[add_fleet_sharing] {msg}", flush=True)
 

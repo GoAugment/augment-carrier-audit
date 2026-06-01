@@ -30,7 +30,8 @@ PARQUET = Path(os.environ.get(
 ))
 _REFRESH = os.environ.get("FMCSA_REFRESH_DIR")
 INSP = (
-    Path(_REFRESH) / "SMS_Input_-_Inspection.csv" if _REFRESH
+    Path(os.environ["FMCSA_INSPECTION_FILE"]) if os.environ.get("FMCSA_INSPECTION_FILE")
+    else Path(_REFRESH) / "SMS_Input_-_Inspection.csv" if _REFRESH
     else Path("/Users/art/Downloads/SMS_Input_-_Inspection_20260518.csv")
 )
 POWER_UNIT_TYPES = [

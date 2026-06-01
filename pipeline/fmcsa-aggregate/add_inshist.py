@@ -38,13 +38,14 @@ against sample rows in the May 2026 snapshot:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import polars as pl
 
 HERE = Path(__file__).parent
-INSHIST = Path("/Users/art/Downloads/inshist_allwithhistory.txt")
-PARQUET = HERE / "carrier_aggregates.parquet"
+INSHIST = Path(os.environ.get("FMCSA_INSHIST", "/Users/art/Downloads/inshist_allwithhistory.txt"))
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", HERE / "carrier_aggregates.parquet"))
 
 # Match the convention used elsewhere in this pipeline.
 SNAPSHOT_DATE = "2026-05-14"

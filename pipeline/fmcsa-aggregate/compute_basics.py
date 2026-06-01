@@ -66,12 +66,24 @@ def _src(refresh_name: str, fallback: str) -> Path:
     return Path(fallback)
 
 
-INSP_CSV = _src("SMS_Input_-_Inspection.csv", "/Users/art/Downloads/SMS_Input_-_Inspection_20260518.csv")
-VIOL_CSV = _src("SMS_Input_-_Violation.csv", "/Users/art/Downloads/SMS_Input_-_Violation_20260518.csv")
-CRASH_CSV = _src("SMS_Input_-_Crash.csv", "/Users/art/Downloads/SMS_Input_-_Crash_20260518.csv")
+INSP_CSV = Path(os.environ.get(
+    "FMCSA_INSPECTION_FILE",
+    _src("SMS_Input_-_Inspection.csv", "/Users/art/Downloads/SMS_Input_-_Inspection_20260518.csv"),
+))
+VIOL_CSV = Path(os.environ.get(
+    "FMCSA_VIOLATION_FILE",
+    _src("SMS_Input_-_Violation.csv", "/Users/art/Downloads/SMS_Input_-_Violation_20260518.csv"),
+))
+CRASH_CSV = Path(os.environ.get(
+    "FMCSA_CRASH_FILE",
+    _src("SMS_Input_-_Crash.csv", "/Users/art/Downloads/SMS_Input_-_Crash_20260518.csv"),
+))
 SCRAPE_DIR = Path(
-    "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
-    "data/fmcsa_scrape"
+    os.environ.get(
+        "FMCSA_SCRAPE_DIR",
+        "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
+        "data/fmcsa_scrape",
+    )
 )
 
 SNAPSHOT = datetime(2026, 5, 18)

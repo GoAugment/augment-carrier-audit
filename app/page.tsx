@@ -238,7 +238,10 @@ export default function Home() {
       {/* Result */}
       {result && (
         <section className="border-b border-ink-100 bg-ink-50">
-          <div className="mx-auto max-w-5xl px-6 py-12">
+          {/* Results use a wider column than the rest of the page: the 14-column
+              matrix needs the room so the carrier meta (DOT · peer group · loads)
+              stays on one line and rows stay short and scannable. */}
+          <div className="mx-auto max-w-7xl px-6 py-12">
             {result.rows.length > 0 ? (
               <Scorecard rows={result.rows} result={result} />
             ) : (

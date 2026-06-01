@@ -87,12 +87,18 @@ from tenacity import (
 # ---------------------------------------------------------------------------
 
 PARQUET_AGG = Path(
-    "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
-    "data/carrier_aggregates.parquet"
+    os.environ.get(
+        "FMCSA_PARQUET",
+        "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
+        "data/carrier_aggregates.parquet",
+    )
 )
 OUTPUT_DIR = Path(
-    "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
-    "data/fmcsa_scrape"
+    os.environ.get(
+        "FMCSA_SCRAPE_DIR",
+        "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
+        "data/fmcsa_scrape",
+    )
 )
 SNAPSHOT_TAG = "20260514"  # SMS data vintage — see SMS_DATA_TAG below
 
@@ -399,7 +405,7 @@ def select_universe(crash_sufficiency_only: bool = True) -> list[int]:
 
     crash = (
         pl.scan_csv(
-            "/Users/art/Downloads/SMS_Input_-_Crash_20260518.csv",
+            os.environ.get("FMCSA_CRASH_FILE", "/Users/art/Downloads/SMS_Input_-_Crash_20260518.csv"),
             ignore_errors=True,
             schema_overrides={"DOT_Number": pl.Int64},
         )
