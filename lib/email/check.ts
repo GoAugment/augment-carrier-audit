@@ -66,6 +66,7 @@ function verdictKey(e: ExtractedEmail): string {
     (e.sender_metadata.sender_email ?? "").toLowerCase(),
     (e.sender_metadata.reply_to_domain ?? "").toLowerCase(),
     (e.sender_candidates ?? []).join(","),
+    (e.phone_candidates ?? []).join(","),
   ].join("|");
 }
 
@@ -154,6 +155,7 @@ async function computeVerdict(e: ExtractedEmail): Promise<Verdict> {
   mark("evalAuditTier");
   signals.push(...evalIdentityCoherence(e, carrier, identity));
   signals.push(...evalSenderCandidates(e, identity));
+  signals.push(...evalPhoneCandidates(e, identity));
   signals.push(...evalLaneViability(e, identity));
   signals.push(...evalLaneCoverage(e, carrier));
   signals.push(...evalHazmat(e, identity, carrier));
@@ -424,6 +426,60 @@ function evalSenderCandidates(
       detail: fmcsaIsFree
         ? `None of the ${n} email${n === 1 ? "" : "s"} found on the page are the address FMCSA has on file (${fmcsaEmail}). The carrier's own email may not be listed here — verify out-of-band before tendering.`
         : `None of the ${n} email${n === 1 ? "" : "s"} found on the page are on the carrier's FMCSA email domain (${fmcsaDomain}). The carrier's own email may not be listed here — verify out-of-band before tendering.`,
+    },
+  ];
+}
+
+// ============================================================================
+// Evaluator 2c: Phone among page candidates (captured-page path)
+// ============================================================================
+
+/**
+ * Phone counterpart to evalSenderCandidates. A captured page lists several
+ * phone numbers (customer, broker, carrier), so instead of betting on one
+ * "claimed phone" we check whether the carrier's FMCSA-registered phone is
+ * among ALL the numbers on the page. Match → positive info; none → soft
+ * "verify" info. Never a hard flag (the carrier's number may not be listed).
+ * Only runs when there's no single claimed phone (the inbound-email path sets
+ * one from the signature and is handled by evalIdentityCoherence).
+ */
+function fmtPhone(d: string): string {
+  const x = d.slice(-10);
+  return x.length === 10 ? `(${x.slice(0, 3)}) ${x.slice(3, 6)}-${x.slice(6)}` : d;
+}
+function evalPhoneCandidates(
+  e: ExtractedEmail,
+  identity: CarrierIdentity | undefined
+): Signal[] {
+  if (e.identity_claims.claimed_phone) return []; // single claimed phone handled elsewhere
+  const fmcsa10 = (identity?.phone ?? "").replace(/\D/g, "").slice(-10);
+  if (fmcsa10.length !== 10) return []; // no FMCSA phone to match against
+  const cands = Array.from(
+    new Set(
+      (e.phone_candidates ?? [])
+        .map((c) => c.replace(/\D/g, "").slice(-10))
+        .filter((c) => c.length === 10)
+    )
+  );
+  if (cands.length === 0) return [];
+
+  const n = cands.length;
+  if (cands.includes(fmcsa10)) {
+    return [
+      {
+        category: "identity_coherence",
+        tier: "info",
+        label: "Carrier phone found among page contacts",
+        detail: `One of the ${n} phone number${n === 1 ? "" : "s"} on the page is the number FMCSA has on file for this carrier (${fmtPhone(fmcsa10)}).`,
+      },
+    ];
+  }
+  return [
+    {
+      category: "identity_coherence",
+      tier: "info",
+      label: "Carrier phone not among page contacts",
+      detail: `None of the ${n} phone number${n === 1 ? "" : "s"} on the page are the number FMCSA has on file for this carrier (${fmtPhone(fmcsa10)}). The carrier's own line may not be listed here — verify out-of-band before tendering.`,
     },
   ];
 }
