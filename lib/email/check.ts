@@ -915,6 +915,7 @@ function composeVerdict(
       dotIssued: carrier.dotAddDate?.slice(0, 4) ?? null,
       mostRecentRevocationDate: carrier.mostRecentInvoluntaryDate ?? null,
       allowedToOperate: carrier.allowedToOperate ?? null,
+      statusCode: carrier.statusCode ?? null,
       operatingArea: identity?.operatingArea ?? null,
       cargoCapabilities: cargoCaps,
       fmcsaEmailDomain: identity?.emailDomain ?? null,

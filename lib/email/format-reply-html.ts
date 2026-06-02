@@ -156,6 +156,17 @@ function renderPreheader(text: string): string {
  *  revoked authority or $0 insurance, so the action is "stop," not "verify."
  *  Returns the base headline unchanged for non-critical tiers or when no
  *  specific finding pattern matches. */
+/** A recent revocation reads as "reinstated" (not a current "do not tender")
+ *  only when FMCSA shows the carrier currently active (status_code=A) AND
+ *  insurance is restored. status_code=A alone isn't enough — a carrier can read
+ *  Active while still carrying $0 BIPD, meaning the lapse that drove the
+ *  revocation isn't cured. */
+function revocationReinstated(c: NonNullable<Verdict["carrier"]>): boolean {
+  const code = (c.statusCode ?? "").toUpperCase();
+  const allowed = (c.allowedToOperate ?? "").toUpperCase();
+  return code === "A" && allowed !== "N" && (c.bipdAmount ?? 0) > 0;
+}
+
 function criticalHeadline(verdict: Verdict, base: string): string {
   const c = verdict.carrier;
   if (!c) return base;
@@ -164,8 +175,12 @@ function criticalHeadline(verdict: Verdict, base: string): string {
 
   const reasonsText = c.audit.reasonLabels.join(" ").toLowerCase();
   const findings: string[] = [];
-  // Revoked authority, strongest possible signal, takes precedence.
+  // Revoked authority, strongest possible signal, takes precedence — but ONLY
+  // when the carrier is not currently active. A recent revocation date on a
+  // carrier FMCSA still shows active (status_code=A) was reinstated, so
+  // "Authority revoked. Do not tender." would be false.
   if (
+    !revocationReinstated(c) &&
     c.mostRecentRevocationDate &&
     Date.now() - Date.parse(c.mostRecentRevocationDate) < 24 * 30 * 86400000
   ) {
@@ -1316,13 +1331,23 @@ export function buildReplyHtml(verdict: Verdict, extracted?: ExtractedEmail): st
     const revokeMs = c.mostRecentRevocationDate ? Date.parse(c.mostRecentRevocationDate) : NaN;
     const revokeRecent =
       Number.isFinite(revokeMs) && Date.now() - revokeMs < 24 * 30 * 86400000;
+    const active = revocationReinstated(c);
     const notAllowed = c.allowedToOperate != null && c.allowedToOperate !== "Y";
-    if (revokeRecent && c.mostRecentRevocationDate) {
+    if (revokeRecent && c.mostRecentRevocationDate && !active) {
       const daysAgo = Math.round((Date.now() - revokeMs) / 86400000);
       const ago = daysAgo < 60 ? `${daysAgo} days ago` : `${Math.round(daysAgo / 30)} mo ago`;
       cells.push(labelValueCell(
         "Authority",
         `<span style="color:${C.redInkPill};font-weight:700;">REVOKED ${esc(c.mostRecentRevocationDate)}</span> <span style="color:${C.inkMuted};font-weight:400;">(${esc(ago)})</span>`
+      ));
+    } else if (revokeRecent && c.mostRecentRevocationDate && active) {
+      // Revoked then reinstated — currently active. Amber, not red: a pattern
+      // risk to verify, not a current "do not tender" revocation.
+      const daysAgo = Math.round((Date.now() - revokeMs) / 86400000);
+      const ago = daysAgo < 60 ? `${daysAgo} days ago` : `${Math.round(daysAgo / 30)} mo ago`;
+      cells.push(labelValueCell(
+        "Authority",
+        `<span style="color:${C.amberInkPill};font-weight:700;">Active</span> <span style="color:${C.inkMuted};font-weight:400;">· revoked ${esc(c.mostRecentRevocationDate)} (${esc(ago)}), since reinstated</span>`
       ));
     } else if (notAllowed) {
       cells.push(labelValueCell(
