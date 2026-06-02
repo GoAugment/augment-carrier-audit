@@ -354,15 +354,13 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
     }
   }
 
-  // Inbox/list heuristic: a single carrier email or load page has a handful of
-  // emails; an email INBOX has dozens of unrelated ones (github, amazon, …).
-  // When we see that many, the candidate emails/phones are noise, not the
-  // carrier's contacts — suppress them so we don't render a wall of junk.
-  // (The DOT/MC + lane still drive the audit; open the specific email for a
-  // real sender check.) Don't suppress when the user made a selection.
-  const looksLikeList = !((cap.sel || "").trim().length > 30) && senderCandidates.length > 8;
-  const emails = looksLikeList ? [] : senderCandidates;
-  const phones = looksLikeList ? [] : phoneCandidates;
+  // Keep ALL candidates flowing to the check so the carrier's FMCSA email/phone
+  // is still found even amid inbox noise (Gmail keeps the whole inbox list in
+  // the DOM even when one email is open). The wall-of-junk problem is handled
+  // at RENDER time: when none match FMCSA and there are many, we collapse the
+  // display to a single count instead of suppressing the match entirely.
+  const emails = senderCandidates;
+  const phones = phoneCandidates;
 
   return {
     source: "page",

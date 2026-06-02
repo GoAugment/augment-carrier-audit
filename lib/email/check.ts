@@ -947,7 +947,7 @@ async function evalEmailAuthenticity(
           category: "email_authenticity",
           tier: "info",
           label: getRule("sender-domain-auth-configured").label,
-          detail: `${senderDomain} publishes ${parts.join(" + ")} on DNS and accepts inbound mail (MX configured). This doesn't prove this specific email is authentic (inline forwards strip auth headers), but the domain itself is set up like a real business.`,
+          detail: `${senderDomain} publishes ${parts.join(" + ")} on DNS and accepts inbound mail (MX configured) — set up like a real business. This is domain reputation, not proof a specific message is authentic.`,
         });
       }
     }
