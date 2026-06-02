@@ -2066,23 +2066,43 @@ function scoreCarrier(
   if (enforcement.reason) reasons.push(enforcement.reason);
 
   // Compute overall risk tier
-  // Start with the worst per-axis status
-  const cellStatuses: AxisStatus[] = [
+  // Start with the worst per-axis status, but split the BASIC axes by their
+  // measured crash-prediction lift (see SAFETY_WEIGHTS). Crash and Unsafe
+  // Driving are the high-lift crash-correlated BASICs and gate the verdict
+  // directly, alongside the regulatory / insurance / identity axes. HOS,
+  // Driver Fitness, Vehicle Maintenance and Hazmat Compliance are near-flat
+  // for crashes, so a SINGLE one of them alone must not seed a High verdict —
+  // it caps at Medium (awareness). Two crash-correlated BASICs ≥90th still
+  // escalate via the FAST-Act bump below, and any of these compliance BASICs
+  // can still contribute to that multi-signal pattern.
+  const worstOf = (statuses: AxisStatus[]): AxisStatus => {
+    let w: AxisStatus = "clean";
+    for (const s of statuses) if (statusRank(s) > statusRank(w)) w = s;
+    return w;
+  };
+  const gatingStatuses: AxisStatus[] = [
     crash.cell.status,
     udCell.status,
-    hosCell.status,
-    driverCell.status,
-    vehicleCell.status,
-    hazmat.cell.status,
     revocation.cell.status,
     authority.cell.status,
     insurance.cell.status,
   ];
-  let worst: AxisStatus = "clean";
-  for (const s of cellStatuses) {
-    if (statusRank(s) > statusRank(worst)) worst = s;
+  // Low-lift compliance BASICs: capped at Medium when they're the sole driver.
+  const complianceStatuses: AxisStatus[] = [
+    hosCell.status,
+    driverCell.status,
+    vehicleCell.status,
+    hazmat.cell.status,
+  ];
+  let level: RiskLevel = statusToRiskLevel(worstOf(gatingStatuses));
+  // A compliance BASIC on its own can raise the verdict to Medium, never above.
+  const complianceLevel = statusToRiskLevel(worstOf(complianceStatuses));
+  if (
+    complianceLevel !== "Low" &&
+    TIER_ORDER.indexOf("Medium") < TIER_ORDER.indexOf(level)
+  ) {
+    level = "Medium";
   }
-  let level: RiskLevel = statusToRiskLevel(worst);
 
   // Bumps for compound signals
   const isSignal = (s: AxisStatus) => s !== "clean" && s !== "na" && s !== "info";
