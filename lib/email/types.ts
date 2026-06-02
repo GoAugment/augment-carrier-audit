@@ -158,6 +158,10 @@ export interface VerdictCarrierSummary {
   mostRecentRevocationDate: string | null;
   /** FMCSA "allowed to operate" flag. "N" means authority has been pulled. */
   allowedToOperate: string | null;
+  /** FMCSA MCMIS status_code ("A" = active). Distinguishes a currently-revoked
+   *  carrier from one that was revoked then REINSTATED (active again): a recent
+   *  involuntary-revocation date alone doesn't mean "currently revoked". */
+  statusCode: string | null;
   /** Coarse operating area (interstate_otr / interstate_local / intrastate_*). */
   operatingArea: string | null;
   /** Up to 3 cargo types from the carrier's MCS-150 self-declaration —

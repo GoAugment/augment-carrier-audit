@@ -561,13 +561,39 @@ function computeRiskScore(
       "FMCSA safety rating is Conditional (milder than Unsatisfactory)."
     );
   }
+  // A carrier that is CURRENTLY active (status_code=A) but has a recent
+  // involuntary revocation was revoked-then-reinstated (typically an insurance
+  // lapse it later cured) — NOT currently revoked. Treating that as "Authority
+  // revoked. Do not tender." is wrong (e.g. F2F TRANSPORT DOT 239699: 6
+  // involuntary revocations, last 2025-10-20, but status_code=A with $1M BIPD
+  // on file). Only fire the hard "recent revocation" signal when the carrier is
+  // not currently active; when active, surface the reinstatement pattern as a
+  // softer risk (it still scores via insurance churn below).
+  // "Reinstated" requires BOTH currently active (status_code=A) AND insurance
+  // restored. status_code=A alone isn't enough: a carrier can read Active while
+  // still carrying $0 BIPD (e.g. TIMEKEEPER TRUCKING DOT 2564360 — revoked
+  // 2025-07-14, status A, but $0 on file), i.e. the lapse that drove the
+  // revocation isn't cured. Only when insurance is back (not sub-minimum) is
+  // the revocation truly behind them (e.g. F2F DOT 239699: $1M on file).
+  const currentlyActive = code === "A" && allowed !== "N";
+  const revocationReinstated = currentlyActive && !subMin;
   const involDaysAgo = daysAgo(c.mostRecentInvoluntaryDate);
-  if (involDaysAgo != null && involDaysAgo <= 730) {
+  if (involDaysAgo != null && involDaysAgo <= 730 && !revocationReinstated) {
     add(
       30,
       "Authority / insurance",
       getRule("recent-revocation").label,
-      `Own authority was involuntarily revoked within 24 months (${c.mostRecentInvoluntaryDate}).`
+      `Own authority was involuntarily revoked within 24 months (${c.mostRecentInvoluntaryDate})${currentlyActive ? " and insurance is still not on file" : `; FMCSA status_code=${code || "?"} (not currently active)`}.`
+    );
+  } else if (involDaysAgo != null && involDaysAgo <= 730 && revocationReinstated) {
+    const repeated = c.involuntaryRevocations >= 3;
+    add(
+      repeated ? 18 : 10,
+      "Authority / insurance",
+      repeated
+        ? "Repeated authority revocations (reinstated)"
+        : "Recent revocation, since reinstated",
+      `Authority was involuntarily revoked ${c.mostRecentInvoluntaryDate} but has since been reinstated — FMCSA shows it currently active (status_code=A). ${c.involuntaryRevocations}× involuntary revocation${c.involuntaryRevocations === 1 ? "" : "s"} on record; a pattern of authority/insurance lapses. Confirm a current COI and watch for re-lapse.`
     );
   } else if (
     c.priorRevokeFlag &&
@@ -1161,15 +1187,25 @@ function classifyRevocation(c: FmcsaCarrier): {
   recent: boolean;
 } {
   const reasons: Reason[] = [];
+  const code = (c.statusCode ?? "").toUpperCase();
+  const allowed = (c.allowedToOperate ?? "").toUpperCase();
+  // Revoked-then-reinstated requires currently active (status_code=A) AND
+  // insurance restored — status A alone isn't enough (a carrier can read Active
+  // with $0 BIPD, meaning the lapse that drove the revocation isn't cured).
+  const reinstated =
+    code === "A" && allowed !== "N" && c.bipdInsuranceOnFile > 0;
   const sinceLastInvol = daysAgo(c.mostRecentInvoluntaryDate);
-  const recent =
+  const recentRevoke =
     sinceLastInvol !== null && sinceLastInvol <= RECENT_REVOCATION_WINDOW_DAYS;
+  // `recent` means a CURRENTLY-EFFECTIVE recent revocation (drives the Critical
+  // gate + chameleon floor). A reinstated one (active again, insured) is not.
+  const recent = recentRevoke && !reinstated;
 
   let status: AxisStatus = "clean";
   let display = "—";
   const detailParts: string[] = [];
 
-  if (recent) {
+  if (recentRevoke && !reinstated) {
     status = "high";
     display = c.mostRecentInvoluntaryDate ?? "Recent";
     detailParts.push(
@@ -1177,7 +1213,25 @@ function classifyRevocation(c: FmcsaCarrier): {
     );
     reasons.push({
       label: getRule("recent-revocation").label,
-      detail: `${c.mostRecentInvoluntaryDate}, FMCSA pulled authority within the last 24 months.`,
+      detail: `${c.mostRecentInvoluntaryDate}, FMCSA pulled authority within the last 24 months and shows it not currently active.`,
+    });
+  } else if (recentRevoke && reinstated) {
+    // Revoked then reinstated — currently active + insured again. Surface as a
+    // pattern risk (elevated), not a "do not tender" revocation.
+    status = "elevated";
+    display =
+      c.involuntaryRevocations > 1
+        ? `${c.involuntaryRevocations}× revoked, reinstated`
+        : "Revoked, reinstated";
+    detailParts.push(
+      `Involuntarily revoked ${c.mostRecentInvoluntaryDate} but since reinstated; FMCSA shows it currently active. ${c.involuntaryRevocations} involuntary revocation${c.involuntaryRevocations === 1 ? "" : "s"} on record.`
+    );
+    reasons.push({
+      label:
+        c.involuntaryRevocations >= 3
+          ? "Repeated authority revocations (reinstated)"
+          : "Recent revocation, since reinstated",
+      detail: `${c.mostRecentInvoluntaryDate}, FMCSA pulled authority within the last 24 months but it has since been reinstated (currently active). Pattern of insurance/authority lapses — confirm a current COI.`,
     });
   } else if (c.revocationsTotal > 0) {
     // Historical revocations only, surface the count as neutral context (grey,
