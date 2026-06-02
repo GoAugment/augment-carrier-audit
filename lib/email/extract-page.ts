@@ -197,15 +197,30 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
   const { text } = scanText(cap);
 
   // --- DOT / MC ---
-  // Tolerant of filler between the label and the number: "DOT 3533697",
-  // "USDOT# 3533697", "DOT no. 3533697", "our DOT is 3533697". The lazy
-  // \D{0,N}? caps how far the number can sit from the label to avoid grabbing
-  // an unrelated number elsewhere on the page. \bMC\b boundary avoids matching
-  // "MC" inside words like "MCLEAN".
-  const dotM = text.match(/\b(?:US)?DOT\D{0,12}?(\d{4,8})\b/i);
-  const mcM = text.match(/\bMC\b\D{0,10}?(\d{3,8})\b/i);
-  const dot_number = dotM ? dotM[1] : null;
-  const mc_number = mcM ? `MC-${mcM[1]}` : null;
+  // The "MC/DOT Number" label (T1) is ambiguous, so trust the VALUE's own
+  // prefix first: a digit-attached "MC116400" / "MC-116400" / "USDOT 116400"
+  // tells us the type for certain. Only when no prefixed-attached form exists
+  // do we fall back to the looser label form ("DOT is 3533697"), defaulting a
+  // bare number to DOT.
+  let dot_number: string | null = null;
+  let mc_number: string | null = null;
+  // MC bound to its digits (optional - or # or a single space, e.g. the T1
+  // value "MC116400"). The leading boundary stops it matching "...MC" inside
+  // a word.
+  const mcAttached = text.match(/(?:^|[^A-Za-z0-9])MC[-#]?\s?(\d{3,8})\b/i);
+  // (US)DOT bound to its digits.
+  const dotAttached = text.match(/(?:^|[^A-Za-z0-9])(?:US[-\s]?)?DOT[-#:]?\s?(\d{4,8})\b/i);
+  if (mcAttached) mc_number = `MC-${mcAttached[1]}`;
+  if (dotAttached) dot_number = dotAttached[1];
+  if (!dot_number && !mc_number) {
+    // Ambiguous label form: "MC/DOT Number: 1234567", "our DOT is 3533697".
+    const dotLabeled = text.match(/\b(?:US)?DOT\b\D{0,14}?(\d{4,8})\b/i);
+    if (dotLabeled) dot_number = dotLabeled[1];
+    else {
+      const mcLabeled = text.match(/\bMC\b\D{0,12}?(\d{3,8})\b/i);
+      if (mcLabeled) mc_number = `MC-${mcLabeled[1]}`;
+    }
+  }
 
   // --- sender (email gut check) ---
   const senderEmail = findSenderEmail(html, text).toLowerCase().trim();
@@ -216,12 +231,32 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
   if (replyToDomain && senderDomain && replyToDomain === senderDomain) replyToDomain = null;
 
   // --- lane (coverage gut check) ---
-  const from = stateAfter(text, "origin|pickup|pick[\\s-]?up|ship\\s*from|p[\\s.]*u\\b");
-  const to = stateAfter(text, "destination|delivery|consignee|deliver\\s*to|ship\\s*to|drop|d[\\s.]*el\\b");
+  let from = stateAfter(text, "origin|pickup|pick[\\s-]?up|ship\\s*from|p[\\s.]*u\\b");
+  let to = stateAfter(text, "destination|delivery|consignee|deliver\\s*to|ship\\s*to|drop|d[\\s.]*el\\b");
+  if (!from || !to) {
+    // TMS stop lists (T1) render facilities as "City: Elkton State: VA" …
+    // "City: Union State: NJ" with no origin/dest words. Take the first two
+    // DISTINCT states that follow a "State:" label as origin → destination
+    // (billing/customer states repeat later, so first-two-distinct skips them).
+    const stRe = new RegExp(`\\bState:?\\s*${ST}\\b`, "gi");
+    const distinct: string[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = stRe.exec(text)) && distinct.length < 2) {
+      const s = m[1].toUpperCase();
+      if (!distinct.includes(s)) distinct.push(s);
+    }
+    if (!from && distinct[0]) from = distinct[0];
+    if (!to && distinct[1]) to = distinct[1];
+  }
 
   // --- hazmat hint ---
+  // Explicit hazmat language only — bare "class 3" / loose "UN###" caused
+  // false positives (e.g. a palletized-beer load), which would wrongly fire
+  // the "hazmat not registered" check.
   const is_hazmat_load =
-    /\b(haz[\s-]?mat|placard|hazardous materials?|UN\s?\d{3,4}\b|class\s?[1-9]\b)\b/i.test(text);
+    /\b(haz[\s-]?mat|placard(?:ed)?|hazardous\s+(?:material|substance)|hazard\s+class|\bUN\s?\d{4}\b)\b/i.test(
+      text
+    );
 
   // --- phone (claimed) ---
   const phoneM = text.match(/(?:phone|tel|cell|call|ph)\b[:\s.]*((?:\+?1[\s.\-]*)?\(?\d{3}\)?[\s.\-]*\d{3}[\s.\-]*\d{4})/i);
