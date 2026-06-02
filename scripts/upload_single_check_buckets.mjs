@@ -45,7 +45,10 @@ function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) out.push(...walk(full));
-    else if (entry.isFile() && (entry.name.endsWith(".parquet") || entry.name === "metadata.json")) {
+    else if (
+      entry.isFile() &&
+      (entry.name.endsWith(".parquet") || entry.name.endsWith(".json.gz") || entry.name === "metadata.json")
+    ) {
       out.push(full);
     }
   }
@@ -79,7 +82,7 @@ async function worker() {
         access: "private",
         addRandomSuffix: false,
         allowOverwrite: true,
-        contentType: file.endsWith(".json") ? "application/json" : "application/octet-stream",
+        contentType: file.endsWith(".json") || file.endsWith(".json.gz") ? "application/json" : "application/octet-stream",
         multipart: size > 8 * 1024 * 1024,
         token: process.env.BLOB_READ_WRITE_TOKEN,
       });

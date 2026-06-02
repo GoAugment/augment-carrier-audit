@@ -31,6 +31,8 @@ const IDENTITY = "carrier_identity.parquet";
 // offline by scripts/build_risk_signals.cjs (re-run on the monthly refresh).
 const RISK_SIGNALS = "carrier_risk_signals.parquet";
 export const DOT_BUCKET_SIZE = 10_000;
+export const COMPACT_MC_PREFIX_LEN = 3;
+export const COMPACT_PHONE_PREFIX_LEN = 4;
 
 // One in-flight (or resolved) download per file. Concurrent requests on a cold
 // instance share a single download; warm requests reuse the /tmp file. A
@@ -135,6 +137,28 @@ async function resolveBucketSource(
   return resolveOptionalSource(`single-check-buckets/${kind}/${bucket}.parquet`);
 }
 
+function localCompactSource(name: string): string | null {
+  const local = path.join(process.cwd(), "data", name);
+  try {
+    if (fs.statSync(local).size > 0) return local;
+  } catch {
+    /* no local compact artifact */
+  }
+  return null;
+}
+
+function compactPrefix(digits: string, len: number): string | null {
+  const normalized = digits.replace(/\D/g, "");
+  if (!normalized) return null;
+  return normalized.slice(0, Math.min(len, normalized.length));
+}
+
+async function resolveCompactSource(name: string): Promise<string | null> {
+  const local = localCompactSource(name);
+  if (local) return local;
+  return resolveOptionalSource(name);
+}
+
 export const getAggregatesParquetPath = (): Promise<string> => resolveSource(AGGREGATES);
 export const getIdentityParquetPath = (): Promise<string> => resolveSource(IDENTITY);
 export const getRiskSignalsParquetPath = (): Promise<string> => resolveSource(RISK_SIGNALS);
@@ -146,3 +170,19 @@ export const getMcIndexParquetPath = (): Promise<string | null> =>
   resolveOptionalSource("single-check-buckets/mc_index.parquet");
 export const getPhoneIndexParquetPath = (): Promise<string | null> =>
   resolveOptionalSource("single-check-buckets/phone_index.parquet");
+export const getCompactCarrierPath = (dot: number): Promise<string | null> =>
+  resolveCompactSource(`single-check-compact/carriers/bucket=${bucketForDot(dot)}.json.gz`);
+export const getCompactIdentityPath = (dot: number): Promise<string | null> =>
+  resolveCompactSource(`single-check-compact/identities/bucket=${bucketForDot(dot)}.json.gz`);
+export const getCompactMcPath = (digits: string): Promise<string | null> => {
+  const prefix = compactPrefix(digits, COMPACT_MC_PREFIX_LEN);
+  return prefix
+    ? resolveCompactSource(`single-check-compact/mc/prefix=${prefix}.json.gz`)
+    : Promise.resolve(null);
+};
+export const getCompactPhonePath = (digits: string): Promise<string | null> => {
+  const prefix = compactPrefix(digits, COMPACT_PHONE_PREFIX_LEN);
+  return prefix
+    ? resolveCompactSource(`single-check-compact/phone/prefix=${prefix}.json.gz`)
+    : Promise.resolve(null);
+};

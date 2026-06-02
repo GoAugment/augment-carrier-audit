@@ -15,3 +15,4 @@ pipeline/fmcsa-aggregate/national_thresholds.json
 # Runtime fetches these from private Vercel Blob.
 data/carrier_identity.parquet
 data/single-check-buckets
+data/single-check-compact
