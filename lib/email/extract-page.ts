@@ -109,6 +109,72 @@ function stateAfter(text: string, leadIns: string): string | null {
   return x ? x[1].toUpperCase() : null;
 }
 
+/** Diagnostics for tuning the scraper against a real page (T1, Outlook, …)
+ *  without round-tripping the raw HTML by hand. Returned by /api/check?debug=1.
+ *  Shows what we extracted PLUS the surrounding context for the labels we key
+ *  on, so we can see how a given host actually phrases the DOT/MC/lane. */
+export interface PageDiagnostics {
+  extracted: ExtractedEmail;
+  htmlLength: number;
+  textLength: number;
+  usedSelection: boolean;
+  textHead: string;
+  dotContexts: string[];
+  mcContexts: string[];
+  carrierContexts: string[];
+  senderCandidates: string[];
+  numbers4to8: string[];
+}
+
+function contextsAround(text: string, needle: RegExp, max = 8, pad = 55): string[] {
+  const g = new RegExp(needle.source, "gi");
+  const out: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = g.exec(text)) && out.length < max) {
+    const i = m.index;
+    out.push(
+      "…" +
+        text
+          .slice(Math.max(0, i - 12), Math.min(text.length, i + pad))
+          .replace(/\s+/g, " ")
+          .trim() +
+        "…"
+    );
+    if (g.lastIndex === i) g.lastIndex++; // guard against zero-width loops
+  }
+  return out;
+}
+
+export function pageDiagnostics(cap: PageCapture): PageDiagnostics {
+  const html = (cap.html || "").slice(0, 3_000_000);
+  const selTrim = (cap.sel || "").trim();
+  const usedSelection = selTrim.length > 30;
+  const text = (usedSelection ? selTrim : htmlToText(html)).slice(0, 300_000);
+
+  const senderCandidates: string[] = [];
+  const attrAll = html.match(/\bemail=["']\s*[^"']+@[^"']+\s*["']/gi) || [];
+  const mailtoAll = html.match(/mailto:[^"'?>\s]+@[^"'?>\s]+/gi) || [];
+  const fromAll = text.match(/From:\s*[^\n]{0,80}/gi) || [];
+  for (const s of [...attrAll.slice(0, 5), ...mailtoAll.slice(0, 5), ...fromAll.slice(0, 5)]) {
+    senderCandidates.push(s.replace(/\s+/g, " ").trim().slice(0, 90));
+  }
+
+  const numbers = Array.from(new Set(text.match(/\b\d{4,8}\b/g) || [])).slice(0, 40);
+
+  return {
+    extracted: extractFromPage(cap),
+    htmlLength: (cap.html || "").length,
+    textLength: text.length,
+    usedSelection,
+    textHead: text.slice(0, 1800),
+    dotContexts: contextsAround(text, /dot/),
+    mcContexts: contextsAround(text, /\bmc\b/),
+    carrierContexts: contextsAround(text, /carrier/),
+    senderCandidates,
+    numbers4to8: numbers,
+  };
+}
+
 export function extractFromPage(cap: PageCapture): ExtractedEmail {
   // Cap the raw HTML so a heavy SPA doesn't blow up regex/CPU; 3MB is plenty
   // for any real email/TMS page.
