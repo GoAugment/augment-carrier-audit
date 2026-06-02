@@ -437,10 +437,15 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
   // the carrier's FMCSA phone among them. Dedup by last-10-digits.
   const phoneCandidates: string[] = [];
   const seenPhones = new Set<string>();
+  // Skip placeholder / junk numbers a page renders as filler: NANP requires the
+  // area code and exchange to start 2–9 (kills "(000) 000-0000", "111-…"), and
+  // an all-identical-digit string ("000…", "555…") is filler, not a real line.
+  const isPlausiblePhone = (d10: string): boolean =>
+    /^[2-9]\d{2}[2-9]\d{6}$/.test(d10) && !/^(\d)\1{9}$/.test(d10);
   for (const m of text.matchAll(/(?:\+?1[\s.\-]?)?\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}\b/g)) {
     const raw = m[0].trim();
     const d10 = raw.replace(/\D/g, "").slice(-10);
-    if (d10.length === 10 && !seenPhones.has(d10)) {
+    if (d10.length === 10 && isPlausiblePhone(d10) && !seenPhones.has(d10)) {
       seenPhones.add(d10);
       phoneCandidates.push(raw);
       if (phoneCandidates.length >= 30) break;

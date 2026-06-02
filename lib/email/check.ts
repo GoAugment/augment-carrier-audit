@@ -1428,10 +1428,14 @@ function verdictDotNotFound(dot: number, _e: ExtractedEmail): Verdict {
 function normalizeMc(s: string | null | undefined): string | null {
   if (!s) return null;
   // Keep prefix + digits, uppercase. "mc-133655" / "MC 133655" / "MC#133655"
-  // → "MC133655". Reject stray standalone digits.
+  // → "MC133655". Reject stray standalone digits. Strip leading zeros from the
+  // numeric part — MC numbers are integers, so "MC-094857" and "MC-94857" are
+  // the same docket; without this the zero-padded form false-flags as a
+  // mismatch (the MC→DOT index already normalizes the same way).
   const m = s.match(/^(MC|MX|FF)[-_# ]*(\d+)/i);
   if (!m) return null;
-  return `${m[1].toUpperCase()}${m[2]}`;
+  const digits = m[2].replace(/^0+/, "") || "0";
+  return `${m[1].toUpperCase()}${digits}`;
 }
 
 function digitsOnly(s: string | null | undefined): string | null {
