@@ -161,6 +161,21 @@ export default function Home() {
             <span className="inline-flex items-center gap-1 text-sm text-ink-500">
               <span aria-hidden="true">↑</span> drag me up to your bookmarks bar
             </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                navigator.clipboard?.writeText(CHECK_CARRIER_BOOKMARKLET);
+                const b = e.currentTarget;
+                const prev = b.textContent;
+                b.textContent = "Copied!";
+                setTimeout(() => {
+                  b.textContent = prev;
+                }, 1500);
+              }}
+              className="rounded-md border border-ink-200 px-3 py-2 text-sm font-medium text-ink-700 hover:bg-ink-50"
+            >
+              Copy code
+            </button>
           </div>
 
           <ol className="mt-6 grid gap-3 text-sm text-ink-600 sm:grid-cols-3">
@@ -181,6 +196,12 @@ export default function Home() {
           <p className="mt-4 text-xs text-ink-500">
             Tip: on a busy inbox, open the specific email first (or highlight the carrier&apos;s
             block) so the check focuses on that carrier.
+          </p>
+          <p className="mt-2 text-xs text-ink-500">
+            A dragged bookmarklet shows your browser&apos;s generic globe icon (browsers
+            can&apos;t attach an icon to a <code className="font-mono">javascript:</code>{" "}
+            bookmark). Want the shield? Bookmark this page (it carries the icon), then edit
+            that bookmark and paste the copied code as its URL.
           </p>
         </div>
       </section>
