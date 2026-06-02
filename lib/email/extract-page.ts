@@ -250,13 +250,17 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
   }
 
   // --- hazmat hint ---
-  // Explicit hazmat language only — bare "class 3" / loose "UN###" caused
-  // false positives (e.g. a palletized-beer load), which would wrongly fire
-  // the "hazmat not registered" check.
+  // Only when AFFIRMATIVELY indicated. A bare "hazmat" keyword is NOT enough:
+  // every TMS load form (T1) carries a "Hazmat" field label in its markup, so
+  // scanning the page would flag every load (it false-fired on a palletized-
+  // beer load). Require placard/hazardous-material prose, a UN number, an
+  // affirmative hazmat value ("Hazmat: Yes"), or hazmat used as a load
+  // descriptor ("hazmat load/shipment").
   const is_hazmat_load =
-    /\b(haz[\s-]?mat|placard(?:ed)?|hazardous\s+(?:material|substance)|hazard\s+class|\bUN\s?\d{4}\b)\b/i.test(
-      text
-    );
+    /\b(placard(?:ed)?|hazardous\s+(?:materials?|substances?)|hazard\s+class\s*\d)\b/i.test(text) ||
+    /\bUN\s?\d{4}\b/.test(text) ||
+    /\bhaz[\s-]?mat\b\s*[:=]?\s*(?:yes|y|true|1|required|x|✓)\b/i.test(text) ||
+    /\bhaz[\s-]?mat\b\s+(?:load|shipment|freight|cargo|placard)/i.test(text);
 
   // --- phone (claimed) ---
   const phoneM = text.match(/(?:phone|tel|cell|call|ph)\b[:\s.]*((?:\+?1[\s.\-]*)?\(?\d{3}\)?[\s.\-]*\d{3}[\s.\-]*\d{4})/i);
