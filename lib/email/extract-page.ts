@@ -332,22 +332,89 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
   if (replyToDomain && senderDomain && replyToDomain === senderDomain) replyToDomain = null;
 
   // --- lane (coverage gut check) ---
+  // Resolve origin → destination as flexibly as the page allows. The state code
+  // is what the checks key off; cities are captured for display when we can get
+  // them. Direction doesn't affect the checks — coverage takes the worst-injury
+  // state of the pair, viability keys off interstate-ness — so first-seen order
+  // is fine.
+  //
+  // Collect every "City, ST [ZIP]" stop in document order first (TMS stop lists
+  // "Lewistown, PA" … "Dalton, OH", address blocks, or email prose "pickup in
+  // Dallas, TX"). The state abbreviation is the anchor; the city is 1–3
+  // capitalized words single-spaced before the comma (single-spaced so a label
+  // on the previous line isn't glued on), with an optional trailing ZIP.
+  const stopRe = new RegExp(
+    `([A-Z][A-Za-z.'\\-]*(?:[ ][A-Z][A-Za-z.'\\-]*){0,2})\\s*,\\s*${ST}\\b(?:\\s+\\d{5}(?:-\\d{4})?)?`,
+    "g"
+  );
+  // Leading lane-label words an all-caps "DEST UNION, NJ" / "Pickup Dallas, TX"
+  // glues onto the city — strip them so we keep just the place name.
+  const laneLabel =
+    /^(?:origin|destination|dest|pickup|pick\s*up|pu|delivery|deliver|drop\s*off?|drop|stops?|shipper|consignee|receiver|ship\s*(?:from|to)|from|to)\s+/i;
+  const cleanCity = (c: string): string | null => {
+    const t = c.replace(laneLabel, "").trim();
+    return t || null;
+  };
+  // Several state codes are also common English words (OR, IN, OK, ME, HI, DE,
+  // …), so a greeting/closing before a comma — "Hi, OR" / "Thanks, IN" — can
+  // masquerade as a stop. Drop a match whose whole "city" is one of these
+  // non-place words. (A real city named after one of these would need a second
+  // word, e.g. "Hi Nella" — still allowed.)
+  const NON_PLACE = new Set([
+    "hi", "hey", "hello", "thanks", "thank", "thx", "best", "regards", "cheers",
+    "dear", "sincerely", "yours", "yes", "no", "ok", "okay", "re", "fwd", "fw",
+    "sent", "from", "to", "cc", "bcc", "subject", "date", "as", "is", "of", "or",
+  ]);
+  const cityStops: { city: string | null; state: string }[] = [];
+  let lm: RegExpExecArray | null;
+  while ((lm = stopRe.exec(text))) {
+    if (NON_PLACE.has(lm[1].trim().toLowerCase())) continue;
+    cityStops.push({ city: cleanCity(lm[1]), state: lm[2].toUpperCase() });
+    if (cityStops.length >= 40) break;
+  }
+  // First two DISTINCT states (billing/remit lines repeat the same state later,
+  // so first-two-distinct skips them).
+  const distinctStops: { city: string | null; state: string }[] = [];
+  for (const s of cityStops) {
+    if (!distinctStops.some((x) => x.state === s.state)) distinctStops.push(s);
+    if (distinctStops.length >= 2) break;
+  }
+
+  let originCity: string | null = null;
+  let destCity: string | null = null;
+  // Explicit lead-ins win for the STATE ("origin … TX", "deliver to … IL").
   let from = stateAfter(text, "origin|pickup|pick[\\s-]?up|ship\\s*from|p[\\s.]*u\\b");
   let to = stateAfter(text, "destination|delivery|consignee|deliver\\s*to|ship\\s*to|drop|d[\\s.]*el\\b");
+  if (!from && distinctStops[0]) from = distinctStops[0].state;
+  if (!to && distinctStops[1]) to = distinctStops[1].state;
+  // Backfill the city for each end from whichever stop matches the resolved
+  // state (so a labeled "Pickup: Saint Louis, MO" still gets its city).
+  if (from) originCity = cityStops.find((s) => s.state === from && s.city)?.city ?? null;
+  if (to) destCity = cityStops.find((s) => s.state === to && s.city && s.city !== originCity)?.city ?? null;
+
   if (!from || !to) {
-    // TMS stop lists (T1) render facilities as "City: Elkton State: VA" …
-    // "City: Union State: NJ" with no origin/dest words. Take the first two
-    // DISTINCT states that follow a "State:" label as origin → destination
-    // (billing/customer states repeat later, so first-two-distinct skips them).
-    const stRe = new RegExp(`\\bState:?\\s*${ST}\\b`, "gi");
-    const distinct: string[] = [];
+    // TMS stop tables that split the address into fields: "City: Elkton State:
+    // VA" … "City: Union State: NJ" (no comma between city and state).
+    const stRe = new RegExp(
+      `(?:City:?\\s*([A-Za-z][A-Za-z .'\\-]*?)\\s+)?\\bState:?\\s*${ST}\\b`,
+      "gi"
+    );
+    const stops: { city: string | null; state: string }[] = [];
     let m: RegExpExecArray | null;
-    while ((m = stRe.exec(text)) && distinct.length < 2) {
-      const s = m[1].toUpperCase();
-      if (!distinct.includes(s)) distinct.push(s);
+    while ((m = stRe.exec(text)) && stops.length < 2) {
+      const s = m[2].toUpperCase();
+      if (!stops.some((x) => x.state === s)) {
+        stops.push({ city: m[1] ? m[1].trim() : null, state: s });
+      }
     }
-    if (!from && distinct[0]) from = distinct[0];
-    if (!to && distinct[1]) to = distinct[1];
+    if (!from && stops[0]) {
+      from = stops[0].state;
+      originCity = originCity ?? stops[0].city;
+    }
+    if (!to && stops[1]) {
+      to = stops[1].state;
+      destCity = destCity ?? stops[1].city;
+    }
   }
 
   // --- hazmat hint ---
@@ -424,9 +491,9 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
       specificity_score: from && to ? 2 : 1,
     },
     lane: {
-      origin_city: null,
+      origin_city: originCity,
       origin_state: from,
-      destination_city: null,
+      destination_city: destCity,
       destination_state: to,
       equipment_type: null,
       is_hazmat_load,
