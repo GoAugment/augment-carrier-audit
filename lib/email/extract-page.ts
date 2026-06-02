@@ -339,6 +339,7 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
   }
 
   return {
+    source: "page",
     extracted_text: "",
     summary: "Single-carrier check (captured page).",
     identity_claims: {

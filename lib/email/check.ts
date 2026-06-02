@@ -1083,6 +1083,18 @@ function composeVerdict(
         reasonLabels: audit?.reasons.map((r) => r.label) ?? [],
         reasons: audit?.reasons.map((r) => ({ label: r.label, detail: r.detail })) ?? [],
       },
+      riskScore: audit?.riskScore ?? null,
+      issScore: carrier.issScore ?? null,
+      issTier: carrier.issTier ?? null,
+      basics: [
+        { name: "Unsafe Driving", percentile: carrier.unsafeDrivingPercentile, alert: carrier.unsafeDrivingAlert === "Y" },
+        { name: "HOS Compliance", percentile: carrier.hosPercentile, alert: carrier.hosAlert === "Y" },
+        { name: "Driver Fitness", percentile: carrier.driverFitnessPercentile, alert: carrier.driverFitnessAlert === "Y" },
+        { name: "Controlled Subs", percentile: carrier.controlledSubstancesPercentile, alert: carrier.controlledSubstancesAlert === "Y" },
+        { name: "Vehicle Maint.", percentile: carrier.vehicleMaintenancePercentile, alert: carrier.vehicleMaintenanceAlert === "Y" },
+        { name: "Crash Indicator", percentile: carrier.crashIndicatorPercentile, alert: carrier.crashIndicatorAlert === "Y" },
+        { name: "Hazmat", percentile: carrier.hmCompliancePercentile, alert: carrier.hmComplianceAlert === "Y" },
+      ],
       physicalState: identity?.phyState ?? carrier.physicalState ?? null,
       physicalLocation,
       powerUnits: carrier.totalPowerUnits || null,
@@ -1290,7 +1302,7 @@ const ZERO_COVERAGE: VerdictCoverage = {
 function verdictNoDot(e: ExtractedEmail): Verdict {
   return {
     tier: "Caution",
-    summary: "Forward the carrier's full outreach (with signature and DOT or MC number) and we'll run the full safety check. Carriers without a clear DOT/MC are unverifiable. Never tender without one.",
+    summary: "Provide the carrier's DOT or MC number and we'll run the full safety check. Carriers without a clear DOT/MC are unverifiable — never tender without one.",
     carrier: null,
     signals: [
       {
@@ -1298,7 +1310,7 @@ function verdictNoDot(e: ExtractedEmail): Verdict {
         tier: "caution",
         label: getRule("no-dot-or-mc-in-email").label,
         detail:
-          "The email doesn't include a DOT or MC number, so we can't cross-check the sender against FMCSA. Reply asking the carrier to confirm their USDOT or MC number before tendering.",
+          "No DOT or MC number was found, so we can't cross-check this carrier against FMCSA. Confirm the carrier's USDOT or MC number before tendering.",
       },
     ],
     coverage: { ...ZERO_COVERAGE, email_auth_checked: true },
