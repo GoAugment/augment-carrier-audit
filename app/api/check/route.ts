@@ -26,8 +26,8 @@ import { extractFromPage, pageDiagnostics } from "@/lib/email/extract-page";
 
 function serverTiming(): string {
   return Object.entries(lastTimings)
-    .map(([k, v]) => `${k};dur=${v}`)
-    .join(",");
+    .map(([k, v]) => `${k}=${v}`)
+    .join(";");
 }
 
 export const dynamic = "force-dynamic";
@@ -109,10 +109,10 @@ export async function POST(req: NextRequest) {
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
-      // Per-phase timings for diagnosing prod latency (devtools Network →
-      // Timing, or `curl -sI`). `check;dur=` is the whole verdict; the rest are
-      // computeVerdict phases (all 0 on a verdict-cache hit).
-      "Server-Timing": `check;dur=${checkMs},${serverTiming()}`,
+      // Per-phase timings for diagnosing prod latency. (Vercel strips
+      // Server-Timing, so use a custom header.) `check=` is the whole verdict;
+      // the rest are computeVerdict phases (all 0 on a verdict-cache hit).
+      "x-check-timing": `check=${checkMs};${serverTiming()}`,
     },
   });
 }

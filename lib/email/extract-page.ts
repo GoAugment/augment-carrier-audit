@@ -109,36 +109,51 @@ function isIgnoredSenderDomain(domain: string, hostDomain: string): boolean {
   return false;
 }
 
-/** Find the carrier's sender address from genuine sender contexts (Gmail's
- *  email="" attr, a mailto: link, a "From:"/"Email:" line) — NOT just the first
- *  address on the page. Skips vendor-relay / loadboard / TMS-host domains so a
- *  contact-directory page doesn't yield a bogus "sender". Returns the first
- *  non-ignored candidate, or "" when there's no real sender on the page. */
-function findSenderEmail(html: string, text: string, hostDomain: string): string {
-  const E = "[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}";
-  const candidates: string[] = [];
-  for (const m of html.matchAll(new RegExp(`\\bemail=["']\\s*(${E})\\s*["']`, "gi"))) {
-    candidates.push(m[1]);
-  }
+const EMAIL_RE_SRC = "[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}";
+
+/** The ONE authoritative sender, from a genuine From: context only — Gmail's
+ *  email="" attr (the sender in the Gmail DOM) or a visible "From:" line. NOT
+ *  mailto/contact emails, which on a directory page are ambiguous. "" when the
+ *  page has no clear single sender (then we fall back to candidate matching).
+ *  Skips vendor-relay / loadboard / TMS-host domains. */
+function findAuthoritativeSender(html: string, text: string, hostDomain: string): string {
+  const ok = (a: string) => {
+    const dom = a.split("@").pop() ?? "";
+    return !!dom && !isIgnoredSenderDomain(dom, hostDomain);
+  };
+  const attr = html.match(new RegExp(`\\bemail=["']\\s*(${EMAIL_RE_SRC})\\s*["']`, "i"));
+  if (attr && ok(attr[1])) return attr[1].toLowerCase();
+  const fromAngle = text.match(new RegExp(`From:\\s*[^<\\n]*<(${EMAIL_RE_SRC})>`, "i"));
+  if (fromAngle && ok(fromAngle[1])) return fromAngle[1].toLowerCase();
+  const fromBare = text.match(new RegExp(`From:\\s*(${EMAIL_RE_SRC})`, "i"));
+  if (fromBare && ok(fromBare[1])) return fromBare[1].toLowerCase();
+  return "";
+}
+
+/** ALL distinct emails on the page (attr, mailto, From:/Email: lines, and bare
+ *  text), vendor/loadboard/host domains excluded. The check then looks for the
+ *  carrier's FMCSA-registered email/domain among these rather than betting on
+ *  one. Capped so a pathological page can't balloon the payload. */
+function findEmailCandidates(html: string, text: string, hostDomain: string): string[] {
+  const out: string[] = [];
+  const add = (a: string) => {
+    const e = a.toLowerCase().trim();
+    const dom = e.split("@").pop() ?? "";
+    if (dom && !isIgnoredSenderDomain(dom, hostDomain) && !out.includes(e)) out.push(e);
+  };
+  for (const m of html.matchAll(new RegExp(`\\bemail=["']\\s*(${EMAIL_RE_SRC})\\s*["']`, "gi"))) add(m[1]);
   for (const m of html.matchAll(/mailto:([^"'?>\s]+@[^"'?>\s]+)/gi)) {
     try {
-      candidates.push(decodeURIComponent(m[1]));
+      add(decodeURIComponent(m[1]));
     } catch {
-      candidates.push(m[1]);
+      add(m[1]);
     }
   }
-  const fromAngle = text.match(new RegExp(`From:\\s*[^<\\n]*<(${E})>`, "i"));
-  if (fromAngle) candidates.push(fromAngle[1]);
-  const fromBare = text.match(new RegExp(`From:\\s*(${E})`, "i"));
-  if (fromBare) candidates.push(fromBare[1]);
-  const emailLabel = text.match(new RegExp(`\\bE-?mail:?\\s*(${E})`, "i"));
-  if (emailLabel) candidates.push(emailLabel[1]);
-
-  for (const c of candidates) {
-    const dom = c.split("@").pop() ?? "";
-    if (dom && !isIgnoredSenderDomain(dom, hostDomain)) return c.toLowerCase();
+  for (const m of text.matchAll(new RegExp(EMAIL_RE_SRC, "gi"))) {
+    add(m[0]);
+    if (out.length >= 25) break;
   }
-  return "";
+  return out.slice(0, 25);
 }
 
 /** Sender display name from a "From: Display Name <addr>" line, when present. */
@@ -263,7 +278,11 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
   } catch {
     /* bad url */
   }
-  const senderEmail = findSenderEmail(html, text, hostDomain).toLowerCase().trim();
+  // One authoritative sender (real From:) drives the hard impersonation check;
+  // ALL candidate emails drive the soft "is the carrier's FMCSA email among
+  // these?" check (a page lists customer/broker/carrier — don't bet on one).
+  const senderEmail = findAuthoritativeSender(html, text, hostDomain);
+  const senderCandidates = findEmailCandidates(html, text, hostDomain);
   const senderDomain = senderEmail.includes("@") ? senderEmail.split("@").pop()! : "";
   const senderName = findSenderName(text);
   let replyToDomain = findReplyToDomain(text);
@@ -324,6 +343,7 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
       sender_display_name: senderName,
       reply_to_domain: replyToDomain,
     },
+    sender_candidates: senderCandidates.length ? senderCandidates : undefined,
     behavioral_signals: {
       is_response_to_load_posting: false,
       urgency_markers: [],
