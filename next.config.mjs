@@ -45,22 +45,12 @@ const nextConfig = {
         "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/package.json",
         "./node_modules/.pnpm/@mapbox+node-pre-gyp@*/**/*",
       ],
-      // Single-carrier check page + its email preview. Same bundle shape as
-      // /api/analyze: aggregates + risk_signals bundled, carrier_identity
-      // excluded (the page uses risk_signals; the email preview fetches
-      // identity from Blob at runtime) so we stay under the 250MB limit.
+      // Single-carrier check route — renders the email-style audit reply
+      // (checkCarrierEmail + buildReplyHtml). Same bundle shape as
+      // /api/email/inbound: aggregates + risk_signals + duckdb bundled,
+      // carrier_identity EXCLUDED (fetched from Blob at runtime) so we stay
+      // under the 250MB limit.
       "/check/[dot]": [
-        "./data/carrier_aggregates.parquet",
-        "./data/carrier_risk_signals.parquet",
-        "./data/national_thresholds.json",
-        "./lib/data/lane-liability.json",
-        "./node_modules/duckdb/lib/**/*",
-        "./node_modules/duckdb/package.json",
-        "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/lib/**/*",
-        "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/package.json",
-        "./node_modules/.pnpm/@mapbox+node-pre-gyp@*/**/*",
-      ],
-      "/check/[dot]/email": [
         "./data/carrier_aggregates.parquet",
         "./data/carrier_risk_signals.parquet",
         "./data/national_thresholds.json",
