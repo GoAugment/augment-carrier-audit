@@ -31,14 +31,18 @@ export async function POST(req: NextRequest) {
   let html = "";
   let url = "";
   let sel = "";
+  let fields = "";
   let debug = req.nextUrl.searchParams.get("debug") === "1";
   const ct = req.headers.get("content-type") ?? "";
   try {
     if (ct.includes("application/json")) {
-      const b = (await req.json()) as { html?: string; url?: string; sel?: string; debug?: unknown };
+      const b = (await req.json()) as {
+        html?: string; url?: string; sel?: string; fields?: string; debug?: unknown;
+      };
       html = b.html ?? "";
       url = b.url ?? "";
       sel = b.sel ?? "";
+      fields = b.fields ?? "";
       if (b.debug) debug = true;
     } else {
       // form-urlencoded or multipart (the bookmarklet path)
@@ -46,11 +50,12 @@ export async function POST(req: NextRequest) {
       html = String(form.get("html") ?? "");
       url = String(form.get("url") ?? "");
       sel = String(form.get("sel") ?? "");
+      fields = String(form.get("fields") ?? "");
       if (form.get("debug")) debug = true;
     }
   } catch {
     return NextResponse.json(
-      { error: "Expected a form POST (html, url?, sel?) or JSON { html, url?, sel? }" },
+      { error: "Expected a form POST (html, url?, sel?, fields?) or JSON" },
       { status: 400 }
     );
   }
@@ -58,13 +63,13 @@ export async function POST(req: NextRequest) {
   // Trace mode: show exactly what the scraper saw + extracted, so we can tune
   // the parser against a real host (T1, Outlook, …) without copy-pasting HTML.
   if (debug) {
-    const diag = pageDiagnostics({ html, url, sel });
+    const diag = pageDiagnostics({ html, url, sel, fields });
     return new NextResponse(renderDebug(diag, url), {
       headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
     });
   }
 
-  const extracted = extractFromPage({ html, url, sel });
+  const extracted = extractFromPage({ html, url, sel, fields });
 
   const verdict = await checkCarrierEmail(extracted);
   const replyHtml = buildReplyHtml(verdict, extracted);
