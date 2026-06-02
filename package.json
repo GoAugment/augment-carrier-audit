@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "check:parquet": "node scripts/check_parquet_schema.mjs",
     "check:parquet:clean": "node scripts/check_parquet_schema.mjs --exact",
+    "build:single-check-buckets": "node scripts/build_single_check_buckets.mjs --out data/single-check-buckets",
+    "upload:single-check-buckets": "node scripts/upload_single_check_buckets.mjs --src data/single-check-buckets",
     "test:rules": "tsx --env-file=.env.local scripts/test_rules.ts",
     "test:snapshots": "tsx --env-file=.env.local scripts/snapshot_audit.ts",
     "test": "pnpm check:parquet && pnpm test:rules && pnpm test:snapshots"

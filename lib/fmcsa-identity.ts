@@ -14,7 +14,12 @@
  */
 import type { Database } from "duckdb";
 import type { CarrierIdentityRiskSignals } from "./analyzer";
-import { getIdentityParquetPath, getRiskSignalsParquetPath } from "./parquet-source";
+import {
+  getIdentityBucketParquetPath,
+  getIdentityParquetPath,
+  getPhoneIndexParquetPath,
+  getRiskSignalsParquetPath,
+} from "./parquet-source";
 
 // NB: the free-email-domain list and the residential-address-marker regex now
 // live in scripts/build_risk_signals.cjs — those signals are precomputed
@@ -280,6 +285,21 @@ function rowToIdentity(r: ParquetRow): CarrierIdentity {
 // marks a DOT with no identity row so we don't re-query it.
 const identityCache = new Map<number, CarrierIdentity | null>();
 
+async function fetchIdentityRowsFromParquetPath(
+  parquetPath: string,
+  dots: number[]
+): Promise<ParquetRow[]> {
+  const placeholders = dots.map(() => "?").join(",");
+  return runQuery<ParquetRow>(
+    `
+      SELECT *
+      FROM read_parquet('${parquetPath.replace(/'/g, "''")}')
+      WHERE DOT_NUMBER IN (${placeholders})
+    `,
+    dots
+  );
+}
+
 export async function fetchIdentity(
   dots: number[]
 ): Promise<Map<number, CarrierIdentity>> {
@@ -298,14 +318,32 @@ export async function fetchIdentity(
   }
   if (misses.length === 0) return out;
 
-  const placeholders = misses.map(() => "?").join(",");
-  const idnPath = await getIdentityParquetPath();
-  const sql = `
-    SELECT *
-    FROM read_parquet('${idnPath.replace(/'/g, "''")}')
-    WHERE DOT_NUMBER IN (${placeholders})
-  `;
-  const rows = await runQuery<ParquetRow>(sql, misses);
+  const rows: ParquetRow[] = [];
+  const fallbackDots: number[] = [];
+  if (misses.length <= 25) {
+    const byBucketPath = new Map<string, number[]>();
+    for (const dot of misses) {
+      const bucketPath = await getIdentityBucketParquetPath(dot);
+      if (bucketPath) {
+        const group = byBucketPath.get(bucketPath) ?? [];
+        group.push(dot);
+        byBucketPath.set(bucketPath, group);
+      } else {
+        fallbackDots.push(dot);
+      }
+    }
+    for (const [bucketPath, bucketDots] of byBucketPath) {
+      rows.push(...(await fetchIdentityRowsFromParquetPath(bucketPath, bucketDots)));
+    }
+  } else {
+    fallbackDots.push(...misses);
+  }
+  if (fallbackDots.length > 0) {
+    rows.push(...(await fetchIdentityRowsFromParquetPath(
+      await getIdentityParquetPath(),
+      fallbackDots
+    )));
+  }
   const found = new Set<number>();
   for (const r of rows) {
     const identity = rowToIdentity(r);
@@ -400,6 +438,16 @@ let phoneIndexReady: Promise<void> | null = null;
 function ensurePhoneIndex(): Promise<void> {
   if (phoneIndexReady) return phoneIndexReady;
   phoneIndexReady = (async () => {
+    const phoneIndex = await getPhoneIndexParquetPath();
+    if (phoneIndex) {
+      await runQuery(
+        `CREATE TABLE IF NOT EXISTS phone_index AS
+         SELECT ph, DOT_NUMBER
+         FROM read_parquet('${phoneIndex.replace(/'/g, "''")}')`,
+        []
+      );
+      return;
+    }
     const idnPath = await getIdentityParquetPath();
     await runQuery(
       `CREATE TABLE IF NOT EXISTS phone_index AS

@@ -45,26 +45,10 @@ const nextConfig = {
         "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/package.json",
         "./node_modules/.pnpm/@mapbox+node-pre-gyp@*/**/*",
       ],
-      // Single-carrier check route — renders the email-style audit reply
-      // (checkCarrierEmail + buildReplyHtml). Same bundle shape as
-      // /api/email/inbound: aggregates + risk_signals + duckdb bundled,
-      // carrier_identity EXCLUDED (fetched from Blob at runtime) so we stay
-      // under the 250MB limit.
-      "/check/[dot]": [
-        "./data/carrier_aggregates.parquet",
-        "./data/carrier_risk_signals.parquet",
-        "./data/national_thresholds.json",
-        "./lib/data/lane-liability.json",
-        "./node_modules/duckdb/lib/**/*",
-        "./node_modules/duckdb/package.json",
-        "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/lib/**/*",
-        "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/package.json",
-        "./node_modules/.pnpm/@mapbox+node-pre-gyp@*/**/*",
-      ],
-      // POST /api/check — captured-page audit (bookmarklet target). Same data
-      // path as /check/[dot]: carrier_identity stays Blob-served at runtime.
+      // POST /api/check - captured-page audit (bookmarklet target). The single
+      // carrier path uses Blob-backed DOT buckets and small index parquets
+      // instead of bundling the 95MB aggregate parquet into this function.
       "/api/check": [
-        "./data/carrier_aggregates.parquet",
         "./data/carrier_risk_signals.parquet",
         "./data/national_thresholds.json",
         "./lib/data/lane-liability.json",
@@ -99,6 +83,7 @@ const nextConfig = {
         "node_modules/.pnpm/duckdb@*/**/scripts/**",
       ],
       "/check/[dot]": [
+        "data/carrier_aggregates.parquet",
         "data/carrier_identity.parquet",
         "node_modules/duckdb/src/**",
         "node_modules/duckdb/test/**",
@@ -108,6 +93,7 @@ const nextConfig = {
         "node_modules/.pnpm/duckdb@*/**/scripts/**",
       ],
       "/api/check": [
+        "data/carrier_aggregates.parquet",
         "data/carrier_identity.parquet",
         "node_modules/duckdb/src/**",
         "node_modules/duckdb/test/**",
@@ -131,6 +117,14 @@ const nextConfig = {
         // way to permit embedding from anywhere, and modern browsers prefer
         // CSP over X-Frame-Options anyway.
         source: "/embed",
+        headers: [
+          { key: "Content-Security-Policy", value: "frame-ancestors *" },
+        ],
+      },
+      {
+        // /check is embedded by the bookmarklet as a sidebar iframe on hosts
+        // that permit framing us — allow being framed from anywhere.
+        source: "/check",
         headers: [
           { key: "Content-Security-Policy", value: "frame-ancestors *" },
         ],
