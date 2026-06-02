@@ -39,6 +39,25 @@ export interface PageCapture {
   url?: string;
   /** window.getSelection() text, when the user highlighted something. */
   sel?: string;
+  /** Live form-field values as "Label: value" lines, captured by the
+   *  bookmarklet. CRITICAL for SPA forms (T1 etc.): an <input>'s current value
+   *  is a live DOM property, NOT serialized into outerHTML — so the carrier's
+   *  DOT/MC/lane in a load-edit form is invisible to html scraping. The
+   *  bookmarklet reads el.value + the field's label and sends them here; we
+   *  scan them first. */
+  fields?: string;
+}
+
+/** Build the text we scan: live form fields first (highest signal on SPA
+ *  forms), then the user's selection if any, else the whole-page text. */
+function scanText(cap: PageCapture): { text: string; usedSelection: boolean } {
+  const html = (cap.html || "").slice(0, 3_000_000);
+  const selTrim = (cap.sel || "").trim();
+  const usedSelection = selTrim.length > 30;
+  const body = usedSelection ? selTrim : htmlToText(html);
+  const fieldsText = (cap.fields || "").trim();
+  const text = ((fieldsText ? fieldsText.slice(0, 60_000) + "\n\n" : "") + body).slice(0, 300_000);
+  return { text, usedSelection };
 }
 
 /** Minimal HTML → text: drop script/style, turn breaks into newlines, strip
@@ -147,9 +166,7 @@ function contextsAround(text: string, needle: RegExp, max = 8, pad = 55): string
 
 export function pageDiagnostics(cap: PageCapture): PageDiagnostics {
   const html = (cap.html || "").slice(0, 3_000_000);
-  const selTrim = (cap.sel || "").trim();
-  const usedSelection = selTrim.length > 30;
-  const text = (usedSelection ? selTrim : htmlToText(html)).slice(0, 300_000);
+  const { text, usedSelection } = scanText(cap);
 
   const senderCandidates: string[] = [];
   const attrAll = html.match(/\bemail=["']\s*[^"']+@[^"']+\s*["']/gi) || [];
@@ -176,13 +193,8 @@ export function pageDiagnostics(cap: PageCapture): PageDiagnostics {
 }
 
 export function extractFromPage(cap: PageCapture): ExtractedEmail {
-  // Cap the raw HTML so a heavy SPA doesn't blow up regex/CPU; 3MB is plenty
-  // for any real email/TMS page.
   const html = (cap.html || "").slice(0, 3_000_000);
-  const selTrim = (cap.sel || "").trim();
-  // A real selection (the user highlighted the carrier block) is the cleanest
-  // signal; fall back to the whole page text otherwise. Cap the text we scan.
-  const text = (selTrim.length > 30 ? selTrim : htmlToText(html)).slice(0, 300_000);
+  const { text } = scanText(cap);
 
   // --- DOT / MC ---
   // Tolerant of filler between the label and the number: "DOT 3533697",
