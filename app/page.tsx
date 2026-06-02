@@ -188,19 +188,9 @@ export default function Home() {
             block) so the check focuses on that carrier.
           </p>
           <p className="mt-2 text-xs text-ink-500">
-            Want the shield <span aria-hidden="true">🛡️</span> icon instead of the
-            browser&apos;s generic globe? A dragged{" "}
-            <code className="font-mono">javascript:</code> bookmark can&apos;t carry an icon,
-            so{" "}
-            <a
-              href="/install"
-              className="text-augment-700 underline decoration-augment-300 underline-offset-2 hover:decoration-augment-700"
-            >
-              download the bookmark file
-            </a>{" "}
-            and import it in Chrome&apos;s Bookmark Manager (⋮ → Import) — it has the icon
-            baked in. Then drag &quot;Check Carrier&quot; to your bar and delete the imported
-            folder.
+            It&apos;ll show your browser&apos;s generic globe icon — browsers can&apos;t
+            attach a custom icon to a <code className="font-mono">javascript:</code>{" "}
+            bookmark. (Functionally identical; the icon&apos;s just cosmetic.)
           </p>
         </div>
       </section>
