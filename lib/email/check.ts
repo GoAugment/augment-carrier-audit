@@ -677,11 +677,11 @@ async function evalChameleonCluster(
 ): Promise<Signal[]> {
   if (!identity.phone) return [];
 
-  const matches = await findIdentityByPhone(identity.phone);
-  const others = matches.filter((m) => m.dotNumber !== focalDot);
-  if (others.length === 0) return [];
+  const matchDots = await findIdentityByPhone(identity.phone);
+  const otherDots = matchDots.filter((d) => d !== focalDot);
+  if (otherDots.length === 0) return [];
 
-  const otherDots = others.map((m) => m.dotNumber);
+  const others = otherDots; // alias kept for the threshold checks below
   const otherCarriers = await fetchCarriers(otherDots);
   const focal = (await fetchCarriers([focalDot])).get(focalDot);
   const focalAddDate = focal?.dotAddDate ? Date.parse(focal.dotAddDate) : null;
@@ -692,7 +692,7 @@ async function evalChameleonCluster(
   // chameleon signal for the focal, it's just a sibling DOT.
   if (others.length >= CORPORATE_PHONE_MATCH_THRESHOLD) {
     const revokedSibling = others.find((o) => {
-      const c = otherCarriers.get(o.dotNumber);
+      const c = otherCarriers.get(o);
       return c && (c.involuntaryRevocations > 0 || c.priorRevokeFlag);
     });
     return [
@@ -701,7 +701,7 @@ async function evalChameleonCluster(
         tier: "info",
         label: getRule("phone-corp-switchboard").label,
         detail: revokedSibling
-          ? `${others.length} other DOTs use this phone. Appears to be a corporate dispatch line. One sibling DOT (${revokedSibling.dotNumber}) has historical revocations, but this is sibling/family history, not re-incarnation of the focal carrier.`
+          ? `${others.length} other DOTs use this phone. Appears to be a corporate dispatch line. One sibling DOT (${revokedSibling}) has historical revocations, but this is sibling/family history, not re-incarnation of the focal carrier.`
           : `${others.length} other DOTs use this phone. Appears to be a corporate dispatch line shared across affiliated authorities.`,
       },
     ];
@@ -710,8 +710,8 @@ async function evalChameleonCluster(
   // Few matches (1-2). Now distinguish "true chameleon" from "sister entity"
   // by relative timing.
   const signals: Signal[] = [];
-  for (const o of others) {
-    const c = otherCarriers.get(o.dotNumber);
+  for (const o of otherDots) {
+    const c = otherCarriers.get(o);
     if (!c) continue;
 
     const hasRevocation = c.involuntaryRevocations > 0 || c.priorRevokeFlag;
@@ -732,7 +732,7 @@ async function evalChameleonCluster(
         category: "chameleon_cluster",
         tier: "critical",
         label: getRule("phone-chameleon-revoked-predecessor").label,
-        detail: `Sender's phone matches DOT ${o.dotNumber} (${c.legalName ?? "unnamed"}), which had authority revoked ${c.mostRecentInvoluntaryDate}. Focal DOT ${focalDot} was registered after that revocation. Textbook chameleon pattern.`,
+        detail: `Sender's phone matches DOT ${o} (${c.legalName ?? "unnamed"}), which had authority revoked ${c.mostRecentInvoluntaryDate}. Focal DOT ${focalDot} was registered after that revocation. Textbook chameleon pattern.`,
       });
     } else if (hasRevocation) {
       // Phone match with a revoked carrier, but timing doesn't support
@@ -741,7 +741,7 @@ async function evalChameleonCluster(
         category: "chameleon_cluster",
         tier: "caution",
         label: getRule("phone-shared-with-revoked-carrier").label,
-        detail: `Phone matches DOT ${o.dotNumber} (${c.legalName ?? "unnamed"}), which has revocation history. Timing doesn't fit a re-incarnation pattern (focal carrier is older or the revocation is more recent than focal registration). Likely a sibling/family entity; verify if uncertain.`,
+        detail: `Phone matches DOT ${o} (${c.legalName ?? "unnamed"}), which has revocation history. Timing doesn't fit a re-incarnation pattern (focal carrier is older or the revocation is more recent than focal registration). Likely a sibling/family entity; verify if uncertain.`,
       });
     } else {
       // Few live siblings on the same phone. Previously dismissed as a benign
@@ -754,7 +754,7 @@ async function evalChameleonCluster(
         category: "chameleon_cluster",
         tier: "caution",
         label: getRule("phone-shared-one-other-dot").label,
-        detail: `Sender's phone also belongs to active DOT ${o.dotNumber} (${c.legalName ?? "unnamed"}), which has no revocation history. Shared contact between separate active carriers can mean one operator running multiple authorities, verify they're the same legitimate business before tendering.`,
+        detail: `Sender's phone also belongs to active DOT ${o} (${c.legalName ?? "unnamed"}), which has no revocation history. Shared contact between separate active carriers can mean one operator running multiple authorities, verify they're the same legitimate business before tendering.`,
       });
     }
   }

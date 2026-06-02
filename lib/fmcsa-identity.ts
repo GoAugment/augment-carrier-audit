@@ -391,23 +391,41 @@ export async function fetchIdentityRiskSignals(
  * matching phone, including the queried carrier itself — caller is
  * responsible for excluding the focal DOT if they only want "others."
  */
-export async function findIdentityByPhone(
-  phone: string
-): Promise<CarrierIdentity[]> {
+// One-time in-memory (phone → DOT) index. The by-phone lookup was a full scan
+// of the 96MB identity parquet (~500-750ms on Vercel — the single biggest
+// fresh-check cost). Building a small columnar table once per instance (primed
+// by the /api/check warmup) makes it a ~ms point lookup. Phones stored as
+// digit-only strings so dashes/parens don't matter.
+let phoneIndexReady: Promise<void> | null = null;
+function ensurePhoneIndex(): Promise<void> {
+  if (phoneIndexReady) return phoneIndexReady;
+  phoneIndexReady = (async () => {
+    const idnPath = await getIdentityParquetPath();
+    await runQuery(
+      `CREATE TABLE IF NOT EXISTS phone_index AS
+       SELECT REGEXP_REPLACE(phone, '[^0-9]', '', 'g') AS ph, DOT_NUMBER
+       FROM read_parquet('${idnPath.replace(/'/g, "''")}')
+       WHERE phone IS NOT NULL AND phone <> ''`,
+      []
+    );
+  })();
+  phoneIndexReady.catch(() => {
+    phoneIndexReady = null;
+  });
+  return phoneIndexReady;
+}
+
+/** DOT numbers that share a given phone (the chameleon-cluster signal needs
+ *  only the DOTs; the caller fetches each carrier separately). */
+export async function findIdentityByPhone(phone: string): Promise<number[]> {
   const normalized = phone.replace(/\D/g, "");
   if (normalized.length < 7) return []; // skip obvious junk
-
-  // Match against parquet by normalizing both sides. The parquet stores
-  // phone as whatever FMCSA records show (typically digits, sometimes with
-  // dashes/parens). REGEXP_REPLACE strips non-digits on the parquet side.
-  const idnPath = await getIdentityParquetPath();
-  const sql = `
-    SELECT *
-    FROM read_parquet('${idnPath.replace(/'/g, "''")}')
-    WHERE REGEXP_REPLACE(phone, '[^0-9]', '', 'g') = ?
-  `;
-  const rows = await runQuery<ParquetRow>(sql, [normalized]);
-  return rows.map(rowToIdentity);
+  await ensurePhoneIndex();
+  const rows = await runQuery<{ DOT_NUMBER: number | bigint }>(
+    `SELECT DOT_NUMBER FROM phone_index WHERE ph = ? LIMIT 200`,
+    [normalized]
+  );
+  return rows.map((r) => Number(r.DOT_NUMBER));
 }
 
 /**
