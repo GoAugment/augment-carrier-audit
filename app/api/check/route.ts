@@ -34,10 +34,12 @@ export const maxDuration = 30; // DNS + WHOIS on the sender domain can take a fe
 export async function GET() {
   const t0 = Date.now();
   try {
+    // Resolve via MC (not DOT) so the warmup also builds the in-memory mc_index,
+    // keeping the first real MC lookup off the slow full-parquet-scan path.
     await checkCarrierEmail({
       extracted_text: "",
       summary: "warmup",
-      identity_claims: { dot_number: "84337", mc_number: null, claimed_company_name: null, claimed_phone: null, contact_person: null },
+      identity_claims: { dot_number: null, mc_number: "MC-67717", claimed_company_name: null, claimed_phone: null, contact_person: null },
       sender_metadata: { sender_email: "", sender_email_domain: "", sender_display_name: "", reply_to_domain: null },
       behavioral_signals: { is_response_to_load_posting: false, urgency_markers: [], has_signature_block: true, specificity_score: 0 },
       lane: { origin_city: null, origin_state: null, destination_city: null, destination_state: null, equipment_type: null, is_hazmat_load: false },
