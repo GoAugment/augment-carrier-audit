@@ -146,6 +146,13 @@ export interface CarrierIdentityRiskSignals {
    *  involuntarily revoked — a strong same-operator chameleon edge (~6x revoke
    *  lift). Precomputed in scripts/build_risk_signals.cjs from the L&I history. */
   sharedPolicyLinks: string[];
+  /** Small carrier (<=6 PU) whose phone AREA CODE maps to a different state than
+   *  its FMCSA domicile — this field is that area code's home state. ~1.9x revoke
+   *  lift; soft, size-gated corroborator (offline-gated in build_risk_signals). */
+  phoneAreaState: string | null;
+  /** Small carrier (<=6 PU) inspected mostly away from its home state — this is
+   *  the home-state inspection share (<0.10 when set). ~1.4x revoke lift. */
+  homeInspShare: number | null;
 }
 
 /** One cell in the scorecard, covers one axis for one carrier. */
@@ -841,6 +848,35 @@ function computeRiskScore(
       "Shares insurance policy with revoked carrier",
       identitySignals.sharedPolicyLinks.slice(0, 3).join("; ")
     );
+  }
+
+  // Geo-coherence corroborators (offline-gated to small carriers, <=6 PU): an
+  // out-of-region phone AREA CODE (~1.9x revoke) and a carrier inspected mostly
+  // away from its home state (~1.4x). Both are confounded — IRP apportioned
+  // plates, cell-number portability, legit long-haul — with a real disparate-
+  // impact risk on relocated / new-entrant owner-ops. So they only surface to
+  // AMPLIFY an existing core signal (never to flag an otherwise-clean carrier),
+  // and stay low-weight: even both together (12) sit below the 15-pt Low floor,
+  // so they can never create a risk tier on their own.
+  if (hasCoreRiskContribution(risk)) {
+    if (identitySignals?.phoneAreaState) {
+      add(
+        6,
+        "Identity / chameleon",
+        "Phone area code outside domicile",
+        `Phone area code maps to ${identitySignals.phoneAreaState}, but FMCSA lists domicile as ${c.physicalState ?? "another state"}. Small carriers on an out-of-region number revoke ~1.9x more — verify the number belongs to the operator.`,
+        "context"
+      );
+    }
+    if (identitySignals?.homeInspShare != null) {
+      add(
+        6,
+        "Identity / chameleon",
+        "Operates mostly outside home state",
+        `Only ${Math.round(identitySignals.homeInspShare * 100)}% of this carrier's roadside inspections are in its home state (${c.physicalState ?? "domicile"}); a small carrier inspected mostly elsewhere revokes ~1.4x more.`,
+        "context"
+      );
+    }
   }
 
   return risk;

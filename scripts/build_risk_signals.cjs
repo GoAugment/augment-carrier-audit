@@ -38,8 +38,38 @@ async function main() {
           regexp_replace(coalesce(phone,''),'[^0-9]','','g') AS phone_norm,
           upper(trim(coalesce(company_officer_1,''))) AS officer,
           lower(trim(coalesce(email_domain,''))) AS email_domain,
-          upper(coalesce(phy_street,'')) AS street_u
+          upper(coalesce(phy_street,'')) AS street_u,
+          upper(trim(coalesce(phy_state,''))) AS phy_state,
+          -- NANP area code = first 3 of the last 10 digits, only when plausible
+          CASE WHEN length(regexp_replace(coalesce(phone,''),'[^0-9]','','g')) >= 10
+               THEN substr(
+                 regexp_replace(coalesce(phone,''),'[^0-9]','','g'),
+                 length(regexp_replace(coalesce(phone,''),'[^0-9]','','g')) - 9, 3)
+               ELSE NULL END AS area_code
         FROM read_parquet('data/carrier_identity.parquet')
+      ),
+      -- Fleet size + home-region inspection share (gates the geo signals to the
+      -- small carriers where they carry lift; megafleets operate nationally).
+      sz AS (
+        SELECT DOT_NUMBER AS dot, power_units, home_state_insp_share
+        FROM read_parquet('data/carrier_aggregates.parquet')
+      ),
+      -- Empirical area-code -> home-state map: US area codes don't cross state
+      -- lines, so the plurality domicile per area code is its true home state.
+      -- Require >=50 carriers on the code so the mapping is stable.
+      ac_map AS (
+        WITH c AS (
+          SELECT area_code AS ac, phy_state, COUNT(*) n FROM idn
+          WHERE area_code ~ '^[2-9][0-9][0-9]$' AND phy_state <> '' GROUP BY 1,2
+        ),
+        r AS (
+          SELECT ac, phy_state, n,
+            row_number() OVER (PARTITION BY ac ORDER BY n DESC) rk,
+            SUM(n) OVER (PARTITION BY ac) tot
+          FROM c
+        )
+        SELECT ac, MAX(CASE WHEN rk=1 THEN phy_state END) AS home_state, MAX(tot) AS tot
+        FROM r GROUP BY ac
       ),
       shutdowns AS (
         SELECT DOT_NUMBER AS dot, LEGAL_NAME AS name
@@ -105,14 +135,31 @@ async function main() {
         CASE WHEN i.email_domain IN (${freeList}) THEN i.email_domain ELSE NULL END AS free_email_domain,
         NULLIF(regexp_extract(i.street_u, '${RES_RE}', 2), '') AS residential_marker,
         la.shutdown_links AS shutdown_links,
-        pl.shared_policy_links AS shared_policy_links
+        pl.shared_policy_links AS shared_policy_links,
+        -- Geo coherence, small carriers only (<=6 PU). Phone area code's home
+        -- state differs from the carrier's domicile (~1.9x revoke lift).
+        CASE WHEN sz.power_units <= 6
+              AND am.home_state IS NOT NULL AND am.tot >= 50
+              AND i.phy_state <> '' AND am.home_state <> i.phy_state
+             THEN am.home_state ELSE NULL END AS phone_area_state,
+        -- Inspected mostly away from home state (~1.4x for small fleets).
+        CASE WHEN sz.power_units <= 6
+              AND sz.home_state_insp_share IS NOT NULL
+              AND sz.home_state_insp_share < 0.10
+             THEN sz.home_state_insp_share ELSE NULL END AS home_insp_share
       FROM idn i
       LEFT JOIN links_agg la ON la.dot = i.dot
       LEFT JOIN policy_links pl ON pl.dot = i.dot
+      LEFT JOIN sz ON sz.dot = i.dot
+      LEFT JOIN ac_map am ON am.ac = i.area_code
       WHERE (i.email_domain IN (${freeList}))
          OR (regexp_extract(i.street_u, '${RES_RE}', 2) <> '')
          OR (la.shutdown_links IS NOT NULL)
          OR (pl.shared_policy_links IS NOT NULL)
+         OR (sz.power_units <= 6 AND am.home_state IS NOT NULL AND am.tot >= 50
+             AND i.phy_state <> '' AND am.home_state <> i.phy_state)
+         OR (sz.power_units <= 6 AND sz.home_state_insp_share IS NOT NULL
+             AND sz.home_state_insp_share < 0.10)
     ) TO 'data/carrier_risk_signals.parquet' (FORMAT PARQUET, COMPRESSION ZSTD)
   `);
   const stats = await run(`
@@ -120,11 +167,13 @@ async function main() {
       COUNT(free_email_domain) n_free,
       COUNT(residential_marker) n_res,
       COUNT(shutdown_links) n_links,
-      COUNT(shared_policy_links) n_policy
+      COUNT(shared_policy_links) n_policy,
+      COUNT(phone_area_state) n_phone_geo,
+      COUNT(home_insp_share) n_home_geo
     FROM read_parquet('data/carrier_risk_signals.parquet')`);
   const s = stats[0];
   console.log(`built data/carrier_risk_signals.parquet in ${((Date.now()-t0)/1000).toFixed(1)}s`);
-  console.log(`rows=${s.n}  free_email=${s.n_free}  residential=${s.n_res}  shutdown_links=${s.n_links}  shared_policy_links=${s.n_policy}`);
+  console.log(`rows=${s.n}  free_email=${s.n_free}  residential=${s.n_res}  shutdown_links=${s.n_links}  shared_policy_links=${s.n_policy}  phone_geo=${s.n_phone_geo}  home_geo=${s.n_home_geo}`);
   process.exit(0);
 }
 main().catch((e) => { console.error(e); process.exit(1); });
