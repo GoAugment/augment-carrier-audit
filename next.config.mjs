@@ -45,6 +45,32 @@ const nextConfig = {
         "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/package.json",
         "./node_modules/.pnpm/@mapbox+node-pre-gyp@*/**/*",
       ],
+      // Single-carrier check page + its email preview. Same bundle shape as
+      // /api/analyze: aggregates + risk_signals bundled, carrier_identity
+      // excluded (the page uses risk_signals; the email preview fetches
+      // identity from Blob at runtime) so we stay under the 250MB limit.
+      "/check/[dot]": [
+        "./data/carrier_aggregates.parquet",
+        "./data/carrier_risk_signals.parquet",
+        "./data/national_thresholds.json",
+        "./lib/data/lane-liability.json",
+        "./node_modules/duckdb/lib/**/*",
+        "./node_modules/duckdb/package.json",
+        "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/lib/**/*",
+        "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/package.json",
+        "./node_modules/.pnpm/@mapbox+node-pre-gyp@*/**/*",
+      ],
+      "/check/[dot]/email": [
+        "./data/carrier_aggregates.parquet",
+        "./data/carrier_risk_signals.parquet",
+        "./data/national_thresholds.json",
+        "./lib/data/lane-liability.json",
+        "./node_modules/duckdb/lib/**/*",
+        "./node_modules/duckdb/package.json",
+        "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/lib/**/*",
+        "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/package.json",
+        "./node_modules/.pnpm/@mapbox+node-pre-gyp@*/**/*",
+      ],
     },
     outputFileTracingExcludes: {
       "/api/analyze": [
@@ -61,6 +87,24 @@ const nextConfig = {
         "node_modules/.pnpm/duckdb@*/**/scripts/**",
       ],
       "/api/email/inbound": [
+        "data/carrier_identity.parquet",
+        "node_modules/duckdb/src/**",
+        "node_modules/duckdb/test/**",
+        "node_modules/duckdb/scripts/**",
+        "node_modules/.pnpm/duckdb@*/**/src/**",
+        "node_modules/.pnpm/duckdb@*/**/test/**",
+        "node_modules/.pnpm/duckdb@*/**/scripts/**",
+      ],
+      "/check/[dot]": [
+        "data/carrier_identity.parquet",
+        "node_modules/duckdb/src/**",
+        "node_modules/duckdb/test/**",
+        "node_modules/duckdb/scripts/**",
+        "node_modules/.pnpm/duckdb@*/**/src/**",
+        "node_modules/.pnpm/duckdb@*/**/test/**",
+        "node_modules/.pnpm/duckdb@*/**/scripts/**",
+      ],
+      "/check/[dot]/email": [
         "data/carrier_identity.parquet",
         "node_modules/duckdb/src/**",
         "node_modules/duckdb/test/**",
