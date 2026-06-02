@@ -65,6 +65,7 @@ function verdictKey(e: ExtractedEmail): string {
     e.lane.is_hazmat_load ? "H" : "",
     (e.sender_metadata.sender_email ?? "").toLowerCase(),
     (e.sender_metadata.reply_to_domain ?? "").toLowerCase(),
+    (e.sender_candidates ?? []).join(","),
   ].join("|");
 }
 
@@ -135,7 +136,9 @@ async function computeVerdict(e: ExtractedEmail): Promise<Verdict> {
     mc_match_checked: !!e.identity_claims.mc_number && !!carrier.mcNumber,
     name_match_checked: !!e.identity_claims.claimed_company_name && !!carrier.legalName,
     phone_match_checked: !!e.identity_claims.claimed_phone && !!identity?.phone,
-    sender_domain_match_checked: !!identity?.emailDomain,
+    // Only a real single sender counts as a domain check here; the captured-
+    // page multi-candidate match surfaces as its own info signal instead.
+    sender_domain_match_checked: !!e.sender_metadata.sender_email_domain && !!identity?.emailDomain,
     lane_viability_checked:
       !!e.lane.origin_state && !!e.lane.destination_state && !!identity,
     chameleon_cluster_checked: !!identity?.phone,
@@ -150,6 +153,7 @@ async function computeVerdict(e: ExtractedEmail): Promise<Verdict> {
   signals.push(...evalAuditTier(carrier, dot));
   mark("evalAuditTier");
   signals.push(...evalIdentityCoherence(e, carrier, identity));
+  signals.push(...evalSenderCandidates(e, identity));
   signals.push(...evalLaneViability(e, identity));
   signals.push(...evalLaneCoverage(e, carrier));
   signals.push(...evalHazmat(e, identity, carrier));
@@ -270,7 +274,11 @@ function evalIdentityCoherence(
   // matches. The local-part is what identifies the sender.
   const senderEmail = e.sender_metadata.sender_email?.toLowerCase() ?? "";
   const senderDomain = (e.sender_metadata.sender_email_domain ?? "").toLowerCase();
-  if (identity?.email) {
+  // Only run the single-sender comparison when there's an authoritative sender
+  // (a real From: on an email). On a captured page with no single sender,
+  // senderDomain is empty and the multi-candidate check (evalSenderCandidates)
+  // handles it instead — comparing an empty sender here would false-flag.
+  if (senderDomain && identity?.email) {
     const fmcsaEmail = identity.email.toLowerCase();
     const fmcsaDomain = identity.emailDomain?.toLowerCase() ?? "";
     const fmcsaIsFree = FREE_EMAIL_DOMAINS.has(fmcsaDomain);
@@ -306,7 +314,7 @@ function evalIdentityCoherence(
         });
       }
     }
-  } else if (identity?.emailDomain) {
+  } else if (senderDomain && identity?.emailDomain) {
     // FMCSA has domain only (older data?), fall back to domain compare.
     const fmcsa = identity.emailDomain.toLowerCase();
     if (fmcsa !== senderDomain) {
@@ -356,6 +364,68 @@ function evalIdentityCoherence(
   }
 
   return signals;
+}
+
+// ============================================================================
+// Evaluator 2b: Sender among page candidates (captured-page path)
+// ============================================================================
+
+/**
+ * Multi-email check for the captured-page (bookmarklet) path. A page — a TMS
+ * load or a carrier contact directory — can list several emails (customer,
+ * broker, carrier dispatch), so instead of betting on one "sender" we check
+ * whether the carrier's FMCSA-registered email/domain appears among ALL the
+ * emails we extracted. Only runs when there's no single authoritative sender
+ * (evalIdentityCoherence handles that real-From: case). Never hard-flags a
+ * mismatch — the carrier's real email may simply not be on the page — so it's
+ * a positive when a match exists and a soft "verify" note when none do.
+ */
+function evalSenderCandidates(
+  e: ExtractedEmail,
+  identity: CarrierIdentity | undefined
+): Signal[] {
+  // An authoritative single sender is handled by evalIdentityCoherence.
+  if (e.sender_metadata.sender_email) return [];
+  const cands = Array.from(
+    new Set((e.sender_candidates ?? []).map((c) => c.toLowerCase().trim()))
+  ).filter((c) => c.includes("@"));
+  if (cands.length === 0) return [];
+
+  const fmcsaEmail = identity?.email?.toLowerCase() ?? "";
+  const fmcsaDomain = identity?.emailDomain?.toLowerCase() ?? "";
+  if (!fmcsaEmail && !fmcsaDomain) return []; // nothing to match against
+
+  const fmcsaIsFree = FREE_EMAIL_DOMAINS.has(fmcsaDomain);
+  const domainOf = (a: string) => a.split("@").pop() ?? "";
+  const match = fmcsaIsFree
+    ? cands.find((c) => c === fmcsaEmail)
+    : cands.find((c) => domainOf(c) === fmcsaDomain);
+
+  const n = cands.length;
+  // NB: labels avoid the words the reply's Context filter strips
+  // ("matches"/"registered"/"active"/…), so these info signals actually render.
+  if (match) {
+    return [
+      {
+        category: "email_authenticity",
+        tier: "info",
+        label: "Carrier email found among page contacts",
+        detail: fmcsaIsFree
+          ? `One of the ${n} email${n === 1 ? "" : "s"} on the page (${match}) is the address FMCSA has on file for this carrier.`
+          : `One of the ${n} email${n === 1 ? "" : "s"} on the page (${match}) is on the carrier's FMCSA email domain (${fmcsaDomain}).`,
+      },
+    ];
+  }
+  return [
+    {
+      category: "email_authenticity",
+      tier: "info",
+      label: "Carrier email not among page contacts",
+      detail: fmcsaIsFree
+        ? `None of the ${n} email${n === 1 ? "" : "s"} found on the page are the address FMCSA has on file (${fmcsaEmail}). The carrier's own email may not be listed here — verify out-of-band before tendering.`
+        : `None of the ${n} email${n === 1 ? "" : "s"} found on the page are on the carrier's FMCSA email domain (${fmcsaDomain}). The carrier's own email may not be listed here — verify out-of-band before tendering.`,
+    },
+  ];
 }
 
 // ============================================================================
