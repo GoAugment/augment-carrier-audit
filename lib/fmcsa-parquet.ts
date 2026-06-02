@@ -312,26 +312,47 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
  * intended match.
  */
 // MC→DOT is stable for the life of a snapshot, so memoize per warm instance.
-// This is the single biggest warm-latency cost on MC lookups (a full-parquet
-// scan of mc_number with no row-group pruning), so caching it makes repeat MC
-// checks instant.
 const mcDotCache = new Map<string, number | null>();
 
+// Building a one-time in-memory duckdb table of (mc_number → DOT) turns each MC
+// lookup from a full-parquet scan (~1s, the biggest warm-latency cost on MC
+// checks) into a ~ms indexed point lookup. The data lives in duckdb's columnar
+// memory (~16MB for 2M int pairs), so there's no JS-heap blowup. Built once per
+// instance (primed by the /api/check warmup), reused for every lookup.
+let mcIndexReady: Promise<void> | null = null;
+function ensureMcIndex(): Promise<void> {
+  if (mcIndexReady) return mcIndexReady;
+  mcIndexReady = (async () => {
+    const parquet = await getAggregatesParquetPath();
+    await runQuery(
+      `CREATE TABLE IF NOT EXISTS mc_index AS
+       SELECT TRY_CAST(REGEXP_REPLACE(mc_number, '[^0-9]', '', 'g') AS BIGINT) AS mc,
+              DOT_NUMBER
+       FROM read_parquet('${parquet.replace(/'/g, "''")}')
+       WHERE mc_number IS NOT NULL AND mc_number <> ''`,
+      []
+    );
+  })();
+  // Allow a retry if the build fails (e.g. transient parquet-fetch error).
+  mcIndexReady.catch(() => {
+    mcIndexReady = null;
+  });
+  return mcIndexReady;
+}
+
 export async function fetchDotByMc(mc: string): Promise<number | null> {
+  // TMS systems (T1) zero-pad MC numbers ("MC-067717") while FMCSA stores them
+  // unpadded ("MC-67717"); strip leading zeros + compare numerically so they
+  // match.
   const digits = mc.replace(/\D/g, "").replace(/^0+/, "");
   if (!digits) return null;
   const cached = mcDotCache.get(digits);
   if (cached !== undefined) return cached;
-  const parquet = await getAggregatesParquetPath();
-  // Compare NUMERICALLY, not as strings: TMS systems (T1) zero-pad MC numbers
-  // ("MC-067717") while FMCSA stores them unpadded ("MC-67717"), so a string
-  // compare misses. TRY_CAST tolerates blank/non-numeric mc_number rows.
-  const sql = `
-    SELECT DOT_NUMBER FROM read_parquet('${parquet.replace(/'/g, "''")}')
-    WHERE TRY_CAST(REGEXP_REPLACE(mc_number, '[^0-9]', '', 'g') AS BIGINT) = TRY_CAST(? AS BIGINT)
-    LIMIT 1
-  `;
-  const rows = await runQuery<{ DOT_NUMBER: number | bigint }>(sql, [digits]);
+  await ensureMcIndex();
+  const rows = await runQuery<{ DOT_NUMBER: number | bigint }>(
+    `SELECT DOT_NUMBER FROM mc_index WHERE mc = TRY_CAST(? AS BIGINT) LIMIT 1`,
+    [digits]
+  );
   const result = rows.length === 0 ? null : asInt(rows[0].DOT_NUMBER);
   if (mcDotCache.size < 50000) mcDotCache.set(digits, result);
   return result;
