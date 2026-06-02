@@ -22,7 +22,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkCarrierEmail } from "@/lib/email/check";
 import { buildReplyHtml } from "@/lib/email/format-reply-html";
-import { extractFromPage } from "@/lib/email/extract-page";
+import { extractFromPage, pageDiagnostics } from "@/lib/email/extract-page";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30; // DNS + WHOIS on the sender domain can take a few seconds.
@@ -31,25 +31,37 @@ export async function POST(req: NextRequest) {
   let html = "";
   let url = "";
   let sel = "";
+  let debug = req.nextUrl.searchParams.get("debug") === "1";
   const ct = req.headers.get("content-type") ?? "";
   try {
     if (ct.includes("application/json")) {
-      const b = (await req.json()) as { html?: string; url?: string; sel?: string };
+      const b = (await req.json()) as { html?: string; url?: string; sel?: string; debug?: unknown };
       html = b.html ?? "";
       url = b.url ?? "";
       sel = b.sel ?? "";
+      if (b.debug) debug = true;
     } else {
       // form-urlencoded or multipart (the bookmarklet path)
       const form = await req.formData();
       html = String(form.get("html") ?? "");
       url = String(form.get("url") ?? "");
       sel = String(form.get("sel") ?? "");
+      if (form.get("debug")) debug = true;
     }
   } catch {
     return NextResponse.json(
       { error: "Expected a form POST (html, url?, sel?) or JSON { html, url?, sel? }" },
       { status: 400 }
     );
+  }
+
+  // Trace mode: show exactly what the scraper saw + extracted, so we can tune
+  // the parser against a real host (T1, Outlook, …) without copy-pasting HTML.
+  if (debug) {
+    const diag = pageDiagnostics({ html, url, sel });
+    return new NextResponse(renderDebug(diag, url), {
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+    });
   }
 
   const extracted = extractFromPage({ html, url, sel });
@@ -63,4 +75,39 @@ export async function POST(req: NextRequest) {
       "cache-control": "no-store",
     },
   });
+}
+
+function renderDebug(
+  diag: import("@/lib/email/extract-page").PageDiagnostics,
+  url: string
+): string {
+  const esc = (s: unknown) =>
+    String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  const list = (title: string, items: string[]) =>
+    `<h3>${esc(title)} <span style="color:#888;font-weight:400">(${items.length})</span></h3>` +
+    (items.length
+      ? `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>`
+      : `<p style="color:#888">— none —</p>`);
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Carrier Check · trace</title></head>
+<body style="margin:0;padding:16px;font:13px/1.5 -apple-system,Segoe UI,Arial,sans-serif;color:#1e2521;background:#f6f5f1;">
+<h2 style="margin:0 0 4px">Carrier Check — extraction trace</h2>
+<div style="color:#888;margin-bottom:12px;word-break:break-all">${esc(url)}</div>
+<div style="background:#fff;border:1px solid #e6e5e0;border-radius:6px;padding:12px;margin-bottom:12px">
+  <b>Extracted</b>
+  <pre style="white-space:pre-wrap;word-break:break-word;margin:8px 0 0">${esc(JSON.stringify(diag.extracted, null, 2))}</pre>
+</div>
+<div style="color:#5e645f;margin-bottom:12px">
+  html: ${diag.htmlLength.toLocaleString()} chars · scanned text: ${diag.textLength.toLocaleString()} chars · used selection: ${diag.usedSelection}
+</div>
+${list('"DOT" contexts', diag.dotContexts)}
+${list('"MC" contexts', diag.mcContexts)}
+${list('"carrier" contexts', diag.carrierContexts)}
+${list("Sender candidates", diag.senderCandidates)}
+${list("4–8 digit numbers seen", diag.numbers4to8)}
+<h3>First 1,800 chars of scanned text</h3>
+<pre style="white-space:pre-wrap;word-break:break-word;background:#fff;border:1px solid #e6e5e0;border-radius:6px;padding:12px">${esc(diag.textHead)}</pre>
+</body></html>`;
 }
