@@ -311,9 +311,17 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
  * authority-transfer artifact and the most-recent active carrier is the
  * intended match.
  */
+// MC→DOT is stable for the life of a snapshot, so memoize per warm instance.
+// This is the single biggest warm-latency cost on MC lookups (a full-parquet
+// scan of mc_number with no row-group pruning), so caching it makes repeat MC
+// checks instant.
+const mcDotCache = new Map<string, number | null>();
+
 export async function fetchDotByMc(mc: string): Promise<number | null> {
-  const digits = mc.replace(/\D/g, "");
+  const digits = mc.replace(/\D/g, "").replace(/^0+/, "");
   if (!digits) return null;
+  const cached = mcDotCache.get(digits);
+  if (cached !== undefined) return cached;
   const parquet = await getAggregatesParquetPath();
   // Compare NUMERICALLY, not as strings: TMS systems (T1) zero-pad MC numbers
   // ("MC-067717") while FMCSA stores them unpadded ("MC-67717"), so a string
@@ -324,9 +332,15 @@ export async function fetchDotByMc(mc: string): Promise<number | null> {
     LIMIT 1
   `;
   const rows = await runQuery<{ DOT_NUMBER: number | bigint }>(sql, [digits]);
-  if (rows.length === 0) return null;
-  return asInt(rows[0].DOT_NUMBER);
+  const result = rows.length === 0 ? null : asInt(rows[0].DOT_NUMBER);
+  if (mcDotCache.size < 50000) mcDotCache.set(digits, result);
+  return result;
 }
+
+// Per-DOT carrier rows are stable for the snapshot's life — cache them so a
+// repeat check (or the MC + DOT both resolving to the same carrier) skips the
+// parquet scan.
+const carrierCache = new Map<number, FmcsaCarrier>();
 
 export async function fetchCarriersFromParquet(
   dots: number[]
@@ -335,7 +349,16 @@ export async function fetchCarriersFromParquet(
   const out = new Map<number, FmcsaCarrier>();
   if (unique.length === 0) return out;
 
-  const placeholders = unique.map(() => "?").join(",");
+  // Serve cache hits immediately; only query the misses.
+  const misses: number[] = [];
+  for (const d of unique) {
+    const hit = carrierCache.get(d);
+    if (hit) out.set(d, hit);
+    else misses.push(d);
+  }
+  if (misses.length === 0) return out;
+
+  const placeholders = misses.map(() => "?").join(",");
   const parquet = await getAggregatesParquetPath();
   const sql = `
     SELECT
@@ -388,9 +411,12 @@ export async function fetchCarriersFromParquet(
     WHERE DOT_NUMBER IN (${placeholders})
   `;
 
-  const rows = await runQuery<ParquetRow>(sql, unique);
+  const rows = await runQuery<ParquetRow>(sql, misses);
   for (const r of rows) {
-    out.set(asInt(r.DOT_NUMBER), rowToCarrier(r));
+    const dot = asInt(r.DOT_NUMBER);
+    const carrier = rowToCarrier(r);
+    out.set(dot, carrier);
+    if (carrierCache.size < 50000) carrierCache.set(dot, carrier);
   }
   return out;
 }

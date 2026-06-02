@@ -65,11 +65,18 @@ async function hasDmarcRecord(domain: string): Promise<boolean> {
  * Three DNS lookups run in parallel; total latency is bounded by the slowest
  * single record (typically <200ms, capped at DNS_TIMEOUT_MS).
  */
+// DNS config changes slowly — cache per warm instance (12h TTL) so repeat
+// sender domains skip the MX/SPF/DMARC lookups.
+const authCache = new Map<string, { val: DomainAuthConfig | null; exp: number }>();
+const AUTH_TTL_MS = 12 * 60 * 60 * 1000;
+
 export async function checkDomainAuth(
   domain: string
 ): Promise<DomainAuthConfig | null> {
   const normalized = domain.trim().toLowerCase();
   if (!normalized || !normalized.includes(".")) return null;
+  const cached = authCache.get(normalized);
+  if (cached && cached.exp > Date.now()) return cached.val;
 
   const [hasMx, hasSpf, hasDmarc] = await Promise.all([
     hasAnyMx(normalized),
@@ -80,12 +87,10 @@ export async function checkDomainAuth(
   // If none of the three returned true AND MX failed, the domain probably
   // isn't reachable at all. Return null so the caller doesn't render a
   // "domain is misconfigured" finding off what's actually a lookup failure.
-  if (!hasMx && !hasSpf && !hasDmarc) return null;
-
-  return {
-    hasMx,
-    hasSpf,
-    hasDmarc,
-    configuredForMail: hasMx && (hasSpf || hasDmarc),
-  };
+  const val: DomainAuthConfig | null =
+    !hasMx && !hasSpf && !hasDmarc
+      ? null
+      : { hasMx, hasSpf, hasDmarc, configuredForMail: hasMx && (hasSpf || hasDmarc) };
+  authCache.set(normalized, { val, exp: Date.now() + AUTH_TTL_MS });
+  return val;
 }

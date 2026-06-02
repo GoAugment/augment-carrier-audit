@@ -49,7 +49,37 @@ const COMPANY_NAME_MATCH_THRESHOLD = 0.6;
 
 // ---------- top-level entry ----------
 
+// Per-instance verdict cache. The verdict is a pure function of the FMCSA
+// snapshot (static) + these request inputs, so caching by them makes a repeat
+// check of the same carrier/lane/sender instant. Short TTL keeps DNS/WHOIS
+// drift bounded. Bypassed automatically for distinct inputs.
+const verdictCache = new Map<string, { v: Verdict; exp: number }>();
+const VERDICT_TTL_MS = 15 * 60 * 1000;
+
+function verdictKey(e: ExtractedEmail): string {
+  return [
+    e.identity_claims.dot_number ?? "",
+    e.identity_claims.mc_number ?? "",
+    e.lane.origin_state ?? "",
+    e.lane.destination_state ?? "",
+    e.lane.is_hazmat_load ? "H" : "",
+    (e.sender_metadata.sender_email ?? "").toLowerCase(),
+    (e.sender_metadata.reply_to_domain ?? "").toLowerCase(),
+  ].join("|");
+}
+
 export async function checkCarrierEmail(e: ExtractedEmail): Promise<Verdict> {
+  const key = verdictKey(e);
+  const cached = verdictCache.get(key);
+  if (cached && cached.exp > Date.now()) return cached.v;
+  const verdict = await computeVerdict(e);
+  if (verdictCache.size < 5000) {
+    verdictCache.set(key, { v: verdict, exp: Date.now() + VERDICT_TTL_MS });
+  }
+  return verdict;
+}
+
+async function computeVerdict(e: ExtractedEmail): Promise<Verdict> {
   const dotStr = e.identity_claims.dot_number;
   let dot = dotStr ? parseInt(dotStr.replace(/\D/g, ""), 10) : NaN;
 

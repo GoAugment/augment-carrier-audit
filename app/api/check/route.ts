@@ -27,6 +27,27 @@ import { extractFromPage, pageDiagnostics } from "@/lib/email/extract-page";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30; // DNS + WHOIS on the sender domain can take a few seconds.
 
+// GET = warmup. A Vercel cron pings this so the function instance stays hot:
+// duckdb is initialized, the 96MB identity parquet is pulled to /tmp, and the
+// per-instance caches (carrier/identity/mc→dot) are primed — so a real user's
+// click hits a warm instance (~sub-second) instead of a ~5s cold start.
+export async function GET() {
+  const t0 = Date.now();
+  try {
+    await checkCarrierEmail({
+      extracted_text: "",
+      summary: "warmup",
+      identity_claims: { dot_number: "84337", mc_number: null, claimed_company_name: null, claimed_phone: null, contact_person: null },
+      sender_metadata: { sender_email: "", sender_email_domain: "", sender_display_name: "", reply_to_domain: null },
+      behavioral_signals: { is_response_to_load_posting: false, urgency_markers: [], has_signature_block: true, specificity_score: 0 },
+      lane: { origin_city: null, origin_state: null, destination_city: null, destination_state: null, equipment_type: null, is_hazmat_load: false },
+    });
+  } catch {
+    /* warmup best-effort */
+  }
+  return NextResponse.json({ ok: true, warmedMs: Date.now() - t0 });
+}
+
 export async function POST(req: NextRequest) {
   let html = "";
   let url = "";
