@@ -8,21 +8,20 @@
  *
  * Works across the three surfaces the broker uses:
  *   - Outlook / Gmail web — a carrier's email open in the reading pane. We
- *     pull the sender from the rendered DOM (mailto: links, Gmail's email="…"
+ *     pull the sender from the rendered DOM (mailto: links, Gmail's email="..."
  *     attribute, or a visible "From: Name <addr>" line) so the email gut check
- *     (sender-domain-vs-FMCSA, MX/SPF/DMARC, WHOIS age, Reply-To) can run.
+ *     (sender-domain-vs-FMCSA, MX/SPF/DMARC, Reply-To) can run.
  *   - A TMS load page (T1, etc.) — no sender, but the DOT/MC + lane are in the
  *     visible text. We extract those for the carrier + lane coverage checks.
  *
  * Unlike the LLM Stage-1 extractor (extract.ts), this is free, instant, and
  * has no forwarded-email assumptions baked in — it reads whatever is on screen.
  *
- * Note on DKIM/SPF/DMARC: we deliberately do NOT parse per-message
- * Authentication-Results even when present — inline forwards strip the
- * carrier's original auth and leave the broker's forwarding-server result
- * (always passes, meaningless). The email gut check is domain-level, so we only
- * need the sender's address. (If we ever want raw-source auth, this is where it
- * would go.)
+ * Note on DKIM/SPF/DMARC: we DO parse per-message auth when the page exposes it
+ * (Gmail "Show original"/details, or a raw Authentication-Results header) — see
+ * parseEmailAuth. This is trustworthy here because the bookmarklet reads the
+ * actually-received message (no forwarding to launder the headers). When the
+ * page doesn't show auth (normal reading view), emailAuth is simply undefined.
  */
 import type { ExtractedEmail } from "./types";
 
@@ -170,6 +169,33 @@ function findEmailCandidates(html: string, text: string, hostDomain: string): st
     if (out.length >= 25) break;
   }
   return out.slice(0, 25);
+}
+
+/** Parse per-message SPF/DKIM/DMARC + the DKIM-signing domain from the captured
+ *  text. Handles both Gmail's "Show original" prose ("DKIM: 'PASS' with domain
+ *  augie.ai", "SPF: PASS …", "DMARC: 'PASS'") and a raw Authentication-Results
+ *  header ("spf=pass", "dkim=pass header.d=augie.ai", "dmarc=pass"). Returns
+ *  undefined when no auth results are present (normal reading view). */
+function parseEmailAuth(text: string): ExtractedEmail["emailAuth"] | undefined {
+  const norm = (v: string | undefined): "pass" | "fail" | "other" | null => {
+    if (!v) return null;
+    const x = v.toLowerCase();
+    if (x === "pass" || x === "bestguesspass") return "pass";
+    if (x === "fail" || x === "softfail" || x === "permerror") return "fail";
+    return "other";
+  };
+  const spf = norm(
+    text.match(/\bspf[:=]\s*'?(pass|fail|softfail|neutral|none|temperror|permerror)/i)?.[1]
+  );
+  const dkim = norm(text.match(/\bdkim[:=]\s*'?(pass|fail|none)/i)?.[1]);
+  const dmarc = norm(text.match(/\bdmarc[:=]\s*'?(pass|fail|bestguesspass|none)/i)?.[1]);
+  // DKIM signing domain: Gmail "with domain X" or raw "header.d=X".
+  const dkimDomainRaw =
+    text.match(/dkim[^\n]{0,40}?(?:with domain|header\.d=)\s*'?([A-Za-z0-9.\-]+)/i)?.[1] ?? null;
+  const dkimDomain = dkimDomainRaw ? dkimDomainRaw.toLowerCase().replace(/[.'"]+$/, "") : null;
+
+  if (spf == null && dkim == null && dmarc == null) return undefined;
+  return { spf, dkim, dmarc, dkimDomain };
 }
 
 /** Sender display name from a "From: Display Name <addr>" line, when present. */
@@ -362,6 +388,10 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
   const emails = senderCandidates;
   const phones = phoneCandidates;
 
+  // Per-message auth, if the captured page shows it (Gmail "Show original" /
+  // details, or a raw Authentication-Results header).
+  const emailAuth = parseEmailAuth(text);
+
   return {
     source: "page",
     extracted_text: "",
@@ -384,6 +414,7 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
     },
     sender_candidates: emails.length ? emails : undefined,
     phone_candidates: phones.length ? phones : undefined,
+    emailAuth,
     behavioral_signals: {
       is_response_to_load_posting: false,
       urgency_markers: [],

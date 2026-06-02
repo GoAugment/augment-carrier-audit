@@ -11,9 +11,9 @@
  *   ?from=NJ&to=FL                         lane gut check (coverage-fit advisory)
  *   ?se=ops@acme.com&sn=Joe%20D&rt=...     sender → email gut check
  *
- * The email gut check is domain-level: sender-domain-vs-FMCSA-on-file, plus a
- * live MX/SPF/DMARC config + WHOIS age lookup on the sender domain, plus the
- * Reply-To mismatch flag. We deliberately do NOT trust per-message SPF/DKIM/
+ * The email gut check is domain-level: sender-domain-vs-FMCSA-on-file, live
+ * MX/SPF/DMARC config on the sender domain, plus the Reply-To mismatch flag.
+ * We deliberately do NOT trust per-message SPF/DKIM/
  * DMARC headers — inline forwards strip the carrier's original auth and leave
  * only the broker's forwarding-server auth (always passes, meaningless) — so
  * the bookmarklet only needs to grab the sender's address, not raw headers.
@@ -104,7 +104,7 @@ export async function GET(
   return new NextResponse(html, {
     headers: {
       "content-type": "text/html; charset=utf-8",
-      // No-store: verdicts read live FMCSA data + run DNS/WHOIS at request time.
+      // No-store: verdicts read live FMCSA data + run DNS at request time.
       "cache-control": "no-store",
     },
   });

@@ -17,7 +17,6 @@ import { getRule } from "../rules";
 import { fetchIdentity, findIdentityByPhone, cargoLabels, type CarrierIdentity } from "../fmcsa-identity";
 import { analyze } from "../analyzer";
 import { getCutoffs, type AxisKey, type PeerGroup } from "../thresholds";
-import { lookupDomainAge } from "./whois";
 import { checkDomainAuth } from "./dns-check";
 import laneLiability from "../data/lane-liability.json";
 import type {
@@ -51,8 +50,8 @@ const COMPANY_NAME_MATCH_THRESHOLD = 0.6;
 
 // Per-instance verdict cache. The verdict is a pure function of the FMCSA
 // snapshot (static) + these request inputs, so caching by them makes a repeat
-// check of the same carrier/lane/sender instant. Short TTL keeps DNS/WHOIS
-// drift bounded. Bypassed automatically for distinct inputs.
+// check of the same carrier/lane/sender instant. Short TTL keeps DNS drift
+// bounded. Bypassed automatically for distinct inputs.
 const verdictCache = new Map<string, { v: Verdict; exp: number }>();
 const VERDICT_TTL_MS = 15 * 60 * 1000;
 
@@ -67,6 +66,7 @@ function verdictKey(e: ExtractedEmail): string {
     (e.sender_metadata.reply_to_domain ?? "").toLowerCase(),
     (e.sender_candidates ?? []).join(","),
     (e.phone_candidates ?? []).join(","),
+    e.emailAuth ? `${e.emailAuth.spf}/${e.emailAuth.dkim}/${e.emailAuth.dmarc}/${e.emailAuth.dkimDomain ?? ""}` : "",
   ].join("|");
 }
 
@@ -143,7 +143,7 @@ async function computeVerdict(e: ExtractedEmail): Promise<Verdict> {
     lane_viability_checked:
       !!e.lane.origin_state && !!e.lane.destination_state && !!identity,
     chameleon_cluster_checked: !!identity?.phone,
-    // True whenever we have a sender domain, the DNS/WHOIS checks run on
+    // True whenever we have a sender domain, the DNS checks run on
     // that domain. We no longer try to verify per-message SPF/DKIM/DMARC
     // because inline forwards make those headers unreliable.
     email_auth_checked: domainAuthApplicable(e),
@@ -156,6 +156,7 @@ async function computeVerdict(e: ExtractedEmail): Promise<Verdict> {
   signals.push(...evalIdentityCoherence(e, carrier, identity));
   signals.push(...evalSenderCandidates(e, identity));
   signals.push(...evalPhoneCandidates(e, identity));
+  signals.push(...evalMessageAuth(e, identity));
   signals.push(...evalLaneViability(e, identity));
   signals.push(...evalLaneCoverage(e, carrier));
   signals.push(...evalHazmat(e, identity, carrier));
@@ -482,6 +483,71 @@ function evalPhoneCandidates(
       detail: `None of the ${n} phone number${n === 1 ? "" : "s"} on the page are the number FMCSA has on file for this carrier (${fmtPhone(fmcsa10)}). The carrier's own line may not be listed here — verify out-of-band before tendering.`,
     },
   ];
+}
+
+// ============================================================================
+// Evaluator 2d: Per-message email authentication (SPF/DKIM/DMARC)
+// ============================================================================
+
+/**
+ * Surface per-message SPF/DKIM/DMARC when the captured page exposed them (Gmail
+ * "Show original" / details). Meaningful HERE because the bookmarklet reads the
+ * actually-received message — no forwarding to launder the headers. DKIM's
+ * signing domain is cryptographically verified, so a DKIM pass whose domain
+ * matches the carrier's FMCSA domain is strong proof the email came from that
+ * carrier; a DKIM/DMARC fail is a spoofing flag.
+ */
+function evalMessageAuth(
+  e: ExtractedEmail,
+  identity: CarrierIdentity | undefined
+): Signal[] {
+  const a = e.emailAuth;
+  if (!a) return [];
+  const out: Signal[] = [];
+
+  if (a.dkim === "fail" || a.dmarc === "fail") {
+    out.push({
+      category: "email_authenticity",
+      tier: "high",
+      label: "Message failed DKIM/DMARC authentication",
+      detail: `This message ${a.dkim === "fail" ? "failed DKIM" : ""}${a.dkim === "fail" && a.dmarc === "fail" ? " and " : ""}${a.dmarc === "fail" ? "failed DMARC" : ""}. The From address may be spoofed — verify the carrier through another channel before tendering.`,
+    });
+    return out;
+  }
+  if (a.spf === "fail") {
+    out.push({
+      category: "email_authenticity",
+      tier: "caution",
+      label: "Message failed SPF",
+      detail: "SPF failed — the sending server isn't authorized for the From domain. Often benign (relays/mailing lists) but worth a second look.",
+    });
+  }
+
+  const dkimDom = a.dkimDomain?.toLowerCase() ?? "";
+  const fmcsaDom = identity?.emailDomain?.toLowerCase() ?? "";
+  if (a.dkim === "pass" && dkimDom && fmcsaDom && (dkimDom === fmcsaDom || dkimDom.endsWith("." + fmcsaDom))) {
+    out.push({
+      category: "email_authenticity",
+      tier: "info",
+      label: "Cryptographically signed by the carrier's domain",
+      detail: `DKIM verified the message was signed by ${dkimDom}, the carrier's FMCSA email domain. Strong proof the email genuinely came from this carrier (DKIM can't be spoofed).`,
+    });
+  } else if (a.dkim === "pass" && dkimDom) {
+    out.push({
+      category: "email_authenticity",
+      tier: "info",
+      label: "Message is DKIM-signed",
+      detail: `DKIM verified the message was signed by ${dkimDom}${fmcsaDom ? ` (FMCSA has ${fmcsaDom} for this carrier — confirm the sender if these differ)` : ""}.`,
+    });
+  } else if (a.spf === "pass" || a.dmarc === "pass") {
+    out.push({
+      category: "email_authenticity",
+      tier: "info",
+      label: "Message authentication on file",
+      detail: `Passed ${[a.spf === "pass" ? "SPF" : "", a.dmarc === "pass" ? "DMARC" : ""].filter(Boolean).join(" + ")} — the message wasn't spoofed in transit.`,
+    });
+  }
+  return out;
 }
 
 // ============================================================================
@@ -905,7 +971,7 @@ async function evalEmailAuthenticity(
     });
   }
 
-  // --- Domain-level config check + WHOIS age ---
+  // --- Domain-level config check ---
   // Skip free email providers (gmail/yahoo/etc., well-established and the
   // domain isn't owned by the sender anyway) and skip when the domain matches
   // FMCSA's registration (the carrier's history with FMCSA is stronger
@@ -915,12 +981,7 @@ async function evalEmailAuthenticity(
     FREE_EMAIL_DOMAINS.has(senderDomain) ||
     identity?.emailDomain?.toLowerCase() === senderDomain;
   if (!skipDomainLookups && senderDomain) {
-    // Run DNS + WHOIS in parallel, both are external network lookups, no
-    // dependency between them.
-    const [dnsConfig, age] = await Promise.all([
-      checkDomainAuth(senderDomain),
-      lookupDomainAge(senderDomain),
-    ]);
+    const dnsConfig = await checkDomainAuth(senderDomain);
 
     if (dnsConfig) {
       if (!dnsConfig.hasMx) {
@@ -948,31 +1009,6 @@ async function evalEmailAuthenticity(
           tier: "info",
           label: getRule("sender-domain-auth-configured").label,
           detail: `${senderDomain} publishes ${parts.join(" + ")} on DNS and accepts inbound mail (MX configured) — set up like a real business. This is domain reputation, not proof a specific message is authentic.`,
-        });
-      }
-    }
-
-    if (age) {
-      if (age.ageDays < 90) {
-        signals.push({
-          category: "email_authenticity",
-          tier: "high",
-          label: getRule("sender-domain-newly-registered").label,
-          detail: `${senderDomain} was registered on ${age.registeredAt.toISOString().slice(0, 10)}, less than 90 days old. Brand-new domains are unusual for legitimate carriers and a common fraud pattern.`,
-        });
-      } else if (age.ageDays < 365) {
-        signals.push({
-          category: "email_authenticity",
-          tier: "caution",
-          label: getRule("sender-domain-less-than-year-old").label,
-          detail: `${senderDomain} was registered on ${age.registeredAt.toISOString().slice(0, 10)} (${age.ageDays} days ago). Worth verifying. Most established carriers have older domains.`,
-        });
-      } else {
-        signals.push({
-          category: "email_authenticity",
-          tier: "info",
-          label: getRule("sender-domain-aged").label,
-          detail: `${senderDomain} was registered on ${age.registeredAt.toISOString().slice(0, 10)}, ${Math.floor(age.ageDays / 365)} years ago.`,
         });
       }
     }

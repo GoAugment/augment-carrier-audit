@@ -7,8 +7,7 @@
  * Why this is useful even when SPF can't prevent spoofing:
  *   - A real freight carrier domain almost always has MX + SPF + DMARC
  *   - A throwaway / typo-squat / parked domain often has none of these
- *   - Combined with WHOIS age (lib/email/whois.ts), this catches the
- *     "fraudster registered carrierxyz-dispatch.com last week" pattern
+ *   - Parked or throwaway domains often lack a normal mail setup
  *
  * Free email providers (gmail.com etc) always pass — call sites are expected
  * to skip the check for those domains so we don't pollute verdicts with
