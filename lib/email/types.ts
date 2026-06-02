@@ -21,6 +21,10 @@
  *   - lane: pickup/delivery the carrier wants to run, if specified
  */
 export interface ExtractedEmail {
+  /** Where this was captured from, so the reply copy reads right: "email" =
+   *  inbound forwarded email (audit@augie.ai); "page" = a browser page grabbed
+   *  by the bookmarklet (TMS load, carrier directory). Defaults to "email". */
+  source?: "email" | "page";
   /** Cleaned message body — signatures, headers, quoted threads stripped. */
   extracted_text: string;
   /** One-sentence overview. */
@@ -156,6 +160,15 @@ export interface VerdictCarrierSummary {
     reasonLabels: string[];
     reasons: Array<{ label: string; detail: string }>;
   };
+  /** Headline scores for the two tiles at the top of the reply. riskScore is
+   *  our 0-100 composite (riskLevel is its band); issScore is our reproduction
+   *  of FMCSA's ISS-CSA (marked ISS* / est. since FMCSA doesn't publish it). */
+  riskScore: number | null;
+  issScore: number | null;
+  issTier: string | null;
+  /** The 7 FMCSA SMS BASICs: peer percentile (0-100, higher = worse; null when
+   *  FMCSA doesn't publish one for this carrier) + whether FMCSA set an alert. */
+  basics: Array<{ name: string; percentile: number | null; alert: boolean }>;
   /** Carrier physical-state location ("TX", "WI"), if available. */
   physicalState: string | null;
   /** Carrier physical city + state for the reply line ("Green Bay, WI"). */

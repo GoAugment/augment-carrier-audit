@@ -399,14 +399,81 @@ function renderFromTheEmailBlock(
     pills.push(renderFieldPill("Load", "Hazmat", hazStatus));
   }
 
+  // Page-captured candidate emails / phones (bookmarklet path): show ALL of
+  // them and green-dot the one that matches the carrier's FMCSA contact info.
+  const cc = verdict.carrier;
+  if (extracted.sender_candidates?.length) {
+    const fmcsaEmail = cc?.fmcsaEmail?.toLowerCase() ?? "";
+    const fmcsaDomain = cc?.fmcsaEmailDomain?.toLowerCase() ?? "";
+    const fmcsaDomFree = /^(gmail|yahoo|hotmail|aol|icloud|outlook|live|msn|comcast|sbcglobal|verizon|att|cox)\.[a-z.]+$/.test(fmcsaDomain);
+    const isMatch = (e: string) => {
+      const el = e.toLowerCase();
+      const dom = el.split("@").pop() ?? "";
+      return (!!fmcsaEmail && el === fmcsaEmail) || (!!fmcsaDomain && !fmcsaDomFree && dom === fmcsaDomain);
+    };
+    pills.push(...renderCandidatePills("Email", extracted.sender_candidates, isMatch));
+  }
+  if (extracted.phone_candidates?.length) {
+    const fmcsa10 = (cc?.fmcsaPhone ?? "").replace(/\D/g, "").slice(-10);
+    const isMatch = (p: string) => fmcsa10.length === 10 && p.replace(/\D/g, "").slice(-10) === fmcsa10;
+    pills.push(...renderCandidatePills("Phone", extracted.phone_candidates, isMatch));
+  }
+
   if (pills.length === 0) return "";
 
   return `
     <tr><td style="padding:0 32px 24px 32px;">
-      <div style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-transform:uppercase;margin-bottom:10px;">From the email</div>
+      <div style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-transform:uppercase;margin-bottom:10px;">What we found</div>
       <div style="background:${C.pageBg};border-radius:6px;padding:14px 14px 6px 14px;">
         ${pills.join("\n        ")}
       </div>
+    </td></tr>`;
+}
+
+/** Render up to 3 candidate values as pills (matched-to-FMCSA first + green),
+ *  then a muted "+N more" pill. Used for the page's email / phone lists so the
+ *  broker sees everything we extracted with the carrier's own contact
+ *  highlighted. */
+function renderCandidatePills(
+  label: string,
+  candidates: string[],
+  isMatch: (v: string) => boolean,
+): string[] {
+  const matched = candidates.filter(isMatch);
+  const rest = candidates.filter((c) => !isMatch(c));
+  const ordered = [...matched, ...rest];
+  const SHOW = 3;
+  const out: string[] = [];
+  ordered.slice(0, SHOW).forEach((v, i) => {
+    out.push(renderFieldPill(i === 0 ? label : "", v, isMatch(v) ? "match" : "neutral"));
+  });
+  const more = ordered.length - Math.min(SHOW, ordered.length);
+  if (more > 0) out.push(renderMissingPill(`${more} more ${label.toLowerCase()}${more === 1 ? "" : "s"}`));
+  return out;
+}
+
+/** The two headline-score tiles (Risk + ISS* est.). */
+function renderScoreTiles(c: NonNullable<Verdict["carrier"]>): string {
+  const tierStyle = AUDIT_TIER_STYLES[c.audit.tier];
+  const riskColor = tierStyle?.ink ?? C.ink;
+  const iss = c.issScore;
+  const issColor =
+    iss == null ? C.inkMuted : iss >= 75 ? C.redInkPill : iss >= 50 ? C.amberInkPill : C.greenInkPill;
+  const issSub = iss == null ? "no public measure" : iss >= 75 ? "Inspect" : iss >= 50 ? "Optional" : "Pass";
+  const tile = (label: string, value: string, sub: string, color: string) =>
+    `<td width="50%" style="padding:0 6px;vertical-align:top;">
+      <div style="background:${C.pageBg};border:1px solid ${C.border};border-radius:6px;padding:14px 16px;">
+        <div style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-transform:uppercase;">${esc(label)}</div>
+        <div style="${FONT_DECL}font-size:30px;font-weight:700;color:${color};line-height:1.1;margin-top:6px;">${esc(value)}</div>
+        <div style="font-size:12px;color:${C.inkMuted};margin-top:4px;">${esc(sub)}</div>
+      </div>
+    </td>`;
+  return `
+    <tr><td style="padding:0 26px 22px 26px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+        ${tile("Risk score", c.riskScore != null ? String(c.riskScore) : "—", c.audit.tier, riskColor)}
+        ${tile("ISS* est.", iss != null ? String(iss) : "—", issSub, issColor)}
+      </tr></table>
     </td></tr>`;
 }
 
@@ -417,13 +484,13 @@ function noCarrierHeadline(extracted: ExtractedEmail | undefined): string {
   const claims = extracted?.identity_claims;
   const hasMc = !!claims?.mc_number;
   const hasDot = !!claims?.dot_number;
-  if (!hasMc && !hasDot) return "Can't verify. No MC or DOT in the email.";
-  if (!hasMc) return "Can't verify. No MC number in the email.";
+  if (!hasMc && !hasDot) return "Can't verify. No MC or DOT found.";
+  if (!hasMc) return "Can't verify. No MC number found.";
   if (!hasDot) return "DOT not in FMCSA snapshot.";
   return "Can't verify the sender.";
 }
 
-/** "Missing from the email" pill, same shape as the FROM THE EMAIL pills
+/** "Not found" pill, same shape as the FROM THE EMAIL pills
  *  but with a dashed border, no status dot, and muted ink. Visually
  *  reinforces "this is something we'd need but don't have," distinct from
  *  the solid pills that show what we *did* find. */
@@ -466,7 +533,7 @@ function renderNoCarrierFollowupBlock(extracted: ExtractedEmail | undefined): st
   const missingBlock =
     missing.length > 0
       ? `
-      <div style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-transform:uppercase;margin-bottom:10px;">Missing from the email</div>
+      <div style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-transform:uppercase;margin-bottom:10px;">Not found</div>
       <div style="margin-bottom:18px;">
         ${missing.map(renderMissingPill).join("\n        ")}
       </div>`
@@ -646,14 +713,14 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
       // When failed, prefer the evaluator's concrete detail (which names the
       // claimed vs. registered MC numbers) over a generic fallback.
       detail: fail
-        ? (sig!.detail || "MC number in the email doesn't match FMCSA's registered MC for this DOT.")
+        ? (sig!.detail || "MC number doesn't match FMCSA's registered MC for this DOT.")
         : `MC ties to ${c?.legalName ?? "this carrier"}. No reassignment, no recent changes.`,
     });
   } else {
     rows.push({
       status: "skipped",
       label: "MC number match",
-      detail: "Email didn't include an MC number we could compare to FMCSA.",
+      detail: "No MC number found to compare to FMCSA.",
     });
   }
 
@@ -694,14 +761,14 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
         ? "Carrier name doesn't match FMCSA"
         : "Carrier name matches FMCSA",
       detail: fail
-        ? (sig!.detail || "Name in the email doesn't match FMCSA's legal name for this DOT.")
+        ? (sig!.detail || "Name doesn't match FMCSA's legal name for this DOT.")
         : "Carrier name in the email matches FMCSA's legal name on file.",
     });
   } else {
     rows.push({
       status: "skipped",
       label: "Company name match",
-      detail: "Email didn't include a claimed company name to compare.",
+      detail: "No company name found to compare.",
     });
   }
 
@@ -715,14 +782,14 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
         ? "Phone doesn't match FMCSA"
         : "Phone matches FMCSA",
       detail: fail
-        ? (sig!.detail || "Phone in the email doesn't match FMCSA's registered phone.")
+        ? (sig!.detail || "Phone doesn't match FMCSA's registered phone.")
         : "Phone in the email matches the number FMCSA has on file.",
     });
   } else {
     rows.push({
       status: "skipped",
       label: "Phone match",
-      detail: "Email didn't include a phone number to verify against FMCSA.",
+      detail: "No phone number found to verify against FMCSA.",
     });
   }
 
@@ -744,7 +811,7 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
     rows.push({
       status: "skipped",
       label: "Lane viability",
-      detail: "Email didn't specify a clear origin / destination lane to check.",
+      detail: "No clear origin / destination lane found to check.",
     });
   }
 
@@ -1027,216 +1094,51 @@ function parseP95(detail: string | null | undefined): number | null {
 }
 
 function renderDetailSection(c: NonNullable<Verdict["carrier"]>): string {
-  // Inspection breakdown, show OOS rates so brokers can see fleet upkeep.
-  // Safety profile bars, one per axis, showing observed value vs peer P95
-  // cutoff. Each bar fills proportionally with green up to P95 and red past
-  // it. P95 values come from the analyzer's detail strings (same source the
-  // website uses).
-  const barRows: string[] = [];
-
-  // Inspection-based axes (driver / vehicle / hazmat OOS): observed is the
-  // OOS percentage; P95 comes from the analyzer's axis.
-  const addInspBar = (label: string, pair: [number, number], axis: typeof c.auditAxes.crash) => {
-    if (pair[0] === 0) return;
-    const observedPct = (pair[1] / pair[0]) * 100;
-    const display = `${pair[0]} insp · ${pair[1]} OOS (${observedPct.toFixed(0)}%)`;
-    barRows.push(renderBarRow(label, display, observedPct, axis?.cutoffs ?? null, "%"));
+  // The 7 FMCSA SMS BASICs as peer-ranked percentiles (0-100, higher = worse).
+  // FMCSA only publishes a percentile when the carrier has enough inspection
+  // data, so many read "no public measure" — that's the real FMCSA state.
+  const pctCell = (pct: number | null, alert: boolean): string => {
+    if (pct == null) {
+      return `<span style="color:${C.inkMuted};font-size:13px;">no public measure</span>`;
+    }
+    const v = Math.round(pct);
+    const color = alert ? C.redInkPill : v >= 90 ? "#7c2d12" : v >= 80 ? C.amberInkPill : C.ink;
+    const weight = alert || v >= 80 ? "700" : "600";
+    return (
+      `<span style="color:${color};font-weight:${weight};font-size:14px;">${v}` +
+      `<span style="color:${C.inkLabel};font-weight:400;font-size:11px;"> /100</span></span>` +
+      (alert ? ` <span style="color:${C.redInkPill};font-weight:700;font-size:11px;">ALERT</span>` : "")
+    );
   };
-  addInspBar("Driver OOS", c.driverInspections, c.auditAxes.driverOos);
-  addInspBar("Vehicle OOS", c.vehicleInspections, c.auditAxes.vehicleOos);
-  addInspBar("Hazmat OOS", c.hazmatInspections, c.auditAxes.hazmatOos);
-
-  // Unsafe Driving + HOS, rendered like OOS axes (rate vs peer P85/P90/P95).
-  // The analyzer's classification uses the violation rate, so we plot that
-  // rather than the raw FMCSA SMS measure (1.88 etc.) which is on a
-  // different scale and harder to interpret at a glance.
-  const addRateBar = (label: string, axis: typeof c.auditAxes.crash, violationCount: number, totalInsp: number) => {
-    if (totalInsp === 0 || !axis) return;
-    const pct = (violationCount / totalInsp) * 100;
-    const display = `${violationCount} of ${totalInsp} insp (${pct.toFixed(0)}%)`;
-    barRows.push(renderBarRow(label, display, pct, axis.cutoffs, "%"));
-  };
-  // Only render when the axis actually fired (non-clean), for a clean
-  // carrier the OOS rows already cover the inspection volume context.
-  if (c.auditAxes.unsafeDriving && c.auditAxes.unsafeDriving.status !== "clean") {
-    // unsafeDrivingViolations isn't on VerdictCarrierSummary, but the axis's
-    // observed field carries the rate (already × 100 via AXIS_SCALE_FOR_DISPLAY).
-    const obs = c.auditAxes.unsafeDriving.observed;
-    if (obs != null) {
-      barRows.push(renderBarRow(
-        "Unsafe Driving",
-        `${obs.toFixed(0)}% of driver inspections`,
-        obs,
-        c.auditAxes.unsafeDriving.cutoffs,
-        "%"
-      ));
-    }
-  }
-  if (c.auditAxes.hos && c.auditAxes.hos.status !== "clean") {
-    const obs = c.auditAxes.hos.observed;
-    if (obs != null) {
-      barRows.push(renderBarRow(
-        "HOS Compliance",
-        `${obs.toFixed(0)}% of driver inspections`,
-        obs,
-        c.auditAxes.hos.cutoffs,
-        "%"
-      ));
-    }
-  }
-
-  // Crash rate bar (per million miles), followed by the count breakdown.
-  if (c.crashesPerMillionMiles != null) {
-    barRows.push(renderBarRow(
-      "Crash rate",
-      `${c.crashesPerMillionMiles.toFixed(2)} per million miles`,
-      c.crashesPerMillionMiles,
-      c.auditAxes.crash?.cutoffs ?? null,
-      ""
-    ));
-    // Single context line below the crash bar: breakdown counts + FMCSA's
-    // own severity-weighted Crash Indicator with its national P-rank.
-    // Total comes from c.crashes24mo (the authoritative FMCSA count), NOT
-    // fatal+injury+tow, because a single crash can be both injury AND
-    // tow-away in FMCSA's data and summing the breakdown double-counts.
-    const [fatal, inj, tow] = c.crashBreakdown;
-    const total = c.crashes24mo;
-    const segments: string[] = [];
-    if (total > 0) {
-      const parts: string[] = [];
-      if (fatal > 0) parts.push(`<span style="color:${C.redInkPill};font-weight:600;">${fatal} fatal</span>`);
-      if (inj > 0) parts.push(`${inj} injury`);
-      if (tow > 0) parts.push(`${tow} tow-away`);
-      segments.push(`${total} crash${total === 1 ? "" : "es"}${parts.length ? ` · ${parts.join(" · ")}` : ""}`);
-    }
-    if (c.crashMeasure != null && c.crashMeasureBand) {
-      const isFlagged = /P9[59]/.test(c.crashMeasureBand);
-      const bandColor = isFlagged ? C.redInkPill : C.inkMuted;
-      const bandStyle = isFlagged ? "font-weight:600;" : "";
-      segments.push(
-        `FMCSA CSI <span style="color:${C.ink};font-weight:500;">${c.crashMeasure.toFixed(2)}</span> <span style="color:${bandColor};${bandStyle}">(${esc(c.crashMeasureBand)})</span>`
-      );
-    }
-    if (segments.length > 0) {
-      barRows.push(`<tr><td colspan="2" style="padding:4px 0 0 0;font-size:12px;color:${C.inkMuted};line-height:1.5;">
-        ${segments.join(" &nbsp;·&nbsp; ")}
-      </td></tr>`);
-    }
-  }
-
-  // Old inspRows kept empty so subsequent allRows assembly compiles
-  // unchanged; the safety-profile block above replaces them.
-  const inspRows: string[] = [];
-
-  // Crash rate is rendered as a bar above (see addInspBar/crash block).
-  // The text-only crash row was removed to avoid showing the same metric
-  // twice.
-  const crashRows: string[] = [];
-
-  // Insurance churn bar. The rule is two-tier (Elevated 3-6, Severe ≥7) so
-  // the standard P85/P90/P95 visual scheme doesn't fit cleanly. We pass an
-  // explicit badge override that names the rule's actual tier and color,
-  // with cutoffs spaced for sensible visual tick placement (the cutoffs
-  // are still used by renderBar for positioning the tick marks at "3" and
-  // "7" along the bar).
-  const insRows: string[] = [];
-  if (c.insuranceCancellations24mo > 0) {
-    const dateLabel = c.insuranceCancellationDate ? `most recent ${c.insuranceCancellationDate}` : "";
-    const count = c.insuranceCancellations24mo;
-    const display = `${count} cancellation${count === 1 ? "" : "s"}${dateLabel ? ` · ${dateLabel}` : ""}`;
-    // The insurance churn rule is two-tier (3-6 = Elevated, ≥7 = Severe)
-    // AND the distribution is heavily zero-inflated, 90% of active
-    // carriers have ZERO cancellations, so the P85/P90/P95 percentile
-    // metaphor used by the SMS BASIC bars doesn't fit. Use empirical
-    // distribution percentiles for both ticks AND badge so the bar tells
-    // the truth about where this carrier sits.
-    //
-    // Empirical (May 2026 snapshot of 2.06M active carriers):
-    //   P95 of distribution = 2 cancellations
-    //   P99               = 4 cancellations
-    //   P99.5             = 6 cancellations  (≥7 → Severe-tier rule)
-    //
-    // Tick positions: ticks at the empirical P95 / P99 / P99.5 thresholds,
-    // labeled honestly so a broker reads "this carrier is at P99" and that
-    // matches the actual rarity.
-    const tier =
-      count >= 7
-        ? { label: `≥P99.75 · Severe · ${cancelChurnPercentileText(count)}`, color: C.redInkPill, fillColor: "#a01919" }
-        : count >= 3
-          ? { label: `Elevated · ${cancelChurnPercentileText(count)}`, color: C.amberInkPill, fillColor: "#a16207" }
-          : { label: `${cancelChurnPercentileText(count)} of carriers`, color: C.inkMuted, fillColor: "#2f9742" };
-    insRows.push(renderBarRow(
-      "Insurance churn",
-      display,
-      count,
-      { p85: 2, p90: 4, p95: 6 },
-      "",
-      tier,
-      ["P95", "P99", "P99.5"],
-    ));
-  }
-
-  // Per-axis text rows for Unsafe Driving / HOS only (Hazmat OOS / crashes
-  // are already in the bar chart above). Render when the analyzer flagged
-  // them severely enough that the broker should see the explanation.
-  const axisRows: string[] = [];
-  const addAxisRow = (label: string, axis: typeof c.auditAxes.crash) => {
-    if (!axis?.detail) return;
-    if (axis.status === "clean" || axis.status === "na") return;
-    const m = axis.detail.match(/\(([\d.]+%?)\)(?![^()]*\()/);
-    const cutoffStr = m ? m[1] : null;
-    let multLine = "";
-    if (cutoffStr && axis.display) {
-      const obs = parseFloat(axis.display.replace("%", ""));
-      const cut = parseFloat(cutoffStr.replace("%", ""));
-      if (Number.isFinite(obs) && Number.isFinite(cut) && cut > 0) {
-        multLine = ` <span style="color:${C.redInkPill};font-weight:600;">(${(obs / cut).toFixed(1)}× P95)</span>`;
-      }
-    }
-    const detailText = axis.detail.replace(/\n/g, " ");
-    axisRows.push(`<tr>
-      <td style="padding:6px 0;color:${C.inkMuted};font-size:13px;width:34%;vertical-align:top;">${esc(label)}</td>
-      <td style="padding:6px 0;font-size:13px;">
-        <span style="color:${axisColor(axis.status)};font-weight:600;">${esc(axis.display)}</span>${multLine}
-        <div style="color:${C.inkMuted};font-size:12px;line-height:1.5;margin-top:2px;">${esc(detailText)}</div>
-      </td>
-    </tr>`);
-  };
-  // Unsafe Driving + HOS + Hazmat OOS are all rendered as bars in the
-  // safety-profile block above; we skip the text rows here to avoid
-  // duplicating the same finding in two visual styles.
-
-  // BASIC alerts pill row, FMCSA's own Y flags. Optional, supplements the
-  // axis rows above when FMCSA themselves has called the carrier out.
-  const basicRows: string[] = [];
-  if (c.basicAlerts.length > 0) {
-    const pills = c.basicAlerts.map((a) =>
-      `<span style="display:inline-block;padding:3px 10px;background:${C.redBgPill};color:${C.redInkPill};font-size:12px;font-weight:600;border-radius:999px;margin-right:4px;margin-bottom:4px;">${esc(a)}</span>`
-    ).join(" ");
-    basicRows.push(`<tr>
-      <td style="padding:6px 0;color:${C.inkMuted};font-size:13px;width:34%;vertical-align:top;">FMCSA BASIC alerts</td>
-      <td style="padding:6px 0;font-size:13px;">
-        <div>${pills}</div>
-        <div style="color:${C.inkMuted};font-size:12px;font-weight:400;margin-top:4px;">FMCSA has flagged this carrier as above the regulatory intervention threshold. Eligible for compliance review.</div>
-      </td>
-    </tr>`);
-  }
-
-  const allRows = [...barRows, ...crashRows, ...axisRows, ...basicRows, ...insRows].join("\n");
-  if (!allRows) return ""; // nothing to show, skip the section entirely
-
+  const rows = c.basics
+    .map(
+      (b) => `<tr>
+        <td style="padding:8px 0;color:${C.ink};font-size:13px;border-top:1px solid ${C.border};">${esc(b.name)}</td>
+        <td style="padding:8px 0;text-align:right;border-top:1px solid ${C.border};">${pctCell(b.percentile, b.alert)}</td>
+      </tr>`
+    )
+    .join("\n");
+  const alerted = c.basics.filter((b) => b.alert).map((b) => b.name);
+  const alertBlock = alerted.length
+    ? `<div style="margin-top:14px;padding-top:12px;border-top:1px solid ${C.border};">
+        <div style="font-size:11px;font-weight:600;color:${C.redInkPill};letter-spacing:0.06em;text-transform:uppercase;margin-bottom:8px;">FMCSA alerts</div>
+        <div>${alerted
+          .map(
+            (a) =>
+              `<span style="display:inline-block;padding:3px 10px;background:${C.redBgPill};color:${C.redInkPill};font-size:12px;font-weight:600;border-radius:999px;margin:0 4px 6px 0;">${esc(a)}</span>`
+          )
+          .join("")}</div>
+        <div style="font-size:12px;color:${C.inkMuted};margin-top:2px;line-height:1.5;">At or above FMCSA's intervention threshold on the flagged BASIC(s) — eligible for compliance review.</div>
+      </div>`
+    : `<div style="margin-top:14px;padding-top:12px;border-top:1px solid ${C.border};font-size:12px;color:${C.inkMuted};">No BASIC alerts above FMCSA's intervention threshold.</div>`;
   return `
-    <!-- FMCSA detail, 24mo operational record from the bulk FMCSA snapshot.
-         Red = at or above FMCSA's regulatory intervention threshold (BASIC
-         alerts) or above operationally concerning levels (≥20% OOS rate,
-         multiple insurance cancellations, fatal/injury crashes). Amber =
-         worth knowing but not by itself a regulatory action. -->
     <tr><td style="padding:24px 32px;border-top:1px solid ${C.border};">
-      <div style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-transform:uppercase;margin-bottom:4px;">FMCSA detail · 24-month record</div>
-      <div style="font-size:12px;color:${C.inkMuted};margin-bottom:14px;line-height:1.5;">Red = at or above FMCSA's regulatory intervention threshold. Amber = worth knowing.</div>
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-        ${allRows}
+      <div style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-transform:uppercase;margin-bottom:4px;">FMCSA SMS BASICs</div>
+      <div style="font-size:12px;color:${C.inkMuted};margin-bottom:8px;line-height:1.5;">Peer-ranked percentile (0–100, higher = worse). FMCSA publishes one only with enough inspection data.</div>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">
+        ${rows}
       </table>
+      ${alertBlock}
     </td></tr>`;
 }
 
@@ -1449,16 +1351,9 @@ ${renderPreheader(composePreheader(verdict))}
 
     <!-- Top banner -->
     <tr><td style="padding:16px 24px;border-bottom:1px solid ${C.border};">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-      <tr>
-        <td style="font-size:13px;font-weight:600;color:${C.ink};letter-spacing:0.02em;">
-          <span style="color:${C.greenCheck};">●</span> &nbsp;Augie · Carrier safety check
-        </td>
-        <td style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-align:right;text-transform:uppercase;">
-          audit@augie.ai
-        </td>
-      </tr>
-      </table>
+      <div style="font-size:13px;font-weight:600;color:${C.ink};letter-spacing:0.02em;">
+        <span style="color:${C.greenCheck};">●</span> &nbsp;Augie · Carrier safety check
+      </div>
     </td></tr>
 
     <!-- Tier headline -->
@@ -1473,6 +1368,8 @@ ${renderPreheader(composePreheader(verdict))}
         </td></tr>
       </table>
     </td></tr>
+
+    ${c ? renderScoreTiles(c) : ""}
 
     ${!c ? "" : `
     <!-- Counter row, passed / failed / skipped. Failed only renders when >0
@@ -1557,7 +1454,7 @@ ${renderPreheader(composePreheader(verdict))}
     <tr><td style="padding:24px 32px;">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${C.pageBg};border-radius:2px;">
         <tr><td style="padding:16px;">
-          <div style="font-size:13px;color:${C.ink};font-weight:600;margin-bottom:8px;">${skippedChecks.length} check${skippedChecks.length === 1 ? "" : "s"} skipped, the email didn't include the inputs we'd need</div>
+          <div style="font-size:13px;color:${C.ink};font-weight:600;margin-bottom:8px;">${skippedChecks.length} check${skippedChecks.length === 1 ? "" : "s"} skipped — we couldn't find the inputs we'd need</div>
           ${skippedChecks.map((r) => `<div style="font-size:13px;color:${C.inkMuted};padding:3px 0;">+ ${esc(r.label)}</div>`).join("")}
         </td></tr>
       </table>
@@ -1569,7 +1466,6 @@ ${renderPreheader(composePreheader(verdict))}
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
       <tr>
         <td style="font-size:12px;color:${C.inkMuted};">
-          Reply to this thread to ask Augie a follow-up. ·
           <a href="${esc(auditUrl)}" style="color:${C.inkMuted};text-decoration:underline;">View on web</a>
         </td>
         <td style="font-size:12px;color:${C.inkLabel};text-align:right;">${esc(verdict.generatedAt.slice(0, 16).replace("T", " "))} UTC</td>
