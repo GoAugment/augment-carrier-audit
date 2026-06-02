@@ -61,6 +61,19 @@ const nextConfig = {
         "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/package.json",
         "./node_modules/.pnpm/@mapbox+node-pre-gyp@*/**/*",
       ],
+      // POST /api/check — captured-page audit (bookmarklet target). Same data
+      // path as /check/[dot]: carrier_identity stays Blob-served at runtime.
+      "/api/check": [
+        "./data/carrier_aggregates.parquet",
+        "./data/carrier_risk_signals.parquet",
+        "./data/national_thresholds.json",
+        "./lib/data/lane-liability.json",
+        "./node_modules/duckdb/lib/**/*",
+        "./node_modules/duckdb/package.json",
+        "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/lib/**/*",
+        "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/package.json",
+        "./node_modules/.pnpm/@mapbox+node-pre-gyp@*/**/*",
+      ],
     },
     outputFileTracingExcludes: {
       "/api/analyze": [
@@ -94,7 +107,7 @@ const nextConfig = {
         "node_modules/.pnpm/duckdb@*/**/test/**",
         "node_modules/.pnpm/duckdb@*/**/scripts/**",
       ],
-      "/check/[dot]/email": [
+      "/api/check": [
         "data/carrier_identity.parquet",
         "node_modules/duckdb/src/**",
         "node_modules/duckdb/test/**",
