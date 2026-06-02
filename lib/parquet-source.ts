@@ -170,10 +170,6 @@ export const getMcIndexParquetPath = (): Promise<string | null> =>
   resolveOptionalSource("single-check-buckets/mc_index.parquet");
 export const getPhoneIndexParquetPath = (): Promise<string | null> =>
   resolveOptionalSource("single-check-buckets/phone_index.parquet");
-export const getCompactCarrierPath = (dot: number): Promise<string | null> =>
-  resolveCompactSource(`single-check-compact/carriers/bucket=${bucketForDot(dot)}.json.gz`);
-export const getCompactIdentityPath = (dot: number): Promise<string | null> =>
-  resolveCompactSource(`single-check-compact/identities/bucket=${bucketForDot(dot)}.json.gz`);
 export const getCompactMcPath = (digits: string): Promise<string | null> => {
   const prefix = compactPrefix(digits, COMPACT_MC_PREFIX_LEN);
   return prefix

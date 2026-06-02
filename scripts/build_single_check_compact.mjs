@@ -5,8 +5,6 @@
  * These compact tables are for one-carrier API lookups on serverless runtimes:
  *
  *   single-check-compact/
- *     carriers/bucket=330.json.gz       [columns[], rows[][]]
- *     identities/bucket=330.json.gz     [columns[], rows[][]]
  *     mc/prefix=677.json.gz             [["mc","DOT_NUMBER"], rows]
  *     phone/prefix=9843.json.gz         [["ph","DOT_NUMBER"], rows]
  *
@@ -49,8 +47,6 @@ if (!Number.isInteger(phonePrefixLen) || phonePrefixLen <= 0) {
 }
 
 fs.rmSync(out, { recursive: true, force: true });
-fs.mkdirSync(path.join(out, "carriers"), { recursive: true });
-fs.mkdirSync(path.join(out, "identities"), { recursive: true });
 fs.mkdirSync(path.join(out, "mc"), { recursive: true });
 fs.mkdirSync(path.join(out, "phone"), { recursive: true });
 
@@ -68,17 +64,6 @@ function jsonReplacer(_key, value) {
   return value;
 }
 
-function parseCarrierColumns() {
-  const source = fs.readFileSync(path.join(root, "lib", "fmcsa-parquet.ts"), "utf8");
-  const match = source.match(/const CARRIER_SELECT_COLUMNS = `([\s\S]*?)`;/);
-  if (!match) throw new Error("Could not find CARRIER_SELECT_COLUMNS in lib/fmcsa-parquet.ts");
-  return match[1].split(",").map((s) => s.trim()).filter(Boolean);
-}
-
-function quoteIdent(name) {
-  return `"${name.replace(/"/g, '""')}"`;
-}
-
 function tableFromRows(columns, rows) {
   return [columns, rows.map((row) => columns.map((col) => row[col] ?? null))];
 }
@@ -90,85 +75,12 @@ function writeCompact(file, columns, rows) {
   return gz.length;
 }
 
-function findBucketFiles(kind) {
-  const base = path.join(bucketParquets, kind);
-  if (!fs.existsSync(base)) throw new Error(`Missing bucket kind: ${base}`);
-  const out = [];
-  for (const entry of fs.readdirSync(base, { withFileTypes: true })) {
-    if (entry.isFile() && entry.name.endsWith(".parquet")) {
-      const bucket = Number(entry.name.replace(/\.parquet$/, ""));
-      if (Number.isFinite(bucket)) out.push({ bucket, file: path.join(base, entry.name) });
-    } else if (entry.isDirectory()) {
-      const match = entry.name.match(/^bucket=(\d+)$/);
-      if (!match) continue;
-      const dir = path.join(base, entry.name);
-      for (const child of fs.readdirSync(dir, { withFileTypes: true })) {
-        if (child.isFile() && child.name.endsWith(".parquet")) {
-          out.push({ bucket: Number(match[1]), file: path.join(dir, child.name) });
-        }
-      }
-    }
-  }
-  return out.sort((a, b) => a.bucket - b.bucket);
-}
-
 async function timed(label, fn) {
   const t0 = Date.now();
   const result = await fn();
   console.log(`${label}: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
   return result;
 }
-
-const carrierColumns = parseCarrierColumns();
-const carrierFiles = findBucketFiles("carriers");
-const identityFiles = findBucketFiles("identities");
-if (carrierFiles.length === 0 || identityFiles.length === 0) {
-  throw new Error("No carrier/identity bucket parquet files found");
-}
-
-const identityDescribe = await all(
-  `DESCRIBE SELECT * FROM read_parquet('${sqlPath(identityFiles[0].file)}')`
-);
-const identityColumns = identityDescribe
-  .map((row) => row.column_name)
-  .filter((name) => name !== "bucket");
-
-let carrierBytes = 0;
-let identityBytes = 0;
-let carrierRowsTotal = 0;
-let identityRowsTotal = 0;
-
-await timed("carrier compact buckets", async () => {
-  for (const { bucket, file } of carrierFiles) {
-    const rows = await all(
-      `SELECT ${carrierColumns.map(quoteIdent).join(", ")}
-       FROM read_parquet('${sqlPath(file)}')
-       ORDER BY DOT_NUMBER`
-    );
-    carrierRowsTotal += rows.length;
-    carrierBytes += writeCompact(
-      path.join(out, "carriers", `bucket=${bucket}.json.gz`),
-      carrierColumns,
-      rows
-    );
-  }
-});
-
-await timed("identity compact buckets", async () => {
-  for (const { bucket, file } of identityFiles) {
-    const rows = await all(
-      `SELECT ${identityColumns.map(quoteIdent).join(", ")}
-       FROM read_parquet('${sqlPath(file)}')
-       ORDER BY DOT_NUMBER`
-    );
-    identityRowsTotal += rows.length;
-    identityBytes += writeCompact(
-      path.join(out, "identities", `bucket=${bucket}.json.gz`),
-      identityColumns,
-      rows
-    );
-  }
-});
 
 function writePrefixTables(rows, key, prefixLen, dir) {
   const groups = new Map();
@@ -208,15 +120,7 @@ const phoneStats = await timed("phone compact index", async () => {
 });
 
 const metadata = {
-  format: "compact-table-v1",
-  carrierColumns: carrierColumns.length,
-  identityColumns: identityColumns.length,
-  carrierBuckets: carrierFiles.length,
-  identityBuckets: identityFiles.length,
-  carrierRows: carrierRowsTotal,
-  identityRows: identityRowsTotal,
-  carrierBytes,
-  identityBytes,
+  format: "compact-index-v1",
   mcPrefixLen,
   phonePrefixLen,
   mc: mcStats,

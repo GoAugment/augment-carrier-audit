@@ -2,16 +2,12 @@ import fs from "node:fs";
 import zlib from "node:zlib";
 
 import {
-  getCompactCarrierPath,
-  getCompactIdentityPath,
   getCompactMcPath,
   getCompactPhonePath,
 } from "./parquet-source";
 
-type RawRow = Record<string, unknown>;
 type CompactTable = [string[], unknown[][]];
 
-const dotTableCache = new Map<string, Promise<Map<number, RawRow>>>();
 const keyTableCache = new Map<string, Promise<Map<string, number[]>>>();
 
 async function readCompactTable(file: string): Promise<CompactTable> {
@@ -31,29 +27,6 @@ function cacheSet<K, V>(cache: Map<K, V>, key: K, value: V, max = 200): V {
   }
   cache.set(key, value);
   return value;
-}
-
-function loadDotTable(file: string): Promise<Map<number, RawRow>> {
-  const cached = dotTableCache.get(file);
-  if (cached) return cached;
-  const job = (async () => {
-    const [columns, rows] = await readCompactTable(file);
-    const dotIdx = columns.indexOf("DOT_NUMBER");
-    if (dotIdx < 0) throw new Error(`Compact table missing DOT_NUMBER: ${file}`);
-    const out = new Map<number, RawRow>();
-    for (const row of rows) {
-      const dot = Number(row[dotIdx]);
-      if (!Number.isFinite(dot)) continue;
-      const obj: RawRow = {};
-      for (let i = 0; i < columns.length; i += 1) {
-        obj[columns[i]] = row[i] ?? null;
-      }
-      out.set(dot, obj);
-    }
-    return out;
-  })();
-  job.catch(() => dotTableCache.delete(file));
-  return cacheSet(dotTableCache, file, job);
 }
 
 function loadKeyTable(file: string, keyColumn: string): Promise<Map<string, number[]>> {
@@ -82,46 +55,12 @@ function loadKeyTable(file: string, keyColumn: string): Promise<Map<string, numb
   return cacheSet(keyTableCache, cacheKey, job);
 }
 
-async function fetchRowsByDot(
-  dots: number[],
-  pathForDot: (dot: number) => Promise<string | null>
-): Promise<Map<number, RawRow>> {
-  const out = new Map<number, RawRow>();
-  if (dots.length === 0 || dots.length > 25) return out;
-
-  const byPath = new Map<string, number[]>();
-  for (const dot of dots) {
-    const file = await pathForDot(dot);
-    if (!file) continue;
-    const group = byPath.get(file) ?? [];
-    group.push(dot);
-    byPath.set(file, group);
-  }
-
-  for (const [file, bucketDots] of byPath) {
-    const table = await loadDotTable(file);
-    for (const dot of bucketDots) {
-      const row = table.get(dot);
-      if (row) out.set(dot, row);
-    }
-  }
-  return out;
-}
-
 export function normalizeMcDigits(mc: string): string {
   return mc.replace(/\D/g, "").replace(/^0+/, "");
 }
 
 export function normalizePhoneDigits(phone: string): string {
   return phone.replace(/\D/g, "");
-}
-
-export async function fetchCarrierRowsFromCompact(dots: number[]): Promise<Map<number, RawRow>> {
-  return fetchRowsByDot(dots, getCompactCarrierPath);
-}
-
-export async function fetchIdentityRowsFromCompact(dots: number[]): Promise<Map<number, RawRow>> {
-  return fetchRowsByDot(dots, getCompactIdentityPath);
 }
 
 export async function fetchDotByMcCompact(mc: string): Promise<number | null | undefined> {
