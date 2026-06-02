@@ -65,6 +65,14 @@ export interface ExtractedEmail {
     specificity_score: 0 | 1 | 2 | 3;
   };
 
+  /** All distinct emails found on a captured page (bookmarklet path), vendor/
+   *  loadboard/host domains already excluded. Used when there's no single
+   *  authoritative sender (a TMS contact list has several emails — customer,
+   *  broker, carrier) — we check whether the carrier's FMCSA-registered email/
+   *  domain appears among them rather than betting on the first one. Empty/unset
+   *  for the inbound-email path (which has one real From: sender). */
+  sender_candidates?: string[];
+
   lane: {
     origin_city: string | null;
     origin_state: string | null;

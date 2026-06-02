@@ -20,9 +20,15 @@
  * email-style audit reply (buildReplyHtml) the GET /check/{dot} route renders.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { checkCarrierEmail } from "@/lib/email/check";
+import { checkCarrierEmail, lastTimings } from "@/lib/email/check";
 import { buildReplyHtml } from "@/lib/email/format-reply-html";
 import { extractFromPage, pageDiagnostics } from "@/lib/email/extract-page";
+
+function serverTiming(): string {
+  return Object.entries(lastTimings)
+    .map(([k, v]) => `${k};dur=${v}`)
+    .join(",");
+}
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30; // DNS + WHOIS on the sender domain can take a few seconds.
@@ -94,13 +100,19 @@ export async function POST(req: NextRequest) {
 
   const extracted = extractFromPage({ html, url, sel, fields });
 
+  const reqStart = Date.now();
   const verdict = await checkCarrierEmail(extracted);
+  const checkMs = Date.now() - reqStart;
   const replyHtml = buildReplyHtml(verdict, extracted);
 
   return new NextResponse(replyHtml, {
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
+      // Per-phase timings for diagnosing prod latency (devtools Network →
+      // Timing, or `curl -sI`). `check;dur=` is the whole verdict; the rest are
+      // computeVerdict phases (all 0 on a verdict-cache hit).
+      "Server-Timing": `check;dur=${checkMs},${serverTiming()}`,
     },
   });
 }
