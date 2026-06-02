@@ -73,6 +73,12 @@ export interface ExtractedEmail {
    *  for the inbound-email path (which has one real From: sender). */
   sender_candidates?: string[];
 
+  /** All distinct phone numbers found on a captured page (bookmarklet path).
+   *  Same idea as sender_candidates: a contact list has several numbers, so we
+   *  check whether the carrier's FMCSA-registered phone is among them rather
+   *  than betting on the first. Unset for the inbound-email path. */
+  phone_candidates?: string[];
+
   lane: {
     origin_city: string | null;
     origin_state: string | null;

@@ -321,9 +321,22 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
     /\bhaz[\s-]?mat\b\s*[:=]?\s*(?:yes|y|true|1|required|x|✓)\b/i.test(text) ||
     /\bhaz[\s-]?mat\b\s+(?:load|shipment|freight|cargo|placard)/i.test(text);
 
-  // --- phone (claimed) ---
-  const phoneM = text.match(/(?:phone|tel|cell|call|ph)\b[:\s.]*((?:\+?1[\s.\-]*)?\(?\d{3}\)?[\s.\-]*\d{3}[\s.\-]*\d{4})/i);
-  const claimed_phone = phoneM ? phoneM[1].trim() : null;
+  // --- phones ---
+  // A page (TMS load, contact directory) lists several numbers — customer,
+  // broker, carrier — so don't bet on one "claimed phone" (that false-flagged
+  // a phone mismatch). Collect ALL of them as candidates; the check looks for
+  // the carrier's FMCSA phone among them. Dedup by last-10-digits.
+  const phoneCandidates: string[] = [];
+  const seenPhones = new Set<string>();
+  for (const m of text.matchAll(/(?:\+?1[\s.\-]?)?\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}\b/g)) {
+    const raw = m[0].trim();
+    const d10 = raw.replace(/\D/g, "").slice(-10);
+    if (d10.length === 10 && !seenPhones.has(d10)) {
+      seenPhones.add(d10);
+      phoneCandidates.push(raw);
+      if (phoneCandidates.length >= 30) break;
+    }
+  }
 
   return {
     extracted_text: "",
@@ -334,7 +347,8 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
       // We don't try to guess the legal name from arbitrary page text — the
       // verdict resolves the registered name from FMCSA off the DOT/MC.
       claimed_company_name: null,
-      claimed_phone,
+      // No single "claimed phone" on a multi-contact page — see phone_candidates.
+      claimed_phone: null,
       contact_person: null,
     },
     sender_metadata: {
@@ -344,6 +358,7 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
       reply_to_domain: replyToDomain,
     },
     sender_candidates: senderCandidates.length ? senderCandidates : undefined,
+    phone_candidates: phoneCandidates.length ? phoneCandidates : undefined,
     behavioral_signals: {
       is_response_to_load_posting: false,
       urgency_markers: [],
