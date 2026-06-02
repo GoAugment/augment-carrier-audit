@@ -315,9 +315,12 @@ export async function fetchDotByMc(mc: string): Promise<number | null> {
   const digits = mc.replace(/\D/g, "");
   if (!digits) return null;
   const parquet = await getAggregatesParquetPath();
+  // Compare NUMERICALLY, not as strings: TMS systems (T1) zero-pad MC numbers
+  // ("MC-067717") while FMCSA stores them unpadded ("MC-67717"), so a string
+  // compare misses. TRY_CAST tolerates blank/non-numeric mc_number rows.
   const sql = `
     SELECT DOT_NUMBER FROM read_parquet('${parquet.replace(/'/g, "''")}')
-    WHERE REGEXP_REPLACE(mc_number, '[^0-9]', '', 'g') = ?
+    WHERE TRY_CAST(REGEXP_REPLACE(mc_number, '[^0-9]', '', 'g') AS BIGINT) = TRY_CAST(? AS BIGINT)
     LIMIT 1
   `;
   const rows = await runQuery<{ DOT_NUMBER: number | bigint }>(sql, [digits]);
