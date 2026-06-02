@@ -52,11 +52,6 @@ const nextConfig = {
         "./data/carrier_risk_signals.parquet",
         "./data/national_thresholds.json",
         "./lib/data/lane-liability.json",
-        "./node_modules/duckdb/lib/**/*",
-        "./node_modules/duckdb/package.json",
-        "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/lib/**/*",
-        "./node_modules/.pnpm/duckdb@*/node_modules/duckdb/package.json",
-        "./node_modules/.pnpm/@mapbox+node-pre-gyp@*/**/*",
       ],
     },
     outputFileTracingExcludes: {

@@ -7,6 +7,7 @@ import type { Database } from "duckdb";
 
 import type { FmcsaCarrier } from "./fmcsa";
 import { getAggregatesParquetPath, getCarrierBucketParquetPath, getMcIndexParquetPath } from "./parquet-source";
+import { fetchCarrierRowsFromCompact, fetchDotByMcCompact } from "./single-check-compact";
 
 // Lazy-load duckdb so Next.js doesn't try to bind the native binary during
 // the build container's static-page-data collection (Vercel's build image
@@ -358,6 +359,11 @@ export async function fetchDotByMc(mc: string): Promise<number | null> {
   if (!digits) return null;
   const cached = mcDotCache.get(digits);
   if (cached !== undefined) return cached;
+  const compact = await fetchDotByMcCompact(digits);
+  if (compact !== undefined) {
+    if (mcDotCache.size < 50000) mcDotCache.set(digits, compact);
+    return compact;
+  }
   await ensureMcIndex();
   const rows = await runQuery<{ DOT_NUMBER: number | bigint }>(
     `SELECT DOT_NUMBER FROM mc_index WHERE mc = TRY_CAST(? AS BIGINT) LIMIT 1`,
@@ -449,11 +455,20 @@ export async function fetchCarriersFromParquet(
   }
   if (misses.length === 0) return out;
 
+  const compactRows = await fetchCarrierRowsFromCompact(misses);
+  for (const [dot, r] of compactRows) {
+    const carrier = rowToCarrier(r as unknown as ParquetRow);
+    out.set(dot, carrier);
+    if (carrierCache.size < 50000) carrierCache.set(dot, carrier);
+  }
+  const compactMisses = misses.filter((d) => !compactRows.has(d));
+  if (compactMisses.length === 0) return out;
+
   const rows: ParquetRow[] = [];
   const fallbackDots: number[] = [];
-  if (misses.length <= 25) {
+  if (compactMisses.length <= 25) {
     const byBucketPath = new Map<string, number[]>();
-    for (const dot of misses) {
+    for (const dot of compactMisses) {
       const bucketPath = await getCarrierBucketParquetPath(dot);
       if (bucketPath) {
         const group = byBucketPath.get(bucketPath) ?? [];
@@ -467,7 +482,7 @@ export async function fetchCarriersFromParquet(
       rows.push(...(await fetchCarrierRowsFromParquetPath(bucketPath, bucketDots)));
     }
   } else {
-    fallbackDots.push(...misses);
+    fallbackDots.push(...compactMisses);
   }
   if (fallbackDots.length > 0) {
     rows.push(...(await fetchCarrierRowsFromParquetPath(

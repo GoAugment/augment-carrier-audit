@@ -14,4 +14,5 @@ out
 pipeline/fmcsa-aggregate/*.parquet
 pipeline/fmcsa-aggregate/national_thresholds.json
 data/single-check-buckets/
+data/single-check-compact/
 _shot*.mjs

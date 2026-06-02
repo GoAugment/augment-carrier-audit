@@ -20,6 +20,7 @@ import {
   getPhoneIndexParquetPath,
   getRiskSignalsParquetPath,
 } from "./parquet-source";
+import { fetchIdentityRowsFromCompact, findDotsByPhoneCompact } from "./single-check-compact";
 
 // NB: the free-email-domain list and the residential-address-marker regex now
 // live in scripts/build_risk_signals.cjs — those signals are precomputed
@@ -318,11 +319,20 @@ export async function fetchIdentity(
   }
   if (misses.length === 0) return out;
 
+  const compactRows = await fetchIdentityRowsFromCompact(misses);
+  for (const [dot, r] of compactRows) {
+    const identity = rowToIdentity(r as unknown as ParquetRow);
+    out.set(dot, identity);
+    if (identityCache.size < 50000) identityCache.set(dot, identity);
+  }
+  const compactMisses = misses.filter((d) => !compactRows.has(d));
+  if (compactMisses.length === 0) return out;
+
   const rows: ParquetRow[] = [];
   const fallbackDots: number[] = [];
-  if (misses.length <= 25) {
+  if (compactMisses.length <= 25) {
     const byBucketPath = new Map<string, number[]>();
-    for (const dot of misses) {
+    for (const dot of compactMisses) {
       const bucketPath = await getIdentityBucketParquetPath(dot);
       if (bucketPath) {
         const group = byBucketPath.get(bucketPath) ?? [];
@@ -336,7 +346,7 @@ export async function fetchIdentity(
       rows.push(...(await fetchIdentityRowsFromParquetPath(bucketPath, bucketDots)));
     }
   } else {
-    fallbackDots.push(...misses);
+    fallbackDots.push(...compactMisses);
   }
   if (fallbackDots.length > 0) {
     rows.push(...(await fetchIdentityRowsFromParquetPath(
@@ -352,7 +362,7 @@ export async function fetchIdentity(
     if (identityCache.size < 50000) identityCache.set(identity.dotNumber, identity);
   }
   // Record negative hits so we don't re-scan for DOTs with no identity row.
-  for (const d of misses) {
+  for (const d of compactMisses) {
     if (!found.has(d) && identityCache.size < 50000) identityCache.set(d, null);
   }
   return out;
@@ -468,6 +478,8 @@ function ensurePhoneIndex(): Promise<void> {
 export async function findIdentityByPhone(phone: string): Promise<number[]> {
   const normalized = phone.replace(/\D/g, "");
   if (normalized.length < 7) return []; // skip obvious junk
+  const compact = await findDotsByPhoneCompact(normalized);
+  if (compact) return compact;
   await ensurePhoneIndex();
   const rows = await runQuery<{ DOT_NUMBER: number | bigint }>(
     `SELECT DOT_NUMBER FROM phone_index WHERE ph = ? LIMIT 200`,
