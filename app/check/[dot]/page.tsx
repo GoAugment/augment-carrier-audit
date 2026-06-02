@@ -15,22 +15,36 @@ import {
   type RiskLevel,
   type CarrierIdentityRiskSignals,
 } from "@/lib/analyzer";
-import { fetchCarriers, type FmcsaCarrier } from "@/lib/fmcsa";
+import { fetchCarriers, fetchDotByMc, type FmcsaCarrier } from "@/lib/fmcsa";
 import { fetchIdentityRiskSignals } from "@/lib/fmcsa-identity";
-import { Scorecard } from "@/components/Scorecard";
+import { CarrierCard } from "@/components/CarrierCard";
 
 export const dynamic = "force-dynamic";
 
+// Accept a USDOT or an MC number. A bare number = DOT; an "MC" prefix (or
+// ?mc=) resolves via the MC→DOT lookup.
+async function resolveDot(raw: string, mcParam?: string): Promise<number | null> {
+  const mcRaw = mcParam ?? (/mc/i.test(raw) ? raw : null);
+  if (mcRaw) {
+    const digits = mcRaw.replace(/\D/g, "");
+    if (digits) return (await fetchDotByMc(`MC-${digits}`)) ?? null;
+  }
+  const n = parseInt(raw.replace(/\D/g, ""), 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export default async function CheckPage({
   params,
+  searchParams,
 }: {
   params: { dot: string };
+  searchParams: { mc?: string; from?: string; to?: string };
 }) {
-  const dot = parseInt(params.dot, 10);
-  if (!Number.isFinite(dot) || dot <= 0) {
+  const dot = await resolveDot(params.dot, searchParams.mc);
+  if (!dot) {
     return (
       <main className="mx-auto max-w-2xl px-6 py-16 text-ink-700">
-        Invalid DOT number.
+        Invalid DOT/MC number.
       </main>
     );
   }
@@ -89,10 +103,15 @@ export default async function CheckPage({
   }
 
   return (
-    <main className="min-h-screen bg-ink-50">
-      <div className="mx-auto max-w-7xl px-6 py-10">
-        <Scorecard rows={result.rows} result={result} />
-      </div>
+    <main className="min-h-screen bg-ink-50 py-8">
+      <CarrierCard
+        row={result.rows[0]}
+        lane={
+          searchParams.from || searchParams.to
+            ? { from: searchParams.from, to: searchParams.to }
+            : undefined
+        }
+      />
     </main>
   );
 }
