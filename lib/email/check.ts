@@ -79,7 +79,18 @@ export async function checkCarrierEmail(e: ExtractedEmail): Promise<Verdict> {
   return verdict;
 }
 
+// Per-call phase timings (ms), for diagnosing where prod latency goes. Read by
+// /api/check (Server-Timing header + ?debug). Overwritten each computeVerdict;
+// only meaningful right after a cache-miss call.
+export let lastTimings: Record<string, number> = {};
+
 async function computeVerdict(e: ExtractedEmail): Promise<Verdict> {
+  const T: Record<string, number> = {};
+  let _m = Date.now();
+  const mark = (k: string) => {
+    T[k] = Date.now() - _m;
+    _m = Date.now();
+  };
   const dotStr = e.identity_claims.dot_number;
   let dot = dotStr ? parseInt(dotStr.replace(/\D/g, ""), 10) : NaN;
 
@@ -93,6 +104,7 @@ async function computeVerdict(e: ExtractedEmail): Promise<Verdict> {
       dot = resolved;
     }
   }
+  mark("mcResolve");
 
   // Still no DOT after MC fallback. Can't cross-check against FMCSA.
   if (!Number.isFinite(dot) || dot <= 0) {
@@ -103,6 +115,7 @@ async function computeVerdict(e: ExtractedEmail): Promise<Verdict> {
     fetchCarriers([dot]),
     fetchIdentity([dot]),
   ]);
+  mark("fetchCarrierIdentity");
   const carrier = carriers.get(dot);
   const identity = identities.get(dot);
 
@@ -135,6 +148,7 @@ async function computeVerdict(e: ExtractedEmail): Promise<Verdict> {
 
   const signals: Signal[] = [];
   signals.push(...evalAuditTier(carrier, dot));
+  mark("evalAuditTier");
   signals.push(...evalIdentityCoherence(e, carrier, identity));
   signals.push(...evalLaneViability(e, identity));
   signals.push(...evalLaneCoverage(e, carrier));
@@ -143,9 +157,14 @@ async function computeVerdict(e: ExtractedEmail): Promise<Verdict> {
   if (identity) {
     signals.push(...(await evalChameleonCluster(identity, dot)));
   }
+  mark("chameleonPhone");
   signals.push(...(await evalEmailAuthenticity(e, identity)));
+  mark("emailAuth");
 
-  return composeVerdict(carrier, identity, signals, coverage);
+  const verdict = composeVerdict(carrier, identity, signals, coverage);
+  mark("composeVerdict");
+  lastTimings = T;
+  return verdict;
 }
 
 // ============================================================================
