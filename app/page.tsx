@@ -6,6 +6,27 @@ import { Logo } from "@/components/Logo";
 import { Scorecard } from "@/components/Scorecard";
 
 /**
+ * The "Check Carrier" bookmarklet, served as a draggable link so a broker can
+ * drag it to their bookmarks bar and one-click a carrier safety check on any
+ * email / TMS page. It grabs the page (outerHTML + form-field values + any
+ * selection) and POSTs to /api/check, which renders the audit in a new tab.
+ *
+ * Kept verbatim as a string (not a function .toString()) so it isn't subject to
+ * build minification, and injected via dangerouslySetInnerHTML because React
+ * strips `javascript:` hrefs.
+ */
+const CHECK_CARRIER_BOOKMARKLET = `javascript:(function(){var B='https://augment-carrier-audit.vercel.app';var sel=(window.getSelection&&String(window.getSelection()))||'';var F=[];document.querySelectorAll('input,textarea,select').forEach(function(el){var ty=(el.type||'').toLowerCase();if(/^(password|hidden|checkbox|radio|file|submit|button)$/.test(ty))return;var v=el.value;if(el.tagName==='SELECT'&&el.selectedIndex>=0&&el.options[el.selectedIndex])v=el.options[el.selectedIndex].text;v=(v==null?'':(''+v)).trim();if(!v)return;var lbl='';if(el.id){var L=document.querySelector('label[for="'+el.id+'"]');if(L)lbl=(L.textContent||'').trim();}if(!lbl)lbl=el.getAttribute('aria-label')||el.getAttribute('placeholder')||el.getAttribute('name')||el.id||'';F.push((lbl?lbl+': ':'')+v);});var fields=F.join('\\n');var html=document.documentElement.outerHTML.replace(/<script[\\s\\S]*?<\\/script>/gi,'').replace(/<style[\\s\\S]*?<\\/style>/gi,'').slice(0,1200000);var f=document.createElement('form');f.method='POST';f.action=B+'/api/check';f.target='_blank';f.acceptCharset='UTF-8';f.style.display='none';function add(n,v){var t=document.createElement('textarea');t.name=n;t.value=v;f.appendChild(t);}add('html',html);add('url',location.href);add('sel',sel);add('fields',fields);document.body.appendChild(f);f.submit();setTimeout(function(){f.remove();},2000);})();`;
+
+const escAttr = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+const CHECK_CARRIER_SHIELD =
+  '<svg width="16" height="16" viewBox="0 0 32 32" aria-hidden="true" style="flex:none;"><path d="M16 4.2l8.6 2.9v6.7c0 5.7-3.6 9.7-8.6 11.4-5-1.7-8.6-5.7-8.6-11.4V7.1L16 4.2z" fill="#ffffff"/><path d="M11.6 16.1l3 3 6-6.4" fill="none" stroke="#2f9742" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+/** Draggable bookmarklet link as raw HTML (React would strip the javascript: href). */
+const CHECK_CARRIER_DRAG_LINK = `<a href="${escAttr(CHECK_CARRIER_BOOKMARKLET)}" draggable="true" onclick="return false;" title="Drag me to your bookmarks bar" style="display:inline-flex;align-items:center;gap:8px;cursor:grab;text-decoration:none;background:#2f9742;color:#fff;font-weight:600;font-size:14px;padding:10px 16px;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.08);">${CHECK_CARRIER_SHIELD}Check Carrier</a>`;
+
+/**
  * Sample peer-group cutoffs — statistical axes flag Severe at the 95th
  * percentile of the carrier's peer group. We show one row per axis using
  * the Small (2-50) bucket since that's where most freight tendering happens.
@@ -117,6 +138,49 @@ export default function Home() {
             Paste a list of carrier DOT numbers. We pull live FMCSA safety data, compare
             against industry-standard thresholds, and return a defensible pre-tender risk
             report in seconds.
+          </p>
+        </div>
+      </section>
+
+      {/* Install the one-click bookmarklet */}
+      <section className="border-b border-ink-100 bg-white">
+        <div className="mx-auto max-w-5xl px-6 py-12">
+          <h2 className="text-xl font-semibold text-ink-900">
+            One-click check on any carrier page
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm text-ink-700">
+            Add the <strong>Check Carrier</strong> button to your bookmarks bar. Then on a
+            carrier email (Gmail / Outlook) or a TMS load page, click it — it reads the
+            page, pulls the DOT/MC, and opens an instant safety check in a new tab.
+          </p>
+
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <span
+              dangerouslySetInnerHTML={{ __html: CHECK_CARRIER_DRAG_LINK }}
+            />
+            <span className="inline-flex items-center gap-1 text-sm text-ink-500">
+              <span aria-hidden="true">↑</span> drag me up to your bookmarks bar
+            </span>
+          </div>
+
+          <ol className="mt-6 grid gap-3 text-sm text-ink-600 sm:grid-cols-3">
+            <li>
+              <span className="font-semibold text-ink-900">1.</span> Show your bookmarks bar
+              {" "}(<kbd className="rounded bg-ink-100 px-1 font-mono text-xs">⌘⇧B</kbd> /{" "}
+              <kbd className="rounded bg-ink-100 px-1 font-mono text-xs">Ctrl+Shift+B</kbd>).
+            </li>
+            <li>
+              <span className="font-semibold text-ink-900">2.</span> Drag the green{" "}
+              <strong>Check Carrier</strong> button up into it.
+            </li>
+            <li>
+              <span className="font-semibold text-ink-900">3.</span> Open a carrier email or
+              load page and click it.
+            </li>
+          </ol>
+          <p className="mt-4 text-xs text-ink-500">
+            Tip: on a busy inbox, open the specific email first (or highlight the carrier&apos;s
+            block) so the check focuses on that carrier.
           </p>
         </div>
       </section>
