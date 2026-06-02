@@ -93,6 +93,7 @@ export type SignalCategory =
   | "audit_tier"           // From the existing carrier-audit analyzer
   | "identity_coherence"   // Claimed identity vs FMCSA record
   | "lane_viability"       // Claimed lane vs operating-area registration
+  | "lane_coverage"        // BIPD coverage adequacy for the lane's injury-liability
   | "chameleon_cluster"    // Shared phone/officer/address with another DOT
   | "email_authenticity";  // SPF/DKIM/DMARC, Reply-To, free email domain, etc.
 

@@ -19,6 +19,7 @@ import { analyze } from "../analyzer";
 import { getCutoffs, type AxisKey, type PeerGroup } from "../thresholds";
 import { lookupDomainAge } from "./whois";
 import { checkDomainAuth } from "./dns-check";
+import laneLiability from "../data/lane-liability.json";
 import type {
   ExtractedEmail,
   Signal,
@@ -106,6 +107,7 @@ export async function checkCarrierEmail(e: ExtractedEmail): Promise<Verdict> {
   signals.push(...evalAuditTier(carrier, dot));
   signals.push(...evalIdentityCoherence(e, carrier, identity));
   signals.push(...evalLaneViability(e, identity));
+  signals.push(...evalLaneCoverage(e, carrier));
   signals.push(...evalHazmat(e, identity, carrier));
   signals.push(...evalChameleonAddressCluster(carrier));
   if (identity) {
@@ -362,6 +364,66 @@ function evalLaneViability(
   }
 
   return [];
+}
+
+// ============================================================================
+// Evaluator 3c: Lane coverage fit (advisory)
+// ============================================================================
+
+/**
+ * Does the carrier's BIPD coverage fit the lane's injury-LIABILITY exposure?
+ * Some lanes (NY/NJ metro especially) produce far more injury crashes than the
+ * 36% national average, so a higher bodily-injury liability floor is prudent
+ * there — this is why brokers ask NJ-domiciled carriers for ~$1.5M. We key off
+ * the LANE (the load's route, which we know) rather than carrier domicile, and
+ * read the injury-share-by-state reference (lib/data/lane-liability.json).
+ *
+ * Advisory only: all signals are `info` tier so they never bump the verdict —
+ * this is a coverage-quality tiebreak among acceptable carriers, not a fraud
+ * gate. Silent on low-injury lanes. Note: O/D states proxy the full route.
+ */
+function fmtBipdK(k: number): string {
+  if (k >= 1000) return `$${(k / 1000).toFixed(k % 1000 ? 1 : 0)}M`;
+  return `$${k}k`;
+}
+function evalLaneCoverage(e: ExtractedEmail, carrier: FmcsaCarrier): Signal[] {
+  const states = [e.lane.origin_state, e.lane.destination_state]
+    .map((s) => s?.toUpperCase().trim())
+    .filter((s): s is string => !!s);
+  if (!states.length) return [];
+  // (the JSON also carries a `_meta` key; state lookups by 2-letter code skip it)
+  const tbl = laneLiability as unknown as Record<string, { injury_pct: number; tier: string }>;
+  // Highest-injury state on the lane drives the recommendation.
+  let worst: { st: string; injury_pct: number; tier: string } | null = null;
+  for (const st of states) {
+    const row = tbl[st];
+    if (row && (!worst || row.injury_pct > worst.injury_pct)) {
+      worst = { st, injury_pct: row.injury_pct, tier: row.tier };
+    }
+  }
+  if (!worst) return []; // low-injury lane → no advisory
+  const floorK = worst.tier === "high" ? 1500 : 1000;
+  const bipd = carrier.bipdInsuranceOnFile; // thousands; 0/undefined = none on file
+  const where = `${worst.st} (${worst.injury_pct}% of truck crashes there involve an injury, vs 36% nationally)`;
+  if (!bipd || bipd <= 0) {
+    return [{
+      category: "lane_coverage", tier: "info",
+      label: "Verify COI — higher-liability lane",
+      detail: `This lane runs through ${where}. No BIPD amount is on file with FMCSA, so confirm the certificate carries at least ${fmtBipdK(floorK)} before booking.`,
+    }];
+  }
+  if (bipd >= floorK) {
+    return [{
+      category: "lane_coverage", tier: "info",
+      label: "Coverage fits this lane",
+      detail: `${fmtBipdK(bipd)} BIPD on file covers this higher-liability lane (${where}).`,
+    }];
+  }
+  return [{
+    category: "lane_coverage", tier: "info",
+    label: "Higher coverage advised for this lane",
+    detail: `This lane runs through ${where}. Carrier carries ${fmtBipdK(bipd)} BIPD; consider requiring ${fmtBipdK(floorK)} before booking.`,
+  }];
 }
 
 // ============================================================================
