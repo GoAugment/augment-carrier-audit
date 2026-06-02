@@ -1045,23 +1045,29 @@ function composeVerdict(
     new Map([[dot, carrier]])
   ).rows[0];
 
-  // The reply's headline already conveys the tier + recommended action.
-  // The summary should explain WHY, surface the concrete reasons, not a
-  // generic "Carrier in Severe tier" which just restates a tier label.
+  // The headline conveys the tier + recommended action. The summary should say
+  // WHY in plain terms and, most usefully, WHAT TO VERIFY before tendering —
+  // turned into concrete actions from the findings rather than a jargon list.
+  const verifyActions = buildVerifyActions(audit, signals);
+  const verifyClause = verifyActions.length
+    ? ` Before tendering: ${verifyActions.join(", ")}.`
+    : "";
   let summary: string;
   if (dominantSignal) {
-    if (dominantSignal.category === "audit_tier" && audit?.reasons?.length) {
-      summary = audit.reasons.map((r) => phraseReason(r.label)).join(" · ") + ".";
-    } else {
-      summary = `${dominantSignal.label}.`;
-    }
+    const why =
+      dominantSignal.category === "audit_tier" && audit?.reasons?.length
+        ? audit.reasons.slice(0, 3).map((r) => phraseReason(r.label)).join("; ")
+        : dominantSignal.label;
+    summary = `${why}.${verifyClause}`;
   } else if (richChecksCount <= 1) {
-    // Clean verdict from a sparse email, be honest about why.
     summary =
-      "Carrier audit is clean and email headers look legitimate, but the email itself didn't include enough info (no lane, no claimed phone or company name) to fully verify identity. Treat as the equivalent of running the website audit.";
+      `Carrier looks clean on FMCSA, but there wasn't enough to fully verify the contact.${
+        verifyClause || " Confirm the MC/DOT, a current COI, and the carrier's contact details before tendering."
+      }`;
   } else {
-    summary =
-      "Sender identity matches FMCSA records and carrier audit is clean.";
+    summary = `Carrier looks clean on FMCSA and the contact details check out.${
+      verifyClause || " Standard COI check before tendering."
+    }`;
   }
 
   const physicalLocation =
@@ -1262,6 +1268,45 @@ const REASON_PHRASING: Record<string, string> = {
 function phraseReason(label: string): string {
   const stripped = label.replace(/^[^\w]+\s*/, "");
   return REASON_PHRASING[stripped] ?? stripped;
+}
+
+/** Turn the fired findings into concrete "verify before tendering" actions, so
+ *  the summary tells the broker what to DO rather than just listing jargon.
+ *  Keyword-matched against the audit reasons + hard signals; deduped, capped. */
+function buildVerifyActions(
+  audit: { reasons?: Array<{ label: string }> } | undefined,
+  signals: Signal[]
+): string[] {
+  const txt = [
+    ...(audit?.reasons?.map((r) => r.label) ?? []),
+    ...signals.filter((s) => s.tier !== "info").map((s) => s.label),
+  ]
+    .join(" • ")
+    .toLowerCase();
+  const out: string[] = [];
+  const add = (s: string) => {
+    if (!out.includes(s)) out.push(s);
+  };
+  // Hard authority/insurance problems first.
+  if (/(revoked|not allowed|not active|deregister)/.test(txt) && !/reinstat/.test(txt)) {
+    add("confirm the operating authority is active");
+  }
+  if (/(insur|bipd|cancel|\bcoi\b|lapse|churn|reinstat)/.test(txt)) {
+    add("confirm a current COI (insurance)");
+  }
+  if (/(oos|out-of-service|crash|unsafe|hos|vehicle|maintenance|inspection|basic|\biss\b|inspect)/.test(txt)) {
+    add("review the inspection & out-of-service history");
+  }
+  if (/(chameleon|fleet|equipment spread|address|sibling|re-?incarnat|prior.?revoke)/.test(txt)) {
+    add("confirm which DOT will actually haul");
+  }
+  if (/(sender|email|phone|domain|impersonat|mismatch)/.test(txt)) {
+    add("verify the carrier's email & phone against FMCSA");
+  }
+  if (/(lane|coverage)/.test(txt)) {
+    add("confirm BIPD coverage fits this lane");
+  }
+  return out.slice(0, 3);
 }
 
 /** A safety rating older than 5 years is misleading as a positive signal,

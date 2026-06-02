@@ -1372,26 +1372,11 @@ ${renderPreheader(composePreheader(verdict))}
     ${c ? renderScoreTiles(c) : ""}
 
     ${!c ? "" : `
-    <!-- Counter row, passed / failed / skipped. Failed only renders when >0
-         so a Clean verdict shows the standard two-column layout. -->
-    <tr><td style="padding:0 32px 28px 32px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-      <tr>
-        <td style="padding-right:36px;">
-          <div style="${FONT_DECL}font-size:22px;font-weight:600;color:${C.ink};line-height:1;">${cov.passed}</div>
-          <div style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-transform:uppercase;margin-top:6px;">Passed</div>
-        </td>
-        ${cov.failed > 0 ? `
-        <td style="padding-right:36px;">
-          <div style="${FONT_DECL}font-size:22px;font-weight:600;color:${C.ink};line-height:1;">${cov.failed}</div>
-          <div style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-transform:uppercase;margin-top:6px;">Failed</div>
-        </td>` : ""}
-        <td>
-          <div style="${FONT_DECL}font-size:22px;font-weight:600;color:${C.ink};line-height:1;">${cov.skipped}</div>
-          <div style="font-size:11px;font-weight:600;color:${C.inkLabel};letter-spacing:0.08em;text-transform:uppercase;margin-top:6px;">Skipped</div>
-        </td>
-      </tr>
-      </table>
+    <!-- Small inline check tally (the detail lives in the Safety checks section). -->
+    <tr><td style="padding:0 32px 24px 32px;">
+      <div style="font-size:12px;color:${C.inkMuted};">
+        <span style="color:${C.greenCheck};font-weight:600;">${cov.passed} passed</span>${cov.failed > 0 ? ` · <span style="color:${C.redInkPill};font-weight:600;">${cov.failed} failed</span>` : ""} · ${cov.skipped} skipped
+      </div>
     </td></tr>`}
 
     ${renderFromTheEmailBlock(verdict, extracted)}
