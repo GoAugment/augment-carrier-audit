@@ -430,25 +430,35 @@ function renderFromTheEmailBlock(
     </td></tr>`;
 }
 
-/** Render up to 3 candidate values as pills (matched-to-FMCSA first + green),
- *  then a muted "+N more" pill. Used for the page's email / phone lists so the
- *  broker sees everything we extracted with the carrier's own contact
- *  highlighted. */
+/** Pills for the page's email / phone lists, highlighting the carrier's own
+ *  contact (matched to FMCSA, green). Behavior:
+ *   - match → show the matched value(s) green + "+N more" (collapse the rest)
+ *   - no match, many (>6) → ONE compact count pill (don't dump an inbox wall)
+ *   - no match, few → list them (neutral) */
 function renderCandidatePills(
   label: string,
   candidates: string[],
   isMatch: (v: string) => boolean,
 ): string[] {
+  const lc = label.toLowerCase();
   const matched = candidates.filter(isMatch);
-  const rest = candidates.filter((c) => !isMatch(c));
-  const ordered = [...matched, ...rest];
-  const SHOW = 3;
   const out: string[] = [];
-  ordered.slice(0, SHOW).forEach((v, i) => {
-    out.push(renderFieldPill(i === 0 ? label : "", v, isMatch(v) ? "match" : "neutral"));
-  });
-  const more = ordered.length - Math.min(SHOW, ordered.length);
-  if (more > 0) out.push(renderMissingPill(`${more} more ${label.toLowerCase()}${more === 1 ? "" : "s"}`));
+  if (matched.length > 0) {
+    matched.slice(0, 2).forEach((v, i) =>
+      out.push(renderFieldPill(i === 0 ? label : "", v, "match"))
+    );
+    const more = candidates.length - Math.min(2, matched.length);
+    if (more > 0) out.push(renderMissingPill(`${more} more ${lc}${more === 1 ? "" : "s"}`));
+    return out;
+  }
+  if (candidates.length > 6) {
+    // Likely an inbox/list — collapse to a single count rather than a wall.
+    return [renderMissingPill(`${candidates.length} ${lc}s on the page · none match FMCSA`)];
+  }
+  candidates.slice(0, 3).forEach((v, i) =>
+    out.push(renderFieldPill(i === 0 ? label : "", v, "neutral"))
+  );
+  if (candidates.length > 3) out.push(renderMissingPill(`${candidates.length - 3} more ${lc}s`));
   return out;
 }
 
@@ -849,7 +859,7 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
     rows.push({
       status: "passed",
       label: "Sender domain configured for business email",
-      detail: "Sender's domain accepts inbound mail and publishes SPF or DMARC. The domain itself is set up like a real business. (Inline-forwarded emails strip the original auth headers, so we don't claim to verify the specific message.)",
+      detail: "Sender's domain accepts inbound mail and publishes SPF or DMARC — set up like a real business. This is domain reputation, not message-level authentication.",
     });
   }
 
