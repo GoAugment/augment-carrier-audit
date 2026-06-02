@@ -30,8 +30,6 @@ import type { ExtractedEmail } from "./types";
 const ST =
   "(A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AT]|W[AIVY])";
 
-const EMAIL_RE = /[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/;
-
 export interface PageCapture {
   /** document.documentElement.outerHTML from the captured page. */
   html: string;
@@ -81,30 +79,66 @@ function htmlToText(html: string): string {
     .trim();
 }
 
-/** Find the carrier's sender address. Prefer the structured DOM cues (most
- *  reliable, hardest to confuse with stray addresses in quoted text), then a
- *  visible "From:" line, then any address as a last resort. */
-function findSenderEmail(html: string, text: string): string {
-  // Gmail renders the sender as <span email="dispatch@acme.com" …>.
-  const attr = html.match(/\bemail=["']\s*([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})\s*["']/i);
-  if (attr) return attr[1];
-  // mailto: link (Outlook web, many TMS contact panels).
-  const mailto = html.match(/mailto:([^"'?>\s]+@[^"'?>\s]+)/i);
-  if (mailto) {
+// Domains that are NOT the carrier's own email — carrier-vetting relays,
+// loadboards, and the TMS host itself. An address at one of these (e.g.
+// Highway's "dot3626466@highway.com" relay shown on a T1 contact list) must
+// never be treated as the carrier's sender, or the sender-vs-FMCSA check
+// false-flags a mismatch.
+const VENDOR_RELAY_DOMAINS = new Set([
+  "highway.com",
+  "dat.com",
+  "truckstop.com",
+  "123loadboard.com",
+  "loadboard.com",
+  "rmis.com",
+  "mycarrierpackets.com",
+  "carrier411.com",
+  "registrymonitoring.com",
+  "transportationone.com",
+]);
+
+/** Registrable-ish domain (last two labels) for host comparison. */
+function registrableDomain(host: string): string {
+  return host.toLowerCase().split(".").slice(-2).join(".");
+}
+
+function isIgnoredSenderDomain(domain: string, hostDomain: string): boolean {
+  const d = domain.toLowerCase();
+  if (VENDOR_RELAY_DOMAINS.has(d)) return true;
+  if (hostDomain && (d === hostDomain || d.endsWith("." + hostDomain))) return true;
+  return false;
+}
+
+/** Find the carrier's sender address from genuine sender contexts (Gmail's
+ *  email="" attr, a mailto: link, a "From:"/"Email:" line) — NOT just the first
+ *  address on the page. Skips vendor-relay / loadboard / TMS-host domains so a
+ *  contact-directory page doesn't yield a bogus "sender". Returns the first
+ *  non-ignored candidate, or "" when there's no real sender on the page. */
+function findSenderEmail(html: string, text: string, hostDomain: string): string {
+  const E = "[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}";
+  const candidates: string[] = [];
+  for (const m of html.matchAll(new RegExp(`\\bemail=["']\\s*(${E})\\s*["']`, "gi"))) {
+    candidates.push(m[1]);
+  }
+  for (const m of html.matchAll(/mailto:([^"'?>\s]+@[^"'?>\s]+)/gi)) {
     try {
-      return decodeURIComponent(mailto[1]);
+      candidates.push(decodeURIComponent(m[1]));
     } catch {
-      return mailto[1];
+      candidates.push(m[1]);
     }
   }
-  // Visible "From: Name <addr>" or "From: addr" line in the rendered text.
-  const fromAngle = text.match(/From:\s*[^<\n]*<([^>\s]+@[^>\s]+)>/i);
-  if (fromAngle) return fromAngle[1];
-  const fromBare = text.match(/From:\s*([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})/i);
-  if (fromBare) return fromBare[1];
-  // Last resort: first address anywhere in the captured text.
-  const any = text.match(EMAIL_RE);
-  return any ? any[0] : "";
+  const fromAngle = text.match(new RegExp(`From:\\s*[^<\\n]*<(${E})>`, "i"));
+  if (fromAngle) candidates.push(fromAngle[1]);
+  const fromBare = text.match(new RegExp(`From:\\s*(${E})`, "i"));
+  if (fromBare) candidates.push(fromBare[1]);
+  const emailLabel = text.match(new RegExp(`\\bE-?mail:?\\s*(${E})`, "i"));
+  if (emailLabel) candidates.push(emailLabel[1]);
+
+  for (const c of candidates) {
+    const dom = c.split("@").pop() ?? "";
+    if (dom && !isIgnoredSenderDomain(dom, hostDomain)) return c.toLowerCase();
+  }
+  return "";
 }
 
 /** Sender display name from a "From: Display Name <addr>" line, when present. */
@@ -223,7 +257,13 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
   }
 
   // --- sender (email gut check) ---
-  const senderEmail = findSenderEmail(html, text).toLowerCase().trim();
+  let hostDomain = "";
+  try {
+    if (cap.url) hostDomain = registrableDomain(new URL(cap.url).hostname);
+  } catch {
+    /* bad url */
+  }
+  const senderEmail = findSenderEmail(html, text, hostDomain).toLowerCase().trim();
   const senderDomain = senderEmail.includes("@") ? senderEmail.split("@").pop()! : "";
   const senderName = findSenderName(text);
   let replyToDomain = findReplyToDomain(text);

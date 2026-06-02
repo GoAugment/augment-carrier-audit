@@ -25,10 +25,22 @@ export interface DomainAge {
 /** Look up a domain's registration date via RDAP. Returns null on any
  *  failure (timeout, unknown TLD, malformed response) — caller treats a
  *  null result as "couldn't check" rather than as a signal. */
+// Domain age changes glacially — cache per warm instance (12h TTL) so repeat
+// sender domains skip the RDAP round-trip.
+const ageCache = new Map<string, { val: DomainAge | null; exp: number }>();
+const AGE_TTL_MS = 12 * 60 * 60 * 1000;
+
 export async function lookupDomainAge(domain: string): Promise<DomainAge | null> {
   const normalized = domain.trim().toLowerCase();
   if (!normalized || !normalized.includes(".")) return null;
+  const cached = ageCache.get(normalized);
+  if (cached && cached.exp > Date.now()) return cached.val;
+  const val = await lookupDomainAgeUncached(normalized);
+  ageCache.set(normalized, { val, exp: Date.now() + AGE_TTL_MS });
+  return val;
+}
 
+async function lookupDomainAgeUncached(normalized: string): Promise<DomainAge | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RDAP_TIMEOUT_MS);
   try {

@@ -275,6 +275,11 @@ function rowToIdentity(r: ParquetRow): CarrierIdentity {
  * identity parquet (e.g. dormant carriers outside the audit universe)
  * are simply absent from the Map.
  */
+// Per-DOT identity rows are stable for the snapshot's life. Cache them (incl.
+// negative hits) so a repeat check skips the 96MB Blob parquet scan. `null`
+// marks a DOT with no identity row so we don't re-query it.
+const identityCache = new Map<number, CarrierIdentity | null>();
+
 export async function fetchIdentity(
   dots: number[]
 ): Promise<Map<number, CarrierIdentity>> {
@@ -282,17 +287,35 @@ export async function fetchIdentity(
   const out = new Map<number, CarrierIdentity>();
   if (unique.length === 0) return out;
 
-  const placeholders = unique.map(() => "?").join(",");
+  const misses: number[] = [];
+  for (const d of unique) {
+    const hit = identityCache.get(d);
+    if (hit !== undefined) {
+      if (hit) out.set(d, hit);
+    } else {
+      misses.push(d);
+    }
+  }
+  if (misses.length === 0) return out;
+
+  const placeholders = misses.map(() => "?").join(",");
   const idnPath = await getIdentityParquetPath();
   const sql = `
     SELECT *
     FROM read_parquet('${idnPath.replace(/'/g, "''")}')
     WHERE DOT_NUMBER IN (${placeholders})
   `;
-  const rows = await runQuery<ParquetRow>(sql, unique);
+  const rows = await runQuery<ParquetRow>(sql, misses);
+  const found = new Set<number>();
   for (const r of rows) {
     const identity = rowToIdentity(r);
     out.set(identity.dotNumber, identity);
+    found.add(identity.dotNumber);
+    if (identityCache.size < 50000) identityCache.set(identity.dotNumber, identity);
+  }
+  // Record negative hits so we don't re-scan for DOTs with no identity row.
+  for (const d of misses) {
+    if (!found.has(d) && identityCache.size < 50000) identityCache.set(d, null);
   }
   return out;
 }
