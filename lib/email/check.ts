@@ -71,9 +71,13 @@ function verdictKey(e: ExtractedEmail): string {
 }
 
 export async function checkCarrierEmail(e: ExtractedEmail): Promise<Verdict> {
+  lastTimings = {};
   const key = verdictKey(e);
   const cached = verdictCache.get(key);
-  if (cached && cached.exp > Date.now()) return cached.v;
+  if (cached && cached.exp > Date.now()) {
+    lastTimings = { cacheHit: 1 };
+    return cached.v;
+  }
   const verdict = await computeVerdict(e);
   if (verdictCache.size < 5000) {
     verdictCache.set(key, { v: verdict, exp: Date.now() + VERDICT_TTL_MS });

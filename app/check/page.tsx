@@ -1,27 +1,41 @@
 /**
- * /check — the bookmarklet's landing tab.
+ * /check — the bookmarklet's receiver, used as an in-page SIDEBAR iframe when
+ * the host page allows framing us, or as a popup tab when it doesn't.
  *
  * The bookmarklet can't POST a whole page across origins on locked-down hosts
- * (Gmail/Outlook/TMS CSP blocks cross-origin form-action and connect-src). So
- * instead it opens THIS page in a new tab and hands the captured HTML over via
- * postMessage (window-to-window messaging isn't CSP-restricted). We then POST
- * it to /api/check (same-origin) and render the returned audit in place.
+ * (CSP form-action / connect-src). So it embeds THIS page (same-origin to us,
+ * so OUR fetch to /api/check is unrestricted) and hands the captured page over
+ * via postMessage. We signal "augie-frame-ready" to whoever embedded us
+ * (parent for an iframe, opener for a popup); the bookmarklet replies with the
+ * payload; we POST it to /api/check and render the audit in place.
  *
- * Direct DOT/MC links keep working at /check/{dot} (a separate GET route).
+ * The bookmarklet decides iframe-vs-popup by probing: it embeds us in a hidden
+ * iframe and waits for our ready signal — if CSP blocks the frame we never
+ * load, it times out, and it falls back to a popup tab.
  */
 "use client";
 
 import { useEffect, useState } from "react";
 
-const ALLOWED_TYPE = "augie-check-payload";
+const PAYLOAD_TYPE = "augie-check-payload";
+const READY_TYPE = "augie-frame-ready";
 
 export default function CheckReceiver() {
-  const [status, setStatus] = useState("Waiting for the page…");
+  const [status, setStatus] = useState("Loading…");
 
   useEffect(() => {
     let handled = false;
+    // Whoever embedded us: the parent window when framed (sidebar), else the
+    // opener window when popped (new tab).
+    const host: Window | null =
+      window.parent && window.parent !== window ? window.parent : window.opener;
 
-    async function run(payload: { html?: string; url?: string; sel?: string }) {
+    async function run(payload: {
+      html?: string;
+      url?: string;
+      sel?: string;
+      fields?: string;
+    }) {
       if (handled) return;
       handled = true;
       setStatus("Running the carrier check…");
@@ -33,10 +47,10 @@ export default function CheckReceiver() {
             html: payload.html ?? "",
             url: payload.url ?? "",
             sel: payload.sel ?? "",
+            fields: payload.fields ?? "",
           }),
         });
         const html = await res.text();
-        // buildReplyHtml returns a full document — swap the whole tab to it.
         document.open();
         document.write(html);
         document.close();
@@ -47,26 +61,23 @@ export default function CheckReceiver() {
     }
 
     function onMessage(ev: MessageEvent) {
-      // Accept the payload only from the tab that opened us, and only our
-      // agreed message shape.
-      if (ev.source !== window.opener) return;
+      if (host && ev.source !== host) return;
       const d = ev.data;
-      if (!d || d.type !== ALLOWED_TYPE) return;
+      if (!d || d.type !== PAYLOAD_TYPE) return;
       run(d);
     }
 
     window.addEventListener("message", onMessage);
-    // Tell the opener we're loaded and ready to receive the captured page.
-    if (window.opener) {
+    if (host) {
       try {
-        window.opener.postMessage({ type: "augie-check-ready" }, "*");
+        host.postMessage({ type: READY_TYPE }, "*");
       } catch {
-        /* opener gone */
+        /* host gone */
       }
     } else {
       setStatus(
-        "Open this from the Carrier Check bookmarklet on a load / email page. " +
-          "Or check a specific carrier directly at /check/{DOT}."
+        "Open this from the Carrier Check bookmarklet on a load / email page, " +
+          "or check a specific carrier at /check/{DOT}."
       );
     }
 

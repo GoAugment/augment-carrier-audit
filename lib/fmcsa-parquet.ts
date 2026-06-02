@@ -6,7 +6,7 @@
 import type { Database } from "duckdb";
 
 import type { FmcsaCarrier } from "./fmcsa";
-import { getAggregatesParquetPath } from "./parquet-source";
+import { getAggregatesParquetPath, getCarrierBucketParquetPath, getMcIndexParquetPath } from "./parquet-source";
 
 // Lazy-load duckdb so Next.js doesn't try to bind the native binary during
 // the build container's static-page-data collection (Vercel's build image
@@ -323,6 +323,16 @@ let mcIndexReady: Promise<void> | null = null;
 function ensureMcIndex(): Promise<void> {
   if (mcIndexReady) return mcIndexReady;
   mcIndexReady = (async () => {
+    const mcIndex = await getMcIndexParquetPath();
+    if (mcIndex) {
+      await runQuery(
+        `CREATE TABLE IF NOT EXISTS mc_index AS
+         SELECT mc, DOT_NUMBER
+         FROM read_parquet('${mcIndex.replace(/'/g, "''")}')`,
+        []
+      );
+      return;
+    }
     const parquet = await getAggregatesParquetPath();
     await runQuery(
       `CREATE TABLE IF NOT EXISTS mc_index AS
@@ -363,6 +373,66 @@ export async function fetchDotByMc(mc: string): Promise<number | null> {
 // parquet scan.
 const carrierCache = new Map<number, FmcsaCarrier>();
 
+const CARRIER_SELECT_COLUMNS = `
+  DOT_NUMBER, LEGAL_NAME, DBA_NAME,
+  mc_number, additional_dockets, operation_classification, business_org_type,
+  has_property_authority, has_passenger_authority, has_hhg_authority,
+  has_private_authority, has_enterprise_authority, has_broker_authority,
+  status_code, safety_rating, safety_rating_date,
+  power_units, drivers,
+  driver_inspections_24mo, driver_oos_24mo,
+  vehicle_inspections_24mo, vehicle_oos_24mo,
+  hazmat_inspections_24mo, hazmat_oos_24mo,
+  crashes_24mo, fatal_crashes_24mo, injury_crashes_24mo, tow_crashes_24mo,
+  bipd_insurance_required, bipd_insurance_on_file, bipd_required_amount,
+  bipd_insurer_name, bipd_policy_effective_date, cargo_insurer_name,
+  revocations_total, involuntary_revocations, most_recent_involuntary_date,
+  enforcement_cases_count, enforcement_total_settled, enforcement_recent_date,
+  insurance_cancellations_24mo, most_recent_cancel_date, most_recent_cancel_reason,
+  rapid_replace_flag,
+  crash_measure, peer_group, crashes_per_million_miles, annual_mileage,
+  unsafe_driving_violations_24mo, hos_violations_24mo,
+  cargo_on_file_flag, cargo_required_flag,
+  physical_state, phy_zip,
+  dot_add_date, mcs150_date, review_date, review_type,
+  prior_revoke_flag, prior_revoke_dot_number, recordable_crash_rate,
+  fleet_size_flag, inspections_per_pu,
+  unsafe_driving_measure, hos_measure, driver_fitness_measure,
+  controlled_substances_measure, vehicle_maintenance_measure,
+  unsafe_driving_percentile, hos_percentile, driver_fitness_percentile,
+  controlled_substances_percentile, vehicle_maintenance_percentile,
+  unsafe_driving_alert, hos_alert, driver_fitness_alert,
+  controlled_substances_alert, vehicle_maintenance_alert,
+  address_dupe_active_count, address_dupe_oos_count,
+  largest_sibling_dot, largest_sibling_legal_name,
+  largest_sibling_shared_vins, largest_sibling_total_vins,
+  largest_sibling_overlap_pct,
+  diffuse_vin_share_pct, diffuse_vin_share_n_siblings,
+  insurance_replaces_24mo, insurance_distinct_policies_24mo,
+  fast_act_high_risk, fast_act_high_risk_n, fast_act_high_risk_basics,
+  iss_score, iss_tier, iss_group,
+  has_serious_violation, serious_violation_count, serious_violation_basics,
+  bipd_imminent_lapse, bipd_days_to_lapse, bipd_pending_cancel_date,
+  crash_indicator_percentile, crash_indicator_alert,
+  hm_compliance_percentile, hm_compliance_alert,
+  pu_vins_inspected
+`;
+
+async function fetchCarrierRowsFromParquetPath(
+  parquetPath: string,
+  dots: number[]
+): Promise<ParquetRow[]> {
+  const placeholders = dots.map(() => "?").join(",");
+  return runQuery<ParquetRow>(
+    `
+      SELECT ${CARRIER_SELECT_COLUMNS}
+      FROM read_parquet('${parquetPath.replace(/'/g, "''")}')
+      WHERE DOT_NUMBER IN (${placeholders})
+    `,
+    dots
+  );
+}
+
 export async function fetchCarriersFromParquet(
   dots: number[]
 ): Promise<Map<number, FmcsaCarrier>> {
@@ -379,60 +449,32 @@ export async function fetchCarriersFromParquet(
   }
   if (misses.length === 0) return out;
 
-  const placeholders = misses.map(() => "?").join(",");
-  const parquet = await getAggregatesParquetPath();
-  const sql = `
-    SELECT
-      DOT_NUMBER, LEGAL_NAME, DBA_NAME,
-      mc_number, additional_dockets, operation_classification, business_org_type,
-      has_property_authority, has_passenger_authority, has_hhg_authority,
-      has_private_authority, has_enterprise_authority, has_broker_authority,
-      status_code, safety_rating, safety_rating_date,
-      power_units, drivers,
-      driver_inspections_24mo, driver_oos_24mo,
-      vehicle_inspections_24mo, vehicle_oos_24mo,
-      hazmat_inspections_24mo, hazmat_oos_24mo,
-      crashes_24mo, fatal_crashes_24mo, injury_crashes_24mo, tow_crashes_24mo,
-      bipd_insurance_required, bipd_insurance_on_file, bipd_required_amount,
-      bipd_insurer_name, bipd_policy_effective_date, cargo_insurer_name,
-      revocations_total, involuntary_revocations, most_recent_involuntary_date,
-      enforcement_cases_count, enforcement_total_settled, enforcement_recent_date,
-      insurance_cancellations_24mo, most_recent_cancel_date, most_recent_cancel_reason,
-      rapid_replace_flag,
-      crash_measure, peer_group, crashes_per_million_miles, annual_mileage,
-      unsafe_driving_violations_24mo, hos_violations_24mo,
-      cargo_on_file_flag, cargo_required_flag,
-      physical_state, phy_zip,
-      -- Identity/contact columns omitted to keep the parquet under 100MB:
-      -- phy_street, phy_city, phone, email_address,
-      -- company_officer_1, company_officer_2
-      dot_add_date, mcs150_date, review_date, review_type,
-      prior_revoke_flag, prior_revoke_dot_number, recordable_crash_rate,
-      fleet_size_flag, inspections_per_pu,
-      unsafe_driving_measure, hos_measure, driver_fitness_measure,
-      controlled_substances_measure, vehicle_maintenance_measure,
-      unsafe_driving_percentile, hos_percentile, driver_fitness_percentile,
-      controlled_substances_percentile, vehicle_maintenance_percentile,
-      unsafe_driving_alert, hos_alert, driver_fitness_alert,
-      controlled_substances_alert, vehicle_maintenance_alert,
-      address_dupe_active_count, address_dupe_oos_count,
-      largest_sibling_dot, largest_sibling_legal_name,
-      largest_sibling_shared_vins, largest_sibling_total_vins,
-      largest_sibling_overlap_pct,
-      diffuse_vin_share_pct, diffuse_vin_share_n_siblings,
-      insurance_replaces_24mo, insurance_distinct_policies_24mo,
-      fast_act_high_risk, fast_act_high_risk_n, fast_act_high_risk_basics,
-      iss_score, iss_tier, iss_group,
-      has_serious_violation, serious_violation_count, serious_violation_basics,
-      bipd_imminent_lapse, bipd_days_to_lapse, bipd_pending_cancel_date,
-      crash_indicator_percentile, crash_indicator_alert,
-      hm_compliance_percentile, hm_compliance_alert,
-      pu_vins_inspected
-    FROM read_parquet('${parquet.replace(/'/g, "''")}')
-    WHERE DOT_NUMBER IN (${placeholders})
-  `;
-
-  const rows = await runQuery<ParquetRow>(sql, misses);
+  const rows: ParquetRow[] = [];
+  const fallbackDots: number[] = [];
+  if (misses.length <= 25) {
+    const byBucketPath = new Map<string, number[]>();
+    for (const dot of misses) {
+      const bucketPath = await getCarrierBucketParquetPath(dot);
+      if (bucketPath) {
+        const group = byBucketPath.get(bucketPath) ?? [];
+        group.push(dot);
+        byBucketPath.set(bucketPath, group);
+      } else {
+        fallbackDots.push(dot);
+      }
+    }
+    for (const [bucketPath, bucketDots] of byBucketPath) {
+      rows.push(...(await fetchCarrierRowsFromParquetPath(bucketPath, bucketDots)));
+    }
+  } else {
+    fallbackDots.push(...misses);
+  }
+  if (fallbackDots.length > 0) {
+    rows.push(...(await fetchCarrierRowsFromParquetPath(
+      await getAggregatesParquetPath(),
+      fallbackDots
+    )));
+  }
   for (const r of rows) {
     const dot = asInt(r.DOT_NUMBER);
     const carrier = rowToCarrier(r);

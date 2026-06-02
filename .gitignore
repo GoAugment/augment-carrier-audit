@@ -13,4 +13,5 @@ out
 # pipeline build artifacts (the committed copy lives at data/)
 pipeline/fmcsa-aggregate/*.parquet
 pipeline/fmcsa-aggregate/national_thresholds.json
+data/single-check-buckets/
 _shot*.mjs

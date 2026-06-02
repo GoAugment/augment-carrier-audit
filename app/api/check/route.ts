@@ -16,8 +16,8 @@
  *   sel  = the user's text selection, if any (preferred when present)
  *
  * All extraction lives server-side (lib/email/extract-page.ts) so we can
- * iterate on it without re-issuing the bookmarklet. Returns the same
- * email-style audit reply (buildReplyHtml) the GET /check/{dot} route renders.
+ * iterate on it without re-issuing the bookmarklet. Returns the email-style
+ * audit reply (buildReplyHtml); direct /check/{dot} links delegate here.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { checkCarrierEmail, lastTimings } from "@/lib/email/check";
@@ -34,9 +34,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30; // DNS on the sender domain can take a few seconds.
 
 // GET = warmup. A Vercel cron pings this so the function instance stays hot:
-// duckdb is initialized, the 96MB identity parquet is pulled to /tmp, and the
-// per-instance caches (carrier/identity/mc→dot) are primed — so a real user's
-// click hits a warm instance (~sub-second) instead of a ~5s cold start.
+// duckdb is initialized, the Blob-backed single-check indexes are pulled to
+// /tmp, and the per-instance caches (carrier/identity/mc->dot) are primed, so
+// a real user's click hits a warm instance instead of a cold parquet path.
 export async function GET() {
   const t0 = Date.now();
   try {

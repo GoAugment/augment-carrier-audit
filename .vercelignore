@@ -1,0 +1,17 @@
+.context
+.next
+node_modules
+.env
+.env.*
+*.log
+*.tsbuildinfo
+
+# Raw/source data is only used for offline rebuilds, not Vercel runtime.
+data/sources
+data/fmcsa_scrape
+pipeline/fmcsa-aggregate/*.parquet
+pipeline/fmcsa-aggregate/national_thresholds.json
+
+# Runtime fetches these from private Vercel Blob.
+data/carrier_identity.parquet
+data/single-check-buckets

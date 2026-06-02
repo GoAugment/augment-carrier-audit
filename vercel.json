@@ -8,6 +8,9 @@
     "app/api/analyze/route.ts": {
       "includeFiles": "{data/carrier_aggregates.parquet,data/carrier_risk_signals.parquet,data/national_thresholds.json,node_modules/duckdb/lib/**,node_modules/duckdb/package.json,node_modules/@mapbox/node-pre-gyp/**}"
     },
+    "app/api/check/route.ts": {
+      "includeFiles": "{data/carrier_risk_signals.parquet,data/national_thresholds.json,lib/data/lane-liability.json,node_modules/duckdb/lib/**,node_modules/duckdb/package.json,node_modules/@mapbox/node-pre-gyp/**}"
+    },
     "app/api/email/inbound/route.ts": {
       "includeFiles": "{data/carrier_aggregates.parquet,data/carrier_risk_signals.parquet,data/national_thresholds.json,node_modules/duckdb/lib/**,node_modules/duckdb/package.json,node_modules/@mapbox/node-pre-gyp/**}"
     }
