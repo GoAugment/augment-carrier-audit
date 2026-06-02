@@ -85,6 +85,7 @@ function htmlToText(html: string): string {
 // never be treated as the carrier's sender, or the sender-vs-FMCSA check
 // false-flags a mismatch.
 const VENDOR_RELAY_DOMAINS = new Set([
+  // Carrier-vetting relays + loadboards + TMS hosts.
   "highway.com",
   "dat.com",
   "truckstop.com",
@@ -95,6 +96,23 @@ const VENDOR_RELAY_DOMAINS = new Set([
   "carrier411.com",
   "registrymonitoring.com",
   "transportationone.com",
+  // Consumer / big-tech / transactional senders that are never a carrier —
+  // common inbox noise (e.g. running the bookmarklet on a Gmail inbox).
+  "github.com",
+  "google.com",
+  "amazon.com",
+  "apple.com",
+  "microsoft.com",
+  "paypal.com",
+  "playstation.com",
+  "sony.com",
+  "facebook.com",
+  "meta.com",
+  "linkedin.com",
+  "netflix.com",
+  "uber.com",
+  "doordash.com",
+  "slack.com",
 ]);
 
 /** Registrable-ish domain (last two labels) for host comparison. */
@@ -111,18 +129,16 @@ function isIgnoredSenderDomain(domain: string, hostDomain: string): boolean {
 
 const EMAIL_RE_SRC = "[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}";
 
-/** The ONE authoritative sender, from a genuine From: context only — Gmail's
- *  email="" attr (the sender in the Gmail DOM) or a visible "From:" line. NOT
- *  mailto/contact emails, which on a directory page are ambiguous. "" when the
- *  page has no clear single sender (then we fall back to candidate matching).
- *  Skips vendor-relay / loadboard / TMS-host domains. */
-function findAuthoritativeSender(html: string, text: string, hostDomain: string): string {
+/** The ONE authoritative sender — ONLY from an explicit "From:" line (a real
+ *  forwarded/inbound email). We deliberately do NOT use Gmail's email="" attr:
+ *  on a list/inbox view the first such attr is some unrelated message, which
+ *  produced a false "sender domain mismatch". When there's no clear single
+ *  sender we return "" and fall back to candidate matching. */
+function findAuthoritativeSender(_html: string, text: string, hostDomain: string): string {
   const ok = (a: string) => {
     const dom = a.split("@").pop() ?? "";
     return !!dom && !isIgnoredSenderDomain(dom, hostDomain);
   };
-  const attr = html.match(new RegExp(`\\bemail=["']\\s*(${EMAIL_RE_SRC})\\s*["']`, "i"));
-  if (attr && ok(attr[1])) return attr[1].toLowerCase();
   const fromAngle = text.match(new RegExp(`From:\\s*[^<\\n]*<(${EMAIL_RE_SRC})>`, "i"));
   if (fromAngle && ok(fromAngle[1])) return fromAngle[1].toLowerCase();
   const fromBare = text.match(new RegExp(`From:\\s*(${EMAIL_RE_SRC})`, "i"));
@@ -338,6 +354,16 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
     }
   }
 
+  // Inbox/list heuristic: a single carrier email or load page has a handful of
+  // emails; an email INBOX has dozens of unrelated ones (github, amazon, …).
+  // When we see that many, the candidate emails/phones are noise, not the
+  // carrier's contacts — suppress them so we don't render a wall of junk.
+  // (The DOT/MC + lane still drive the audit; open the specific email for a
+  // real sender check.) Don't suppress when the user made a selection.
+  const looksLikeList = !((cap.sel || "").trim().length > 30) && senderCandidates.length > 8;
+  const emails = looksLikeList ? [] : senderCandidates;
+  const phones = looksLikeList ? [] : phoneCandidates;
+
   return {
     source: "page",
     extracted_text: "",
@@ -358,8 +384,8 @@ export function extractFromPage(cap: PageCapture): ExtractedEmail {
       sender_display_name: senderName,
       reply_to_domain: replyToDomain,
     },
-    sender_candidates: senderCandidates.length ? senderCandidates : undefined,
-    phone_candidates: phoneCandidates.length ? phoneCandidates : undefined,
+    sender_candidates: emails.length ? emails : undefined,
+    phone_candidates: phones.length ? phones : undefined,
     behavioral_signals: {
       is_response_to_load_posting: false,
       urgency_markers: [],
