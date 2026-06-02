@@ -31,7 +31,7 @@ function serverTiming(): string {
 }
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30; // DNS + WHOIS on the sender domain can take a few seconds.
+export const maxDuration = 30; // DNS on the sender domain can take a few seconds.
 
 // GET = warmup. A Vercel cron pings this so the function instance stays hot:
 // duckdb is initialized, the 96MB identity parquet is pulled to /tmp, and the

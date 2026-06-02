@@ -65,6 +65,14 @@ const AUDIT_TIER_STYLES: Record<string, TierStyle> = {
   High:     { bg: "#ffedd5", ink: "#7c2d12", headline: "Verify before tendering" },
   Critical: { bg: "#b91c1c", ink: "#ffffff", headline: "Do not engage without verification" },
 };
+
+function auditTierInkOnNeutral(tier: string): string {
+  if (tier === "Critical") return C.redInkPill;
+  if (tier === "High") return "#7c2d12";
+  if (tier === "Medium") return C.amberInkPill;
+  if (tier === "Low") return C.greenInkPill;
+  return C.ink;
+}
 // Default style used when no carrier was resolved (no DOT/MC in the email,
 // or claimed DOT not in FMCSA snapshot). Headline tells the broker what to
 // do, ask for the carrier's DOT/MC, instead of the misleading "verify
@@ -464,8 +472,7 @@ function renderCandidatePills(
 
 /** The two headline-score tiles (Risk + ISS* est.). */
 function renderScoreTiles(c: NonNullable<Verdict["carrier"]>): string {
-  const tierStyle = AUDIT_TIER_STYLES[c.audit.tier];
-  const riskColor = tierStyle?.ink ?? C.ink;
+  const riskColor = auditTierInkOnNeutral(c.audit.tier);
   const iss = c.issScore;
   const issColor =
     iss == null ? C.inkMuted : iss >= 75 ? C.redInkPill : iss >= 50 ? C.amberInkPill : C.greenInkPill;
@@ -825,17 +832,17 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
     });
   }
 
-  // Sender-domain config, based on the DNS lookups (MX/SPF/DMARC existence)
-  // and WHOIS age, NOT per-message SPF/DKIM/DMARC (which inline forwards
-  // strip). Passed = configured for authenticated email, no MX issues, not
-  // brand new. Failed = MX missing or brand-new domain. Free-email senders
-  // (gmail.com etc.) are recorded as "Trusted provider", meaningful in a
+  // Sender-domain config, based on the DNS lookups (MX/SPF/DMARC existence),
+  // NOT per-message SPF/DKIM/DMARC (which inline forwards strip). Passed =
+  // configured for authenticated email, no MX issues. Failed = MX missing.
+  // Free-email senders (gmail.com etc.) are recorded as "Trusted provider",
+  // meaningful in a
   // different way: the domain itself is fine, the open question is whether
   // the specific account was claimed by the carrier (handled by the local-
   // part match check above).
   const senderDomainHard = sigs.some(
     (s) => s.tier !== "info" && s.category === "email_authenticity" &&
-    /no mx|registered|less than/i.test(s.label)
+    /no mx/i.test(s.label)
   );
   const isFreeMailDomain = sigs.some(
     (s) => s.tier === "info" && s.category === "email_authenticity" &&
@@ -845,7 +852,7 @@ function buildChecksRun(verdict: Verdict): CheckRow[] {
     rows.push({
       status: "failed",
       label: "Sender domain configured for business email",
-      detail: "Sender's domain shows signs of being a throwaway, parked, or brand-new domain.",
+      detail: "Sender's domain is missing mail-server DNS.",
     });
   } else if (isFreeMailDomain) {
     rows.push({

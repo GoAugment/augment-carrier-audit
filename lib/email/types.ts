@@ -56,8 +56,8 @@ export interface ExtractedEmail {
     // removed. In typical inline forwards the broker's mail-server auth is
     // what gets preserved, not the carrier's original-send auth — verifying
     // it told us nothing useful about the carrier and gave false confidence.
-    // Domain-level reputation (SPF/DMARC/MX existence, WHOIS age) is checked
-    // server-side in lib/email/dns-check.ts instead.
+    // Domain-level reputation (SPF/DMARC/MX existence) is checked server-side
+    // in lib/email/dns-check.ts instead.
   };
 
   behavioral_signals: {
@@ -82,6 +82,20 @@ export interface ExtractedEmail {
    *  check whether the carrier's FMCSA-registered phone is among them rather
    *  than betting on the first. Unset for the inbound-email path. */
   phone_candidates?: string[];
+
+  /** Per-message email authentication, when the captured page exposes it
+   *  (Gmail "Show original" / message-details, or a raw Authentication-Results
+   *  header). Meaningful BECAUSE the bookmarklet reads the actually-received
+   *  message (no forwarding): DKIM's signing domain is cryptographically
+   *  verified, so it's a strong identity signal vs the spoofable From: address.
+   *  Unset when the page doesn't show auth results. */
+  emailAuth?: {
+    spf: "pass" | "fail" | "other" | null;
+    dkim: "pass" | "fail" | "other" | null;
+    dmarc: "pass" | "fail" | "other" | null;
+    /** The DKIM-signing domain (header.d / "with domain X"), when present. */
+    dkimDomain: string | null;
+  };
 
   lane: {
     origin_city: string | null;
