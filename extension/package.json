@@ -1,0 +1,20 @@
+{
+  "name": "augie-carrier-check-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser extension for the Augie Carrier Check — public FMCSA fraud audit for everyone, plus per-brokerage lane history, rep owner & DSLS when signed in to Augie.",
+  "scripts": {
+    "build": "tsx build.ts",
+    "watch": "tsx build.ts --watch",
+    "typecheck": "tsc --noEmit",
+    "package": "pnpm run build && cd dist && zip -r ../augie-carrier-check.zip . -x '*.map'"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.268",
+    "@types/node": "^20.10.6",
+    "esbuild": "^0.24.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -3,6 +3,9 @@
 node_modules
 .env
 .env.*
+
+# The browser extension is built & shipped separately, not part of the web app.
+extension
 *.log
 *.tsbuildinfo
 

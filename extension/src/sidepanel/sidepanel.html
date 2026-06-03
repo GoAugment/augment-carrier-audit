@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="sidepanel.css" />
+    <title>Carrier Check</title>
+  </head>
+  <body>
+    <header id="topbar">
+      <span class="dot"></span>
+      <span class="title">Carrier Check</span>
+      <button id="authChip" class="chip" type="button" title=""></button>
+    </header>
+
+    <main id="content">
+      <div id="status" class="status">Open a load, email, or carrier page and click “Re-check”.</div>
+      <section id="verdict" class="verdict" hidden></section>
+      <section id="enrichment" class="enrichment" hidden></section>
+    </main>
+
+    <footer id="actions">
+      <button id="recheck" type="button">Re-check this page</button>
+    </footer>
+
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>

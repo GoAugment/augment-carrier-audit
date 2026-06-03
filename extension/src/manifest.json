@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Augie Carrier Check",
+  "version": "0.1.0",
+  "description": "Vet any carrier from the page you're on — FMCSA fraud audit for everyone, plus your lane history, rep owner & days-since-last-shipment when signed in to Augie.",
+  "permissions": ["activeTab", "scripting", "storage", "tabs", "cookies", "sidePanel"],
+  "host_permissions": ["<all_urls>"],
+  "side_panel": {
+    "default_path": "sidepanel/sidepanel.html"
+  },
+  "action": {
+    "default_title": "Check this carrier",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

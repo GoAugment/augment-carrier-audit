@@ -103,7 +103,28 @@ export async function POST(req: NextRequest) {
   const reqStart = Date.now();
   const verdict = await checkCarrierEmail(extracted);
   const checkMs = Date.now() - reqStart;
+
+  const dot = extracted.identity_claims?.dot_number ?? null;
+  const mc = extracted.identity_claims?.mc_number ?? null;
+
+  // The Carrier Check browser extension renders the verdict NATIVELY in its
+  // side panel (not as embedded email HTML), so it asks for the structured
+  // verdict as JSON. `dot`/`mc` are echoed so it can key its (auth-gated,
+  // per-brokerage) enrichment lookup off the same identity the audit resolved.
+  if (req.nextUrl.searchParams.get("format") === "json") {
+    return NextResponse.json(
+      { verdict, dot, mc },
+      { headers: { "cache-control": "no-store", "x-check-timing": `check=${checkMs};${serverTiming()}` } }
+    );
+  }
+
   const replyHtml = buildReplyHtml(verdict, extracted);
+
+  // Same identity, also surfaced as exposed response headers for callers that
+  // take the HTML (the bookmarklet path).
+  const identityHeaders: Record<string, string> = {};
+  if (dot) identityHeaders["x-carrier-dot"] = dot;
+  if (mc) identityHeaders["x-carrier-mc"] = mc;
 
   return new NextResponse(replyHtml, {
     headers: {
@@ -113,6 +134,8 @@ export async function POST(req: NextRequest) {
       // Server-Timing, so use a custom header.) `check=` is the whole verdict;
       // the rest are computeVerdict phases (all 0 on a verdict-cache hit).
       "x-check-timing": `check=${checkMs};${serverTiming()}`,
+      ...identityHeaders,
+      "access-control-expose-headers": "x-carrier-dot, x-carrier-mc, x-check-timing",
     },
   });
 }
