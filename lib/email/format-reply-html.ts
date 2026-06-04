@@ -637,7 +637,7 @@ function ageFromYear(yearStr: string | null | undefined): string | null {
  *  Reads coverage flags + the signal list together so we can confidently say
  *  "MC match passed" only when (a) we had inputs and (b) no MC-mismatch
  *  signal fired. */
-export type CheckStatus = "passed" | "failed" | "skipped";
+export type CheckStatus = "passed" | "failed" | "skipped" | "info";
 export interface CheckRow {
   status: CheckStatus;
   label: string;
@@ -674,8 +674,12 @@ export function buildChecksRun(verdict: Verdict): CheckRow[] {
       });
     } else {
       for (const r of c.audit.reasons) {
+        // Most reasons are findings (failed, red ✗). A few are EXPLANATORY
+        // notes (e.g. "Why the FMCSA SMS scores look clean") — context, not a
+        // failure — so they render as a neutral info row, never a red ✗.
+        const explanatory = /^Why\b/i.test(r.label);
         rows.push({
-          status: "failed",
+          status: explanatory ? "info" : "failed",
           // Labels are plain text (no glyphs) by registry convention; the
           // tier-colored ✗ icon to the left of the row provides the
           // visual severity, so we don't need an emoji in the label too.

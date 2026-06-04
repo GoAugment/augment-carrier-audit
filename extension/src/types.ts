@@ -136,7 +136,7 @@ export interface AuditVerdict {
 }
 
 /** One safety check the audit ran (mirrors format-reply-html `CheckRow`). */
-export type CheckStatus = "passed" | "failed" | "skipped";
+export type CheckStatus = "passed" | "failed" | "skipped" | "info";
 export interface CheckRow {
   status: CheckStatus;
   label: string;

@@ -155,7 +155,6 @@ function renderVerdict(v: AuditVerdict, checks: CheckRow[]) {
 
   const carrierBlock = c
     ? `<div class="carrier-block">
-         <div class="section-h label-row"><span>Carrier · per FMCSA</span><span class="detected">detected on page</span></div>
          <div class="carrier-name">${esc(c.legalName ?? "(unnamed carrier)")}</div>
          <div class="carrier-ids">
            <span class="id-pill">DOT ${c.dotNumber}</span>
@@ -245,7 +244,7 @@ function renderEnrichment(e: CarrierEnrichment) {
 let hidePassed = false;
 let hideSkipped = false;
 
-const ICON: Record<CheckRow["status"], string> = { failed: "✗", passed: "✓", skipped: "–" };
+const ICON: Record<CheckRow["status"], string> = { failed: "✗", passed: "✓", skipped: "–", info: "i" };
 
 function renderChecks(checks: CheckRow[]) {
   if (!checks.length) {
@@ -254,7 +253,9 @@ function renderChecks(checks: CheckRow[]) {
   }
   checksEl.hidden = false;
 
-  const order = { failed: 0, passed: 1, skipped: 2 };
+  // info = explanatory notes (e.g. "why the SMS scores look clean") — sit right
+  // after the failures they explain, never hidden by the pass/skip toggles.
+  const order: Record<CheckRow["status"], number> = { failed: 0, info: 1, passed: 2, skipped: 3 };
   const sorted = [...checks].sort((a, b) => order[a.status] - order[b.status]);
   const passed = checks.filter((r) => r.status === "passed").length;
   const failed = checks.filter((r) => r.status === "failed").length;
