@@ -637,14 +637,14 @@ function ageFromYear(yearStr: string | null | undefined): string | null {
  *  Reads coverage flags + the signal list together so we can confidently say
  *  "MC match passed" only when (a) we had inputs and (b) no MC-mismatch
  *  signal fired. */
-type CheckStatus = "passed" | "failed" | "skipped";
-interface CheckRow {
+export type CheckStatus = "passed" | "failed" | "skipped";
+export interface CheckRow {
   status: CheckStatus;
   label: string;
   detail: string;
 }
 
-function buildChecksRun(verdict: Verdict): CheckRow[] {
+export function buildChecksRun(verdict: Verdict): CheckRow[] {
   const cov = verdict.coverage;
   const sigs = verdict.signals;
   const c = verdict.carrier;

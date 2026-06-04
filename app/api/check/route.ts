@@ -21,7 +21,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { checkCarrierEmail, lastTimings } from "@/lib/email/check";
-import { buildReplyHtml } from "@/lib/email/format-reply-html";
+import { buildReplyHtml, buildChecksRun } from "@/lib/email/format-reply-html";
 import { extractFromPage, pageDiagnostics } from "@/lib/email/extract-page";
 
 function serverTiming(): string {
@@ -112,8 +112,11 @@ export async function POST(req: NextRequest) {
   // verdict as JSON. `dot`/`mc` are echoed so it can key its (auth-gated,
   // per-brokerage) enrichment lookup off the same identity the audit resolved.
   if (req.nextUrl.searchParams.get("format") === "json") {
+    // `checks` is the full passed/failed/skipped safety-check list the panel
+    // renders natively (same builder the email reply uses, so they stay in
+    // sync). The panel derives its tally from it.
     return NextResponse.json(
-      { verdict, dot, mc },
+      { verdict, checks: buildChecksRun(verdict), dot, mc },
       { headers: { "cache-control": "no-store", "x-check-timing": `check=${checkMs};${serverTiming()}` } }
     );
   }

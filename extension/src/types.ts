@@ -63,6 +63,8 @@ export interface CarrierLane {
   destination: string;
   count: number;
   lastDate: string | null;
+  /** Average linehaul on this lane (USD), when known. */
+  avgRate: number | null;
 }
 
 /** Customer-private enrichment, scoped to the signed-in user's brokerage. */
@@ -111,6 +113,9 @@ export interface VerdictCarrier {
   crashes24mo: number;
   fmcsaPhone: string | null;
   basicAlerts: string[];
+  /** The 7 FMCSA SMS BASICs: peer percentile (0–100, higher = worse; null when
+   *  FMCSA publishes none) + whether FMCSA set an alert. */
+  basics: Array<{ name: string; percentile: number | null; alert: boolean }>;
 }
 
 export interface AuditVerdict {
@@ -121,9 +126,18 @@ export interface AuditVerdict {
   generatedAt: string;
 }
 
+/** One safety check the audit ran (mirrors format-reply-html `CheckRow`). */
+export type CheckStatus = "passed" | "failed" | "skipped";
+export interface CheckRow {
+  status: CheckStatus;
+  label: string;
+  detail: string;
+}
+
 /** Result of a full check: public verdict + (optional) private enrichment. */
 export interface CheckResult {
   verdict: AuditVerdict;
+  checks: CheckRow[];
   dot: string | null;
   mc: string | null;
   /** null = not signed in (public tier); object = enrichment attached. */

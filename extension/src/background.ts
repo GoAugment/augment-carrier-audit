@@ -23,6 +23,7 @@ import type {
   AuthStateInfo,
   CarrierEnrichment,
   CheckResult,
+  CheckRow,
   Environment,
   PageCapture,
   SessionUser,
@@ -191,15 +192,20 @@ async function captureActiveTab(): Promise<{ tabId: number; capture: PageCapture
 
 async function runAudit(
   capture: PageCapture
-): Promise<{ verdict: AuditVerdict; dot: string | null; mc: string | null }> {
+): Promise<{ verdict: AuditVerdict; checks: CheckRow[]; dot: string | null; mc: string | null }> {
   const res = await fetch(`${AUDIT_URL}/api/check?format=json`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(capture),
   });
   if (!res.ok) throw new Error(`Audit failed (${res.status}).`);
-  const data = (await res.json()) as { verdict: AuditVerdict; dot: string | null; mc: string | null };
-  return { verdict: data.verdict, dot: data.dot, mc: data.mc };
+  const data = (await res.json()) as {
+    verdict: AuditVerdict;
+    checks: CheckRow[];
+    dot: string | null;
+    mc: string | null;
+  };
+  return { verdict: data.verdict, checks: data.checks ?? [], dot: data.dot, mc: data.mc };
 }
 
 // ---------------------------------------------------------------------------
@@ -214,14 +220,15 @@ function stubEnrichment(dot: string | null, mc: string | null): CarrierEnrichmen
   }
   return {
     hasRelationship: true,
-    dsls: 17,
-    lastShipmentDate: new Date(Date.now() - 17 * 864e5).toISOString().slice(0, 10),
-    repOwner: { name: "Jordan Avery", email: "jordan.avery@example.com" },
-    loadCount: 42,
+    dsls: 47,
+    lastShipmentDate: new Date(Date.now() - 47 * 864e5).toISOString().slice(0, 10),
+    repOwner: { name: "Dana Whitfield", email: "dana.whitfield@example.com" },
+    loadCount: 134,
     lanes: [
-      { origin: "Dallas, TX", destination: "Atlanta, GA", count: 14, lastDate: "2026-05-09" },
-      { origin: "Laredo, TX", destination: "Memphis, TN", count: 9, lastDate: "2026-04-21" },
-      { origin: "Chicago, IL", destination: "Kansas City, MO", count: 6, lastDate: "2026-03-30" },
+      { origin: "Chicago, IL", destination: "Dallas, TX", count: 18, lastDate: "2026-04-12", avgRate: 3180 },
+      { origin: "Chicago, IL", destination: "Atlanta, GA", count: 11, lastDate: "2026-03-28", avgRate: 2640 },
+      { origin: "Joliet, IL", destination: "Memphis, TN", count: 7, lastDate: "2026-03-09", avgRate: 2510 },
+      { origin: "Chicago, IL", destination: "Kansas City, MO", count: 6, lastDate: "2026-02-22", avgRate: 1980 },
     ],
   };
 }
@@ -250,7 +257,7 @@ async function fetchEnrichment(dot: string | null, mc: string | null): Promise<C
 
 async function runCheck(): Promise<CheckResult> {
   const { capture } = await captureActiveTab();
-  const { verdict, dot, mc } = await runAudit(capture);
+  const { verdict, checks, dot, mc } = await runAudit(capture);
 
   let enrichment: CarrierEnrichment | null = null;
   let enrichmentError: string | null = null;
@@ -261,7 +268,7 @@ async function runCheck(): Promise<CheckResult> {
       enrichmentError = e instanceof Error ? e.message : String(e);
     }
   }
-  return { verdict, dot, mc, enrichment, enrichmentError };
+  return { verdict, checks, dot, mc, enrichment, enrichmentError };
 }
 
 // ---------------------------------------------------------------------------

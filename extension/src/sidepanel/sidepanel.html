@@ -7,21 +7,27 @@
     <title>Carrier Check</title>
   </head>
   <body>
-    <header id="topbar">
-      <span class="dot"></span>
-      <span class="title">Carrier Check</span>
-      <button id="authChip" class="chip" type="button" title=""></button>
+    <header id="brandbar">
+      <span class="brand-logo" aria-hidden="true"></span>
+      <span class="brand-name">Augie Carrier Check</span>
+      <button id="closeBtn" class="icon-btn" type="button" title="Close" aria-label="Close">✕</button>
     </header>
 
+    <div id="subbar">
+      <button id="recheck" class="icon-btn" type="button" title="Re-check this page" aria-label="Re-check">⟳</button>
+      <span class="subbar-title">Carrier Check</span>
+      <button id="authChip" class="chip" type="button" title=""></button>
+    </div>
+
+    <div id="meta" class="meta"></div>
+
     <main id="content">
-      <div id="status" class="status">Open a load, email, or carrier page and click “Re-check”.</div>
+      <div id="status" class="status">Open a load, email, or carrier page and click re-check.</div>
       <section id="verdict" class="verdict" hidden></section>
       <section id="enrichment" class="enrichment" hidden></section>
+      <section id="checks" class="checks" hidden></section>
+      <section id="basics" class="basics" hidden></section>
     </main>
-
-    <footer id="actions">
-      <button id="recheck" type="button">Re-check this page</button>
-    </footer>
 
     <script type="module" src="sidepanel.js"></script>
   </body>
