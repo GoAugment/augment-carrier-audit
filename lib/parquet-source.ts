@@ -34,6 +34,16 @@ export const DOT_BUCKET_SIZE = 10_000;
 export const COMPACT_MC_PREFIX_LEN = 3;
 export const COMPACT_PHONE_PREFIX_LEN = 4;
 
+// The per-DOT "single-check buckets" were an optimization experiment: shard the
+// full parquet into tiny per-DOT-range files so a single check reads a few KB
+// instead of scanning the ~100MB full file. We stopped producing/refreshing
+// them, so the blobs in Blob are now stale/corrupt and were crashing checks.
+// Default OFF → read straight from the authoritative full aggregates/identity
+// parquets. Re-enable (only if cold latency is too high AND buckets are being
+// regenerated + uploaded each monthly refresh) by setting the Vercel env var
+// USE_SINGLE_CHECK_BUCKETS=1 — no code change/redeploy needed.
+const USE_SINGLE_CHECK_BUCKETS = process.env.USE_SINGLE_CHECK_BUCKETS === "1";
+
 // One in-flight (or resolved) download per file. Concurrent requests on a cold
 // instance share a single download; warm requests reuse the /tmp file. A
 // rejected promise is evicted so a later request can retry.
@@ -127,6 +137,8 @@ async function resolveBucketSource(
   kind: "carriers" | "identities",
   dot: number
 ): Promise<string | null> {
+  // Buckets disabled → callers fall back to the full parquet (the source of truth).
+  if (!USE_SINGLE_CHECK_BUCKETS) return null;
   const bucket = bucketForDot(dot);
   const localGlob = localBucketGlob(kind, bucket);
   if (localGlob) return localGlob;
