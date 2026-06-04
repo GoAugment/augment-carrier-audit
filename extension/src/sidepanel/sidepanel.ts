@@ -118,10 +118,33 @@ function renderAuth(info: AuthStateInfo) {
 
 // ---------- verdict ----------
 
-function renderVerdict(v: AuditVerdict) {
+const SIGNAL_RANK: Record<AuditVerdict["signals"][number]["tier"], number> = {
+  critical: 3,
+  high: 2,
+  caution: 1,
+  info: 0,
+};
+
+function renderVerdict(v: AuditVerdict, checks: CheckRow[]) {
   verdictEl.hidden = false;
   verdictEl.className = `verdict tier-${v.tier}`;
   const c = v.carrier;
+
+  // Lead with the single most important finding (worst-tier signal), not the
+  // whole concatenated list — the full breakdown is the Safety-checks section,
+  // which the "see all" link jumps to. Fall back to the server summary when
+  // there are no actionable signals (e.g. a clean carrier).
+  const topSignal = [...(v.signals ?? [])]
+    .filter((s) => s.tier !== "info")
+    .sort((a, b) => SIGNAL_RANK[b.tier] - SIGNAL_RANK[a.tier])[0];
+  const subtext = topSignal
+    ? `<b>${esc(topSignal.label)}</b>${topSignal.detail ? ` — ${esc(topSignal.detail)}` : ""}`
+    : esc(v.summary);
+  const failedCount = checks.filter((r) => r.status === "failed").length;
+  const seeAll =
+    checks.length && (topSignal || failedCount)
+      ? `<a class="see-checks" role="button" tabindex="0">See all ${checks.length} checks ↓</a>`
+      : "";
 
   const tiles = c
     ? `<div class="tiles">
@@ -132,7 +155,7 @@ function renderVerdict(v: AuditVerdict) {
 
   const carrierBlock = c
     ? `<div class="carrier-block">
-         <div class="section-h label-row"><span>Carrier · per FMCSA</span><span class="detected">DOT ${c.dotNumber} · detected on page</span></div>
+         <div class="section-h label-row"><span>Carrier · per FMCSA</span><span class="detected">detected on page</span></div>
          <div class="carrier-name">${esc(c.legalName ?? "(unnamed carrier)")}</div>
          <div class="carrier-ids">
            <span class="id-pill">DOT ${c.dotNumber}</span>
@@ -146,9 +169,14 @@ function renderVerdict(v: AuditVerdict) {
   verdictEl.innerHTML =
     `<span class="tier-pill">${esc(v.tier)}</span>` +
     `<div class="headline">${esc(TIER_HEADLINE[v.tier])}</div>` +
-    `<div class="summary">${esc(v.summary)}</div>` +
+    `<div class="summary">${subtext}</div>` +
+    seeAll +
     carrierBlock +
     tiles;
+
+  verdictEl.querySelector(".see-checks")?.addEventListener("click", () =>
+    checksEl.scrollIntoView({ behavior: "smooth", block: "start" })
+  );
 }
 
 // ---------- enrichment ----------
@@ -308,7 +336,7 @@ function renderResult(result: CheckResult) {
 
   // Be defensive: an older background service worker may not include `checks`.
   const checks = Array.isArray(result.checks) ? result.checks : [];
-  renderVerdict(result.verdict);
+  renderVerdict(result.verdict, checks);
 
   if (result.enrichment) renderEnrichment(result.enrichment);
   else if (result.enrichmentError) {

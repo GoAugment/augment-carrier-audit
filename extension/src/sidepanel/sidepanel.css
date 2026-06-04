@@ -129,6 +129,12 @@ body { display: flex; flex-direction: column; height: 100vh; }
   letter-spacing: -0.025em; margin: 9px 0 6px;
 }
 .summary { font-size: 13.5px; color: var(--ink-600); line-height: 1.5; }
+.summary b { color: var(--ink-900); font-weight: 700; }
+.see-checks {
+  display: inline-block; margin-top: 8px; cursor: pointer;
+  font-size: 12.5px; font-weight: 600; color: var(--bg-brand);
+}
+.see-checks:hover { text-decoration: underline; }
 
 /* carrier identity */
 .carrier-block { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--ink-150); }
