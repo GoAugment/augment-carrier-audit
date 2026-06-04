@@ -44,9 +44,12 @@ const AUGMENT_WEB_URLS: Record<Environment, string> = {
 // customer-private data). Lives in load-service, served via the public API
 // gateway; returns the CarrierEnrichment shape directly.
 // See augment-services PR #12107.
+// Per-service host (not a shared api.* gateway): load-service is exposed at
+// load[.staging].goaugment.com. Confirmed against staging — api.goaugment.com
+// does not route here.
 const ENRICHMENT_BASE: Record<Environment, string> = {
-  production: "https://api.goaugment.com",
-  staging: "https://api.staging.goaugment.com",
+  production: "https://load.goaugment.com",
+  staging: "https://load.staging.goaugment.com",
 };
 const ENRICHMENT_PATH = "/unstable/loads/carrier-history";
 // Keep STUBBED until PR #12107 is deployed AND the gateway allows the
