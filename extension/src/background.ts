@@ -48,7 +48,7 @@ const ENRICHMENT_BASE: Record<Environment, string> = {
   production: "https://api.goaugment.com",
   staging: "https://api.staging.goaugment.com",
 };
-const ENRICHMENT_PATH = "/unstable/loads/carrier-enrichment";
+const ENRICHMENT_PATH = "/unstable/loads/carrier-history";
 // Keep STUBBED until PR #12107 is deployed AND the gateway allows the
 // chrome-extension origin (CORS) AND security review clears. Flipping this to
 // false before then makes signed-in checks hit a 404/CORS error. The stub
