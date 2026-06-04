@@ -42,29 +42,14 @@ html, body {
 body { display: flex; flex-direction: column; height: 100vh; }
 
 /* ---------- header chrome ---------- */
-/* Top bar: white, brand logo + name + close. */
-#brandbar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 0 14px;
-  height: 48px;
-  background: var(--surface);
-  color: var(--ink-900);
-  border-bottom: 1px solid var(--ink-150);
-}
-.brand-logo { width: 20px; height: 20px; border-radius: 5px; flex: 0 0 auto; }
-.brand-name { flex: 1 1 auto; font-weight: 700; font-size: 15px; }
-
+/* Chrome's side-panel chrome already shows the extension name + close, so we
+   render no brand bar of our own — we start at the green status pill below. */
 .icon-btn {
   border: 0; background: transparent; color: inherit;
   font-size: 15px; line-height: 1; cursor: pointer;
   width: 26px; height: 26px; border-radius: 7px;
   display: inline-flex; align-items: center; justify-content: center;
 }
-#brandbar .icon-btn { color: var(--ink-400); }
-#brandbar .icon-btn:hover { background: var(--bg); color: var(--ink-900); }
 
 /* Sub bar: dark-green rounded pill with live dot, title, refresh, auth chip. */
 #subbar {
@@ -72,7 +57,7 @@ body { display: flex; flex-direction: column; height: 100vh; }
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 10px 12px 4px;
+  margin: 12px 12px 4px;
   padding: 0 8px 0 14px;
   height: 44px;
   background: var(--bg-brand);

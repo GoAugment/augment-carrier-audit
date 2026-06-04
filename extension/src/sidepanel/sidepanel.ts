@@ -16,7 +16,6 @@ import type {
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-const brandClose = $<HTMLButtonElement>("closeBtn");
 const recheckBtn = $<HTMLButtonElement>("recheck");
 const authChip = $<HTMLButtonElement>("authChip");
 const metaEl = $("meta");
@@ -479,7 +478,6 @@ async function runCheck(manual?: string) {
 // ---------- wire up ----------
 
 recheckBtn.addEventListener("click", () => void runCheck());
-brandClose.addEventListener("click", () => window.close());
 authChip.addEventListener("click", () => {
   if (!authChip.classList.contains("signed-in")) openSignIn();
 });
