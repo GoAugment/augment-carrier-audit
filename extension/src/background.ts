@@ -40,15 +40,19 @@ const AUGMENT_WEB_URLS: Record<Environment, string> = {
   staging: "https://app.staging.goaugment.com",
 };
 
-// Where the authorized enrichment endpoint will live (Option A — augment-
-// services owns the customer-private data). Verify the exact host/route when
-// the directory-service endpoint ships; until then USE_STUB_ENRICHMENT serves
-// realistic mock data so the signed-in UI is demoable end-to-end.
+// The authorized enrichment endpoint (Option A — augment-services owns the
+// customer-private data). Lives in load-service, served via the public API
+// gateway; returns the CarrierEnrichment shape directly.
+// See augment-services PR #12107.
 const ENRICHMENT_BASE: Record<Environment, string> = {
-  production: "https://directory-service.goaugment.com",
-  staging: "https://directory-service.staging.goaugment.com",
+  production: "https://api.goaugment.com",
+  staging: "https://api.staging.goaugment.com",
 };
-const ENRICHMENT_PATH = "/unstable/carriers/enrichment";
+const ENRICHMENT_PATH = "/unstable/loads/carrier-enrichment";
+// Keep STUBBED until PR #12107 is deployed AND the gateway allows the
+// chrome-extension origin (CORS) AND security review clears. Flipping this to
+// false before then makes signed-in checks hit a 404/CORS error. The stub
+// serves realistic mock data so the signed-in UI stays demoable until go-live.
 const USE_STUB_ENRICHMENT = true;
 
 const SESSION_COOKIE = "_session";
