@@ -45,20 +45,23 @@ const AUGMENT_WEB_URLS: Record<Environment, string> = {
 // gateway; returns the CarrierEnrichment shape directly.
 // See augment-services PR #12107.
 // Per-service host (not a shared api.* gateway): load-service is exposed at
-// load[.staging].goaugment.com. Staging is CONFIRMED end-to-end.
-// TODO(go-live): verify the production host — `load.goaugment.com` follows the
-// staging pattern but is unverified (not publicly resolvable from CI); confirm
-// before flipping USE_STUB_ENRICHMENT off in production.
+// load[.staging].goaugment.com. Staging is public + CONFIRMED end-to-end.
+// PRODUCTION CAVEAT: in prod the per-service hosts are PRIVATE (load.goaugment.com
+// does not resolve publicly), so a browser extension cannot reach it directly.
+// The prod value below is a placeholder — the real browser-reachable prod
+// ingress for load-service must be found before enabling prod (see
+// LIVE_ENRICHMENT_ENVIRONMENTS).
 const ENRICHMENT_BASE: Record<Environment, string> = {
   production: "https://load.goaugment.com",
   staging: "https://load.staging.goaugment.com",
 };
 const ENRICHMENT_PATH = "/unstable/loads/carrier-history";
-// Keep STUBBED until PR #12107 is deployed AND the gateway allows the
-// chrome-extension origin (CORS) AND security review clears. Flipping this to
-// false before then makes signed-in checks hit a 404/CORS error. The stub
-// serves realistic mock data so the signed-in UI stays demoable until go-live.
-const USE_STUB_ENRICHMENT = true;
+// Environments where we call the live endpoint instead of the stub. Staging is
+// deployed + confirmed (augment-services PR #12107). Production stays stubbed
+// until: load-service is deployed to prod, the browser-reachable prod host is
+// confirmed (per-service hosts are private — need the public ingress), and
+// security review clears. The stub keeps the prod UI demoable until then.
+const LIVE_ENRICHMENT_ENVIRONMENTS = new Set<Environment>(["staging"]);
 
 const SESSION_COOKIE = "_session";
 const EXPIRY_BUFFER_MS = 5 * 60 * 1000;
@@ -222,8 +225,8 @@ async function runAudit(
 // ---------------------------------------------------------------------------
 
 function stubEnrichment(dot: string | null, mc: string | null): CarrierEnrichment {
-  // Deterministic mock so the signed-in UI is demoable before the real
-  // directory-service route exists. Flip USE_STUB_ENRICHMENT when it ships.
+  // Deterministic mock so the signed-in UI is demoable on environments not yet
+  // in LIVE_ENRICHMENT_ENVIRONMENTS (currently production).
   if (!dot && !mc) {
     return { hasRelationship: false, dsls: null, lastShipmentDate: null, repOwner: null, lanes: [], loadCount: 0 };
   }
@@ -243,12 +246,18 @@ function stubEnrichment(dot: string | null, mc: string | null): CarrierEnrichmen
 }
 
 async function fetchEnrichment(dot: string | null, mc: string | null): Promise<CarrierEnrichment> {
-  if (USE_STUB_ENRICHMENT) return stubEnrichment(dot, mc);
-
   const env = await getEnvironment();
+  if (!LIVE_ENRICHMENT_ENVIRONMENTS.has(env)) return stubEnrichment(dot, mc);
+
   const params = new URLSearchParams();
   if (dot) params.set("dotNumber", dot.replace(/\D/g, ""));
   if (mc) params.set("mcNumber", mc.replace(/\D/g, ""));
+  // Optional brokerage override (testing/cross-tenant). Normally unset → the
+  // endpoint scopes to the signed-in user's own brokerage. The endpoint
+  // enforces access, so this can only widen to brokerages the user is
+  // authorized for.
+  const { brokerageKey } = await chrome.storage.local.get("brokerageKey");
+  if (brokerageKey) params.set("brokerageKey", String(brokerageKey));
   const res = await fetch(`${ENRICHMENT_BASE[env]}${ENRICHMENT_PATH}?${params}`, {
     headers: { Authorization: `Bearer ${authState.accessToken ?? ""}` },
   });
