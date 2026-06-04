@@ -232,8 +232,10 @@ function evalAuditTier(carrier: FmcsaCarrier, dot: number): Signal[] {
         {
           category: "audit_tier",
           tier: "caution",
-          label: "Carrier in Medium tier",
-          detail: `Existing carrier audit flags this DOT as Medium: ${reasonsText}. Context only.`,
+          // Use the verdict vocabulary (Clean/Caution/High/Critical) in
+          // user-facing copy, not the analyzer's internal RiskLevel ("Medium").
+          label: "Carrier in Caution tier",
+          detail: `Existing carrier audit flags this DOT as Caution: ${reasonsText}. Context only.`,
         },
       ];
     case "Low":
