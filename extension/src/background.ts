@@ -45,8 +45,10 @@ const AUGMENT_WEB_URLS: Record<Environment, string> = {
 // gateway; returns the CarrierEnrichment shape directly.
 // See augment-services PR #12107.
 // Per-service host (not a shared api.* gateway): load-service is exposed at
-// load[.staging].goaugment.com. Confirmed against staging — api.goaugment.com
-// does not route here.
+// load[.staging].goaugment.com. Staging is CONFIRMED end-to-end.
+// TODO(go-live): verify the production host — `load.goaugment.com` follows the
+// staging pattern but is unverified (not publicly resolvable from CI); confirm
+// before flipping USE_STUB_ENRICHMENT off in production.
 const ENRICHMENT_BASE: Record<Environment, string> = {
   production: "https://load.goaugment.com",
   staging: "https://load.staging.goaugment.com",
