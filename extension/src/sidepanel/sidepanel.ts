@@ -103,16 +103,22 @@ function carrierDetails(c: VerdictCarrier): string {
 
 // ---------- auth chip ----------
 
+function initials(name: string): string {
+  const ltrs = name.trim().split(/\s+/).filter(Boolean).map((p) => p[0]).join("");
+  return (ltrs.slice(0, 2) || name.slice(0, 2)).toUpperCase();
+}
+
 function renderAuth(info: AuthStateInfo) {
   if (info.isAuthenticated && info.user) {
     const name = info.user.profile.displayName || info.user.claims.email;
-    authChip.textContent = name;
-    authChip.title = `Signed in to Augie · ${info.brokerageKey ?? ""}`;
     authChip.classList.add("signed-in");
+    authChip.title = `Signed in to Augie · ${info.brokerageKey ?? ""}`;
+    authChip.innerHTML =
+      `<span class="avatar">${esc(initials(name))}</span><span class="chip-name">${esc(name)}</span>`;
   } else {
-    authChip.textContent = "Sign in";
-    authChip.title = "Sign in to Augie for lane history, rep owner & DSLS";
     authChip.classList.remove("signed-in");
+    authChip.title = "Sign in to Augie for lane history, rep owner & DSLS";
+    authChip.textContent = "Sign in";
   }
 }
 

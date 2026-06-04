@@ -42,22 +42,20 @@ html, body {
 body { display: flex; flex-direction: column; height: 100vh; }
 
 /* ---------- header chrome ---------- */
+/* Top bar: white, brand logo + name + close. */
 #brandbar {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 9px;
   padding: 0 14px;
-  height: 44px;
-  background: var(--bg-brand);
-  color: #fff;
+  height: 48px;
+  background: var(--surface);
+  color: var(--ink-900);
+  border-bottom: 1px solid var(--ink-150);
 }
-.brand-logo {
-  width: 16px; height: 16px; border-radius: 5px;
-  background: var(--brand);
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.25);
-}
-.brand-name { flex: 1 1 auto; font-weight: 600; font-size: 14px; }
+.brand-logo { width: 20px; height: 20px; border-radius: 5px; flex: 0 0 auto; }
+.brand-name { flex: 1 1 auto; font-weight: 700; font-size: 15px; }
 
 .icon-btn {
   border: 0; background: transparent; color: inherit;
@@ -65,42 +63,53 @@ body { display: flex; flex-direction: column; height: 100vh; }
   width: 26px; height: 26px; border-radius: 7px;
   display: inline-flex; align-items: center; justify-content: center;
 }
-.icon-btn:hover { background: rgba(255, 255, 255, 0.12); }
+#brandbar .icon-btn { color: var(--ink-400); }
+#brandbar .icon-btn:hover { background: var(--bg); color: var(--ink-900); }
 
+/* Sub bar: dark-green rounded pill with live dot, title, refresh, auth chip. */
 #subbar {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px 0 8px;
-  height: 42px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--ink-150);
+  gap: 10px;
+  margin: 10px 12px 4px;
+  padding: 0 8px 0 14px;
+  height: 44px;
+  background: var(--bg-brand);
+  color: #fff;
+  border-radius: var(--radius-lg);
 }
-#subbar .icon-btn { color: var(--ink-600); }
-#subbar .icon-btn:hover { background: var(--bg); }
-.subbar-title { flex: 1 1 auto; font-weight: 600; }
+.live-dot {
+  flex: 0 0 auto; width: 9px; height: 9px; border-radius: 999px;
+  background: var(--brand); box-shadow: 0 0 0 3px rgba(46, 184, 115, 0.25);
+}
+.subbar-title { flex: 1 1 auto; font-weight: 700; font-size: 14px; color: #fff; }
+#subbar .icon-btn { color: rgba(255, 255, 255, 0.85); }
+#subbar .icon-btn:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
 
+/* Auth chip — avatar + name inside the green bar. */
 .chip {
+  display: inline-flex; align-items: center; gap: 7px;
   font: inherit; font-size: 12.5px; font-weight: 600;
-  padding: 5px 12px; border-radius: 999px;
-  border: 1px solid var(--ink-200); background: var(--surface);
-  color: var(--ink-900); cursor: pointer;
+  padding: 4px 12px 4px 4px; border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.07); color: #fff; cursor: pointer;
 }
-.chip:hover { border-color: var(--ink-400); }
-.chip.signed-in {
-  background: var(--brand-tint); border-color: transparent;
-  color: var(--bg-brand); cursor: default;
+.chip:hover { background: rgba(255, 255, 255, 0.14); }
+.chip:not(.signed-in) { padding: 5px 14px; }
+.chip.signed-in { cursor: default; }
+.chip .avatar {
+  flex: 0 0 auto; width: 24px; height: 24px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--brand); color: var(--bg-brand);
+  font-size: 11px; font-weight: 700;
 }
-.chip.signed-in::before { content: "● "; color: var(--brand); }
 
 .meta {
   flex: 0 0 auto;
-  padding: 9px 16px;
+  padding: 6px 16px 2px;
   font-size: 12px;
   color: var(--ink-400);
-  background: var(--surface);
-  border-bottom: 1px solid var(--ink-150);
 }
 .meta:empty { display: none; }
 .meta .ok { color: var(--brand); }
