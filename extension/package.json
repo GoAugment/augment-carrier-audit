@@ -8,7 +8,8 @@
     "build": "tsx build.ts",
     "watch": "tsx build.ts --watch",
     "typecheck": "tsc --noEmit",
-    "package": "pnpm run build && cd dist && zip -r ../augie-carrier-check.zip . -x '*.map'"
+    "package": "pnpm run build && cd dist && zip -r ../augie-carrier-check.zip . -x '*.map'",
+    "publish:webstore": "pnpm run package && npx -y chrome-webstore-upload-cli@3 upload --source augie-carrier-check.zip --auto-publish"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.268",
