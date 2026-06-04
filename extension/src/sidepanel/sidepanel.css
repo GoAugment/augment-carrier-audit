@@ -179,13 +179,11 @@ body { display: flex; flex-direction: column; height: 100vh; }
 .enrichment .owner b { font-weight: 700; }
 .enrichment .lanes-h { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-400); margin-bottom: 4px; }
 .enrichment .lanes { margin: 0; padding: 0; list-style: none; }
-.enrichment .lanes li {
-  display: flex; justify-content: space-between; align-items: baseline;
-  gap: 10px; padding: 6px 0; border-top: 1px solid rgba(10,14,12,0.06);
-}
+.enrichment .lanes li { padding: 7px 0; border-top: 1px solid rgba(10,14,12,0.07); }
+.enrichment .lane-main { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 .enrichment .lane-route { font-weight: 600; }
-.enrichment .lane-meta { color: var(--ink-400); font-size: 12px; white-space: nowrap; }
-.enrichment .lane-rate { font-weight: 700; }
+.enrichment .lane-rate { font-weight: 700; white-space: nowrap; }
+.enrichment .lane-sub { font-size: 12px; color: var(--ink-400); margin-top: 1px; }
 
 /* locked variant */
 .enrichment.locked { background: var(--surface); }

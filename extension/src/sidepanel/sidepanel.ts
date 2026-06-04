@@ -136,13 +136,15 @@ function renderEnrichment(e: CarrierEnrichment) {
 
   enrichmentEl.className = "enrichment unlocked";
   const dslsCls = e.dsls == null ? "" : e.dsls <= 30 ? "fresh" : "stale";
-  const lanes = e.lanes.length
-    ? `<div class="lanes-h">Top lanes</div><ul class="lanes">${e.lanes
+  const laneList = Array.isArray(e.lanes) ? e.lanes : [];
+  const lanes = laneList.length
+    ? `<div class="lanes-h">Top lanes</div><ul class="lanes">${laneList
         .map(
           (l) =>
-            `<li><span class="lane-route">${esc(l.origin)} → ${esc(l.destination)}</span>` +
-            `<span class="lane-meta">${l.count}× loads</span>` +
-            `<span class="lane-rate">${l.avgRate != null ? usd(l.avgRate) : ""}</span></li>`
+            `<li><div class="lane-main">` +
+            `<span class="lane-route">${esc(l.origin)} → ${esc(l.destination)}</span>` +
+            `<span class="lane-rate">${l.avgRate != null ? usd(l.avgRate) : ""}</span></div>` +
+            `<div class="lane-sub">${l.count}× loads${l.lastDate ? ` · last ${esc(l.lastDate)}` : ""}</div></li>`
         )
         .join("")}</ul>`
     : "";
@@ -232,9 +234,11 @@ function renderBasics(c: VerdictCarrier | null) {
 
 function renderResult(result: CheckResult) {
   statusEl.hidden = true;
-  metaEl.innerHTML = `<span class="ok">●</span> Checked just now`;
+  metaEl.innerHTML = `<span class="ok">●</span> Auto-checked when this page opened · just now`;
 
-  renderVerdict(result.verdict, result.checks);
+  // Be defensive: an older background service worker may not include `checks`.
+  const checks = Array.isArray(result.checks) ? result.checks : [];
+  renderVerdict(result.verdict, checks);
 
   if (result.enrichment) renderEnrichment(result.enrichment);
   else if (result.enrichmentError) {
@@ -243,7 +247,7 @@ function renderResult(result: CheckResult) {
     enrichmentEl.innerHTML = `<h3>Your relationship</h3><div class="summary">${esc(result.enrichmentError)}</div>`;
   } else renderLocked();
 
-  renderChecks(result.checks);
+  renderChecks(checks);
   renderBasics(result.verdict.carrier);
 }
 
