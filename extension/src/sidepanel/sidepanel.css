@@ -94,8 +94,8 @@ body { display: flex; flex-direction: column; height: 100vh; }
 #devbar {
   flex: 0 0 auto;
   display: flex; align-items: center; gap: 8px;
-  margin: 0 12px 4px; padding: 5px 10px;
-  background: #fffbeb; border: 1px dashed var(--amber); border-radius: 8px;
+  margin: 0; padding: 6px 12px;
+  background: #fffbeb; border-top: 1px dashed var(--amber);
   font-size: 11px;
 }
 #devbar[hidden] { display: none; }
@@ -172,7 +172,7 @@ body { display: flex; flex-direction: column; height: 100vh; }
   padding: 11px 13px; box-shadow: var(--shadow);
 }
 .tile .t-label { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-400); }
-.tile .t-value { font-size: 32px; font-weight: 700; line-height: 1.05; margin-top: 4px; letter-spacing: -0.03em; color: var(--tier, var(--ink-950)); }
+.tile .t-value { font-size: 32px; font-weight: 800; line-height: 1.05; margin-top: 4px; letter-spacing: -0.03em; color: var(--tier, var(--ink-950)); }
 .tile .t-sub { font-size: 11.5px; color: var(--ink-400); margin-top: 3px; }
 
 /* tally (sits in the Safety-checks section header) */
