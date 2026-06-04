@@ -28,6 +28,7 @@ import type {
   PageCapture,
   SessionUser,
 } from "./types";
+import { ENRICHMENT_UNAVAILABLE } from "./types";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -53,12 +54,9 @@ const ENRICHMENT_BASE: Record<Environment, string> = {
   staging: "https://load.staging.goaugment.com",
 };
 const ENRICHMENT_PATH = "/unstable/loads/carrier-history";
-// Environments where we call the live endpoint instead of the stub. Staging is
-// deployed + confirmed (augment-services PR #12107). Production stays stubbed
-// until load-service (PR #12107) is deployed to prod and security review
-// clears — then add "production" here. The prod host is already correct above.
-// The stub keeps the prod UI demoable until then.
-const LIVE_ENRICHMENT_ENVIRONMENTS = new Set<Environment>(["staging"]);
+// Enrichment is always live (no stub). Until load-service PR #12107 reaches
+// prod, the prod endpoint 404s — fetchEnrichment treats any failure as "no
+// history available" so the panel degrades gracefully instead of erroring.
 
 const SESSION_COOKIE = "_session";
 const EXPIRY_BUFFER_MS = 5 * 60 * 1000;
@@ -221,38 +219,8 @@ async function runAudit(
 // Private enrichment (augment-services, scoped to token's brokerageKey)
 // ---------------------------------------------------------------------------
 
-function stubEnrichment(dot: string | null, mc: string | null): CarrierEnrichment {
-  // Deterministic mock so the signed-in UI is demoable on environments not yet
-  // in LIVE_ENRICHMENT_ENVIRONMENTS (currently production).
-  if (!dot && !mc) {
-    return {
-      hasRelationship: false, dsls: null, lastShipmentDate: null, firstShipmentDate: null,
-      repOwner: null, repLoadCount: 0, lanes: [], loadCount: 0,
-    };
-  }
-  return {
-    hasRelationship: true,
-    dsls: 47,
-    lastShipmentDate: new Date(Date.now() - 47 * 864e5).toISOString().slice(0, 10),
-    firstShipmentDate: "2023-03-14",
-    repOwner: { name: "Dana Whitfield", email: "dana.whitfield@example.com" },
-    repLoadCount: 88,
-    loadCount: 134,
-    lanes: [
-      { origin: "Chicago, IL", destination: "Dallas, TX", count: 41, lastDate: "2026-04-12", avgRate: 2100, lastRate: 2180, trend: "up" },
-      { origin: "Chicago, IL", destination: "Atlanta, GA", count: 28, lastDate: "2026-03-28", avgRate: 2640, lastRate: 2640, trend: "flat" },
-      { origin: "Joliet, IL", destination: "Memphis, TN", count: 19, lastDate: "2026-03-09", avgRate: 1600, lastRate: 1520, trend: "down" },
-      { origin: "Chicago, IL", destination: "Kansas City, MO", count: 12, lastDate: "2026-02-22", avgRate: 1050, lastRate: 1090, trend: "up" },
-    ],
-  };
-}
-
 async function fetchEnrichment(dot: string | null, mc: string | null): Promise<CarrierEnrichment> {
   const env = await getEnvironment();
-  const live = LIVE_ENRICHMENT_ENVIRONMENTS.has(env);
-  console.log("[Augie] enrichment:", { env, live, dot, mc });
-  if (!live) return stubEnrichment(dot, mc);
-
   const params = new URLSearchParams();
   if (dot) params.set("dotNumber", dot.replace(/\D/g, ""));
   if (mc) params.set("mcNumber", mc.replace(/\D/g, ""));
@@ -262,20 +230,21 @@ async function fetchEnrichment(dot: string | null, mc: string | null): Promise<C
   // authorized for.
   const { brokerageKey } = await chrome.storage.local.get("brokerageKey");
   if (brokerageKey) params.set("brokerageKey", String(brokerageKey));
-  const url = `${ENRICHMENT_BASE[env]}${ENRICHMENT_PATH}?${params}`;
-  console.log("[Augie] enrichment GET", url);
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${authState.accessToken ?? ""}` },
-  });
+
+  let res: Response;
+  try {
+    res = await fetch(`${ENRICHMENT_BASE[env]}${ENRICHMENT_PATH}?${params}`, {
+      headers: { Authorization: `Bearer ${authState.accessToken ?? ""}` },
+    });
+  } catch {
+    throw new Error(ENRICHMENT_UNAVAILABLE); // network/CORS — treat as no data
+  }
   if (res.status === 401 || res.status === 403) {
     authState = { accessToken: null, user: null, expiresAt: null };
     throw new Error("Augie session expired — sign in again.");
   }
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    console.warn("[Augie] enrichment error", res.status, body);
-    throw new Error(`Enrichment unavailable (${res.status}).`);
-  }
+  // 404 (endpoint not in this env yet), 500, etc. → no history available.
+  if (!res.ok) throw new Error(ENRICHMENT_UNAVAILABLE);
   return (await res.json()) as CarrierEnrichment;
 }
 

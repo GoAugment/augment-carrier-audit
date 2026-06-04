@@ -10,6 +10,10 @@
 
 export type Environment = "production" | "staging";
 
+/** enrichmentError sentinel: signed in, but history couldn't load (endpoint
+ *  404/500/down). Rendered as a soft "history unavailable" card, not an error. */
+export const ENRICHMENT_UNAVAILABLE = "ENRICHMENT_UNAVAILABLE";
+
 /** Claims embedded in the `_session` cookie's accessToken payload. */
 export interface UserClaims {
   userId: string;

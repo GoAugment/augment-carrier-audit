@@ -13,6 +13,7 @@ import type {
   CheckRow,
   VerdictCarrier,
 } from "../types";
+import { ENRICHMENT_UNAVAILABLE } from "../types";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -244,6 +245,19 @@ function renderLocked() {
      </ul>` +
     `<button class="btn-primary" type="button">Sign in to Augie</button>`;
   enrichmentEl.querySelector(".btn-primary")?.addEventListener("click", openSignIn);
+}
+
+// Signed in, but history couldn't load (endpoint not in this env yet, or down).
+// Soft, neutral — the public audit above is unaffected.
+function renderHistoryUnavailable() {
+  enrichmentEl.hidden = false;
+  enrichmentEl.className = "enrichment history empty";
+  enrichmentEl.innerHTML =
+    `<h3><span class="hist-star">★</span> Your history with this carrier</h3>` +
+    `<div class="empty-history">
+       <div class="eh-title">History unavailable</div>
+       <div class="eh-sub">We couldn't load your loads with this carrier right now. The safety audit above is unaffected.</div>
+     </div>`;
 }
 
 function renderEnrichment(e: CarrierEnrichment) {
@@ -509,11 +523,8 @@ function renderResult(result: CheckResult) {
   renderVerdict(result.verdict, checks);
 
   if (result.enrichment) renderEnrichment(result.enrichment);
-  else if (result.enrichmentError) {
-    enrichmentEl.hidden = false;
-    enrichmentEl.className = "enrichment locked";
-    enrichmentEl.innerHTML = `<h3>Your history with this carrier</h3><div class="summary">${esc(result.enrichmentError)}</div>`;
-  } else renderLocked();
+  else if (result.enrichmentError === ENRICHMENT_UNAVAILABLE) renderHistoryUnavailable();
+  else renderLocked();
 
   renderChecks(checks);
   renderBasics(result.verdict.carrier);
