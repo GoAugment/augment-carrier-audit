@@ -16,6 +16,14 @@
       <button id="authChip" class="chip" type="button" title=""></button>
     </div>
 
+    <!-- Dev-only (unpacked install): switch the enrichment environment + brokerage. -->
+    <div id="devbar" hidden>
+      <span class="dev-tag">DEV</span>
+      <button id="envToggle" class="dev-btn" type="button" title="Toggle enrichment environment"></button>
+      <input id="brokerageInput" class="dev-input" type="text" spellcheck="false"
+        placeholder="brokerageKey (optional)" aria-label="brokerageKey override" />
+    </div>
+
     <div id="meta" class="meta"></div>
 
     <main id="content">

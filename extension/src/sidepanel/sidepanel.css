@@ -90,6 +90,28 @@ body { display: flex; flex-direction: column; height: 100vh; }
   font-size: 11px; font-weight: 700;
 }
 
+/* Dev-only environment/brokerage controls (hidden on Web Store installs). */
+#devbar {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 12px 4px; padding: 5px 10px;
+  background: #fffbeb; border: 1px dashed var(--amber); border-radius: 8px;
+  font-size: 11px;
+}
+#devbar[hidden] { display: none; }
+.dev-tag { font-weight: 700; letter-spacing: 0.06em; color: var(--amber); }
+.dev-btn {
+  font: inherit; font-size: 11px; font-weight: 700; cursor: pointer;
+  padding: 2px 9px; border-radius: 6px;
+  border: 1px solid var(--ink-200); background: var(--surface); color: var(--ink-900);
+}
+.dev-btn:hover { border-color: var(--ink-400); }
+.dev-input {
+  flex: 1 1 auto; min-width: 0; font: inherit; font-size: 11px;
+  padding: 3px 8px; border: 1px solid var(--ink-200); border-radius: 6px; background: var(--surface);
+}
+.dev-input:focus { outline: none; border-color: var(--amber); }
+
 .meta {
   flex: 0 0 auto;
   padding: 6px 16px 2px;

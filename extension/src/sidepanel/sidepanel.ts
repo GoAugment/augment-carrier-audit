@@ -18,7 +18,14 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 
 const recheckBtn = $<HTMLButtonElement>("recheck");
 const authChip = $<HTMLButtonElement>("authChip");
+const devbar = $("devbar");
+const envToggle = $<HTMLButtonElement>("envToggle");
+const brokerageInput = $<HTMLInputElement>("brokerageInput");
 const metaEl = $("meta");
+
+// Unpacked/dev installs have no injected `update_url`; Web Store installs do.
+// Used to show the env/brokerage controls only during development.
+const IS_DEV = !("update_url" in chrome.runtime.getManifest());
 const statusEl = $("status");
 const verdictEl = $("verdict");
 const enrichmentEl = $("enrichment");
@@ -477,11 +484,39 @@ async function runCheck(manual?: string) {
   }
 }
 
+// ---------- dev controls ----------
+
+async function renderDevbar() {
+  if (!IS_DEV) {
+    devbar.hidden = true;
+    return;
+  }
+  devbar.hidden = false;
+  const { environment, brokerageKey } = await chrome.storage.local.get(["environment", "brokerageKey"]);
+  const staging = environment === "staging";
+  envToggle.textContent = staging ? "staging" : "prod";
+  envToggle.dataset.env = staging ? "staging" : "production";
+  if (document.activeElement !== brokerageInput) brokerageInput.value = brokerageKey ?? "";
+}
+
 // ---------- wire up ----------
 
 recheckBtn.addEventListener("click", () => void runCheck());
 authChip.addEventListener("click", () => {
   if (!authChip.classList.contains("signed-in")) openSignIn();
+});
+
+envToggle.addEventListener("click", async () => {
+  const next = envToggle.dataset.env === "staging" ? "production" : "staging";
+  await chrome.storage.local.set({ environment: next });
+  await renderDevbar();
+  void runCheck();
+});
+brokerageInput.addEventListener("change", async () => {
+  const v = brokerageInput.value.trim();
+  if (v) await chrome.storage.local.set({ brokerageKey: v });
+  else await chrome.storage.local.remove("brokerageKey");
+  void runCheck();
 });
 
 chrome.runtime.onMessage.addListener((msg) => {
@@ -496,6 +531,7 @@ chrome.runtime.onMessage.addListener((msg) => {
 });
 
 async function init() {
+  void renderDevbar();
   const auth = await send<{ ok: boolean } & AuthStateInfo>({ type: "GET_AUTH_STATE" });
   renderAuth(auth);
   void runCheck();
