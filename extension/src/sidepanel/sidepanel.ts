@@ -496,7 +496,7 @@ function renderNoCarrier() {
 
 function renderResult(result: CheckResult) {
   statusEl.hidden = true;
-  metaEl.innerHTML = `<span class="ok">●</span> Checked this page · just now`;
+  metaEl.textContent = ""; // no "checked just now" line — it's always just now
 
   // No DOT/MC on the page → a clear prompt, not a fake verdict + errors.
   if (!result.dot && !result.mc) {
