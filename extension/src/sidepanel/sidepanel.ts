@@ -287,9 +287,24 @@ function renderBasics(c: VerdictCarrier | null) {
 
 // ---------- run ----------
 
+function renderNoCarrier() {
+  for (const el of [enrichmentEl, checksEl, basicsEl]) el.hidden = true;
+  verdictEl.hidden = false;
+  verdictEl.className = "verdict tier-none";
+  verdictEl.innerHTML =
+    `<div class="headline">No carrier detected</div>` +
+    `<div class="summary">No DOT or MC number is visible on this page. Open the carrier's email, a load, or their FMCSA SAFER page — or highlight a DOT/MC number — and the check runs automatically. Never tender a carrier you can't verify.</div>`;
+}
+
 function renderResult(result: CheckResult) {
   statusEl.hidden = true;
-  metaEl.innerHTML = `<span class="ok">●</span> Auto-checked when this page opened · just now`;
+  metaEl.innerHTML = `<span class="ok">●</span> Checked this page · just now`;
+
+  // No DOT/MC on the page → a clear prompt, not a fake verdict + errors.
+  if (!result.dot && !result.mc) {
+    renderNoCarrier();
+    return;
+  }
 
   // Be defensive: an older background service worker may not include `checks`.
   const checks = Array.isArray(result.checks) ? result.checks : [];
@@ -306,7 +321,11 @@ function renderResult(result: CheckResult) {
   renderBasics(result.verdict.carrier);
 }
 
+let running = false;
+
 async function runCheck() {
+  if (running) return; // ignore overlapping triggers (re-check on page change)
+  running = true;
   recheckBtn.disabled = true;
   statusEl.hidden = false;
   statusEl.className = "status";
@@ -323,6 +342,7 @@ async function runCheck() {
     statusEl.className = "status error";
     statusEl.textContent = e instanceof Error ? e.message : String(e);
   } finally {
+    running = false;
     recheckBtn.disabled = false;
   }
 }
@@ -336,6 +356,10 @@ authChip.addEventListener("click", () => {
 });
 
 chrome.runtime.onMessage.addListener((msg) => {
+  if (msg?.type === "PAGE_CHANGED") {
+    void runCheck(); // content changed (SPA nav) — re-check the now-visible carrier
+    return;
+  }
   if (msg?.type === "AUTH_STATE_CHANGED") {
     renderAuth(msg as AuthStateInfo);
     if ((msg as AuthStateInfo).isAuthenticated) void runCheck();

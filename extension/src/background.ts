@@ -284,7 +284,9 @@ async function runCheck(): Promise<CheckResult> {
 
   let enrichment: CarrierEnrichment | null = null;
   let enrichmentError: string | null = null;
-  if (isAuthenticated() || (await loadAuthFromCookies())) {
+  // No carrier identified → no relationship lookup to do (and the endpoint
+  // would 400). The panel shows a "no carrier detected" state instead.
+  if ((dot || mc) && (isAuthenticated() || (await loadAuthFromCookies()))) {
     try {
       enrichment = await fetchEnrichment(dot, mc);
     } catch (e) {

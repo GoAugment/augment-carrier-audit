@@ -77,3 +77,41 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   // Synchronous response; no need to return true.
 });
+
+// ---------------------------------------------------------------------------
+// Re-detect on navigation / content change.
+//
+// Gmail, Outlook and most TMSs are SPAs: opening a different email or load
+// swaps the visible content WITHOUT a page reload, so the panel's one-shot
+// check would go stale. We watch for changes and nudge the panel to re-check —
+// but only when the thing we actually key off (URL + the first DOT/MC in the
+// VISIBLE text) changes, so routine DOM churn doesn't trigger needless reruns.
+// ---------------------------------------------------------------------------
+
+function pageSignature(): string {
+  const visible = ((document.body && document.body.innerText) || "").slice(0, MAX_TEXT);
+  const id = visible.match(/(?:US)?DOT[-#:\s]?\d{4,8}|MC[-#:\s]?\d{3,8}/i);
+  return location.href + "|" + (id ? id[0].replace(/\s+/g, " ") : "");
+}
+
+let lastSignature = pageSignature();
+let changeTimer: ReturnType<typeof setTimeout> | undefined;
+
+function onMaybeChanged(): void {
+  clearTimeout(changeTimer);
+  changeTimer = setTimeout(() => {
+    const sig = pageSignature();
+    if (sig === lastSignature) return;
+    lastSignature = sig;
+    // Fire-and-forget; the side panel re-checks if it's open, otherwise no-op.
+    void chrome.runtime.sendMessage({ type: "PAGE_CHANGED" }).catch(() => {});
+  }, 1000);
+}
+
+new MutationObserver(onMaybeChanged).observe(document.documentElement, {
+  subtree: true,
+  childList: true,
+  characterData: true,
+});
+window.addEventListener("hashchange", onMaybeChanged);
+window.addEventListener("popstate", onMaybeChanged);
