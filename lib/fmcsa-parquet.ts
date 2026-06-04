@@ -470,7 +470,19 @@ export async function fetchCarriersFromParquet(
       }
     }
     for (const [bucketPath, bucketDots] of byBucketPath) {
-      rows.push(...(await fetchCarrierRowsFromParquetPath(bucketPath, bucketDots)));
+      try {
+        rows.push(...(await fetchCarrierRowsFromParquetPath(bucketPath, bucketDots)));
+      } catch (err) {
+        // A single-check bucket is an OPTIMIZATION cache, not the source of
+        // truth. A missing/empty/truncated bucket blob (seen in prod as DuckDB
+        // "too small to be a Parquet file") must not fail the whole check — fall
+        // back to the authoritative full aggregates parquet for those DOTs.
+        console.warn(
+          `[fmcsa] carrier bucket read failed (${bucketPath}); falling back to full parquet:`,
+          err instanceof Error ? err.message : err
+        );
+        fallbackDots.push(...bucketDots);
+      }
     }
   } else {
     fallbackDots.push(...misses);

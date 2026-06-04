@@ -334,7 +334,17 @@ export async function fetchIdentity(
       }
     }
     for (const [bucketPath, bucketDots] of byBucketPath) {
-      rows.push(...(await fetchIdentityRowsFromParquetPath(bucketPath, bucketDots)));
+      try {
+        rows.push(...(await fetchIdentityRowsFromParquetPath(bucketPath, bucketDots)));
+      } catch (err) {
+        // Bucket is an optimization cache; a missing/corrupt bucket blob falls
+        // back to the authoritative full identity parquet instead of failing.
+        console.warn(
+          `[fmcsa] identity bucket read failed (${bucketPath}); falling back to full parquet:`,
+          err instanceof Error ? err.message : err
+        );
+        fallbackDots.push(...bucketDots);
+      }
     }
   } else {
     fallbackDots.push(...misses);
