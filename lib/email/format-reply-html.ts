@@ -876,14 +876,16 @@ export function buildChecksRun(verdict: Verdict): CheckRow[] {
 
   // Chameleon-cluster (sibling/predecessor sharing identity)
   if (cov.chameleon_cluster_checked) {
-    const fail = hasHardSignal((s) => s.category === "chameleon_cluster");
+    const sig = findHardSignal((s) => s.category === "chameleon_cluster");
     rows.push({
-      status: fail ? "failed" : "passed",
-      label: fail
+      status: sig ? "failed" : "passed",
+      label: sig
         ? "Revoked predecessor DOT shares identity"
         : "No revoked predecessor DOTs sharing identity",
-      detail: fail
-        ? "Sender's phone matches a DOT with prior revocation. Possible chameleon-carrier pattern."
+      // Prefer the signal's concrete detail — it names the predecessor DOT,
+      // its legal name, and the revocation date.
+      detail: sig
+        ? (sig.detail || "Sender's phone matches a DOT with prior revocation. Possible chameleon-carrier pattern.")
         : "No re-incarnation / chameleon pattern detected based on shared phone identity.",
     });
   }

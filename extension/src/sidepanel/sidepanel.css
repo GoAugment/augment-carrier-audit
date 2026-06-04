@@ -368,6 +368,8 @@ body { display: flex; flex-direction: column; height: 100vh; }
 .check .c-title { font-weight: 600; line-height: 1.4; }
 .check.skipped .c-title { color: var(--ink-600); }
 .check .c-detail { font-size: 12.5px; color: var(--ink-400); line-height: 1.5; margin-top: 1px; }
+.dot-link { color: var(--bg-brand); font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.dot-link:hover { color: var(--brand); }
 .check.hidden { display: none; }
 
 .checks-toggles { display: flex; gap: 16px; margin-top: 12px; }

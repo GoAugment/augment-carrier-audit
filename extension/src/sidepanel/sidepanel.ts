@@ -52,6 +52,16 @@ const TIER_HEADLINE: Record<AuditVerdict["tier"], string> = {
 
 const usd = (n: number) => `$${n.toLocaleString("en-US")}`;
 
+// Escape detail text, then turn any DOT number into a link that re-checks
+// that carrier (e.g. a revoked predecessor in a chameleon finding).
+function linkifyDots(detail: string): string {
+  return esc(detail).replace(
+    /\b((?:US)?DOT[\s-]?)(\d{4,8})\b/g,
+    (_m, prefix: string, num: string) =>
+      `<a class="dot-link" role="button" tabindex="0" data-dot="${num}">${prefix}${num}</a>`
+  );
+}
+
 const monthYear = (d: string) =>
   new Date(`${d}T00:00:00`).toLocaleString("en-US", { month: "short", year: "numeric" });
 
@@ -366,7 +376,7 @@ function renderChecks(checks: CheckRow[]) {
         (r.status === "passed" && hidePassed) || (r.status === "skipped" && hideSkipped);
       return `<div class="check ${r.status}${hidden ? " hidden" : ""}">
         <span class="c-ico">${ICON[r.status]}</span>
-        <div><div class="c-title">${esc(r.label)}</div><div class="c-detail">${esc(r.detail)}</div></div>
+        <div><div class="c-title">${esc(r.label)}</div><div class="c-detail">${linkifyDots(r.detail)}</div></div>
       </div>`;
     })
     .join("");
@@ -391,6 +401,21 @@ function renderChecks(checks: CheckRow[]) {
       renderChecks(checks);
     })
   );
+
+  // A DOT mentioned in a finding (e.g. a revoked predecessor) → re-check it.
+  checksEl.querySelectorAll<HTMLElement>(".dot-link").forEach((el) => {
+    const go = () => {
+      const dot = el.dataset.dot;
+      if (dot) void runCheck(dot);
+    };
+    el.addEventListener("click", go);
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        go();
+      }
+    });
+  });
 }
 
 // ---------- FMCSA BASIC bars ----------
