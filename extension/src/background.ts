@@ -227,8 +227,7 @@ function stubEnrichment(dot: string | null, mc: string | null): CarrierEnrichmen
   if (!dot && !mc) {
     return {
       hasRelationship: false, dsls: null, lastShipmentDate: null, firstShipmentDate: null,
-      onTimePickupPct: null, onTimeDeliveryPct: null, repOwner: null, repLoadCount: 0,
-      lanes: [], loadCount: 0,
+      repOwner: null, repLoadCount: 0, lanes: [], loadCount: 0,
     };
   }
   return {
@@ -236,8 +235,6 @@ function stubEnrichment(dot: string | null, mc: string | null): CarrierEnrichmen
     dsls: 47,
     lastShipmentDate: new Date(Date.now() - 47 * 864e5).toISOString().slice(0, 10),
     firstShipmentDate: "2023-03-14",
-    onTimePickupPct: 94,
-    onTimeDeliveryPct: 91,
     repOwner: { name: "Dana Whitfield", email: "dana.whitfield@example.com" },
     repLoadCount: 88,
     loadCount: 134,

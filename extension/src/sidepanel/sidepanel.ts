@@ -157,6 +157,17 @@ const SIGNAL_RANK: Record<AuditVerdict["signals"][number]["tier"], number> = {
   info: 0,
 };
 
+// Per-tile severity → tier class (sets --tier for the colored top border + value).
+const scoreTierClass = (n: number | null): string =>
+  n == null ? "" : n >= 80 ? "tier-Critical" : n >= 60 ? "tier-High" : n >= 40 ? "tier-Caution" : "tier-Clean";
+function issTierClass(t: string | null): string {
+  const s = (t ?? "").toLowerCase();
+  if (s.includes("inspect")) return "tier-High";
+  if (s.includes("optional")) return "tier-Caution";
+  if (s.includes("pass") || s.includes("clean")) return "tier-Clean";
+  return "";
+}
+
 function renderVerdict(v: AuditVerdict, checks: CheckRow[]) {
   verdictEl.hidden = false;
   verdictEl.className = `verdict tier-${v.tier}`;
@@ -182,8 +193,8 @@ function renderVerdict(v: AuditVerdict, checks: CheckRow[]) {
 
   const tiles = c
     ? `<div class="tiles">
-         <div class="tile"><div class="t-label">Risk score</div><div class="t-value" style="color:var(--tier)">${c.riskScore ?? "—"}</div><div class="t-sub">0–100 · higher = riskier</div></div>
-         <div class="tile"><div class="t-label">ISS est.</div><div class="t-value" style="color:var(--tier)">${c.issScore ?? "—"}</div><div class="t-sub">${esc(c.issTier ?? "estimated")}</div></div>
+         <div class="tile ${scoreTierClass(c.riskScore)}"><div class="t-label">Risk score</div><div class="t-value">${c.riskScore ?? "—"}</div><div class="t-sub">0–100 · higher = riskier</div></div>
+         <div class="tile ${issTierClass(c.issTier)}"><div class="t-label">ISS est.</div><div class="t-value">${c.issScore ?? "—"}</div><div class="t-sub">${esc(c.issTier ?? "estimated")}</div></div>
        </div>`
     : "";
 

@@ -81,9 +81,6 @@ export interface CarrierEnrichment {
   lastShipmentDate: string | null;
   /** First shipment date (YYYY-MM-DD) in the window — for "loads since …". */
   firstShipmentDate: string | null;
-  /** On-time pickup / delivery % (0–100), or null when too few timestamps. */
-  onTimePickupPct: number | null;
-  onTimeDeliveryPct: number | null;
   repOwner: { name: string; email: string | null } | null;
   /** Loads owned by the rep (the "N of M" share); 0 when no rep. */
   repLoadCount: number;

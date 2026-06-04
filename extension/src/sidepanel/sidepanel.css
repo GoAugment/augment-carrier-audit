@@ -162,15 +162,17 @@ body { display: flex; flex-direction: column; height: 100vh; }
   padding: 3px 9px; border-radius: 7px;
 }
 
-/* score tiles */
+/* score tiles — colored top border + value, by each tile's own severity */
 .tiles { display: flex; gap: 10px; margin-top: 14px; }
 .tile {
   flex: 1 1 0; background: var(--surface);
-  border: 1px solid var(--ink-150); border-radius: var(--radius-lg);
+  border: 1px solid var(--ink-150);
+  border-top: 3px solid var(--tier, var(--ink-200));
+  border-radius: var(--radius-lg);
   padding: 11px 13px; box-shadow: var(--shadow);
 }
 .tile .t-label { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-400); }
-.tile .t-value { font-size: 30px; font-weight: 700; line-height: 1.05; margin-top: 4px; letter-spacing: -0.03em; }
+.tile .t-value { font-size: 32px; font-weight: 700; line-height: 1.05; margin-top: 4px; letter-spacing: -0.03em; color: var(--tier, var(--ink-950)); }
 .tile .t-sub { font-size: 11.5px; color: var(--ink-400); margin-top: 3px; }
 
 /* tally (sits in the Safety-checks section header) */
@@ -229,7 +231,7 @@ body { display: flex; flex-direction: column; height: 100vh; }
 .hist-stats { display: flex; padding: 16px; }
 .hstat { flex: 1 1 0; }
 .hstat + .hstat { border-left: 1px solid var(--ink-150); padding-left: 16px; }
-.hstat-v { font-size: 34px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; color: var(--ink-950); }
+.hstat-v { font-size: 32px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; color: var(--ink-950); }
 .hstat-u { font-size: 14px; font-weight: 600; color: var(--ink-400); letter-spacing: 0; }
 .hstat .ot { font-size: 14px; font-weight: 700; color: var(--brand); letter-spacing: 0; }
 .hstat-l { margin-top: 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-400); }
