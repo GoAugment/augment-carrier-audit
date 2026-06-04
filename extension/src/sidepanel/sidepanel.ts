@@ -316,13 +316,15 @@ function renderEnrichment(e: CarrierEnrichment) {
        </div>`;
 
   // Lane history.
+  const placeStr = (p: { city: string | null; stateOrProvince: string | null }) =>
+    [p.city, p.stateOrProvince].filter(Boolean).join(", ") || "—";
   const laneList = Array.isArray(e.lanes) ? e.lanes : [];
   const laneRows = laneList
     .map((l) => {
       const rate = l.lastRate ?? l.avgRate;
       const tr = l.trend ? `<span class="lane-trend ${l.trend}">${TREND_GLYPH[l.trend]}</span>` : "";
       return `<div class="lane-row">
-        <span class="lane-route">${esc(l.origin)} → ${esc(l.destination)}</span>
+        <span class="lane-route">${esc(placeStr(l.origin))} → ${esc(placeStr(l.destination))}</span>
         <span class="lane-count">${l.count}×</span>
         <span class="lane-rate">${rate != null ? usd(rate) : "—"}</span>
         ${tr}

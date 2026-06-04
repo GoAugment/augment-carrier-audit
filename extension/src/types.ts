@@ -64,10 +64,17 @@ export interface PageCapture {
   text: string;
 }
 
+/** One end of a lane (structured; the panel formats it for display). */
+export interface LaneEndpoint {
+  city: string | null;
+  stateOrProvince: string | null;
+  country: string | null;
+}
+
 /** One lane the customer has historically run this carrier on. */
 export interface CarrierLane {
-  origin: string;
-  destination: string;
+  origin: LaneEndpoint;
+  destination: LaneEndpoint;
   count: number;
   lastDate: string | null;
   /** Average linehaul on this lane (USD), when known. */
