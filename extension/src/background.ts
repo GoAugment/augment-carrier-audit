@@ -304,6 +304,19 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 
 void loadAuthFromCookies();
 
+// SPA-navigation backstop. Gmail swaps the #thread hash per email (Outlook and
+// most TMSs do likewise), so the active tab's URL changing is a reliable "user
+// moved to a different thing" signal. The service worker is fresh after every
+// extension reload and sees this on already-open tabs immediately — unlike a
+// content-script observer, which can't fire from a tab whose script went stale
+// after an update. It nudges the open side panel to re-check (no-op if closed).
+let lastNavUrl: string | undefined;
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+  if (!changeInfo.url || !tab.active || changeInfo.url === lastNavUrl) return;
+  lastNavUrl = changeInfo.url;
+  void chrome.runtime.sendMessage({ type: "PAGE_CHANGED" }).catch(() => {});
+});
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {
