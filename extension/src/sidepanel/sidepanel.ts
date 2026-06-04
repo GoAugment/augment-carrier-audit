@@ -135,19 +135,21 @@ function renderVerdict(v: AuditVerdict, checks: CheckRow[]) {
   verdictEl.className = `verdict tier-${v.tier}`;
   const c = v.carrier;
 
-  // Lead with the single most important finding (worst-tier signal), not the
-  // whole concatenated list — the full breakdown is the Safety-checks section,
-  // which the "see all" link jumps to. Fall back to the server summary when
-  // there are no actionable signals (e.g. a clean carrier).
+  // Lead with the SINGLE most important finding — the first failed check (the
+  // reasons are severity-ordered). The full breakdown is the Safety-checks
+  // section; the "see all" link jumps to it. Deliberately NOT the audit_tier
+  // signal (its detail is a run-on of every reason) — fall back to a specific
+  // non-audit signal, then the server summary (e.g. a clean carrier).
+  const failed = checks.filter((r) => r.status === "failed");
   const topSignal = [...(v.signals ?? [])]
-    .filter((s) => s.tier !== "info")
+    .filter((s) => s.tier !== "info" && s.category !== "audit_tier")
     .sort((a, b) => SIGNAL_RANK[b.tier] - SIGNAL_RANK[a.tier])[0];
-  const subtext = topSignal
-    ? `<b>${esc(topSignal.label)}</b>${topSignal.detail ? ` — ${esc(topSignal.detail)}` : ""}`
+  const lead: { label: string; detail: string } | undefined = failed[0] ?? topSignal;
+  const subtext = lead
+    ? `<b>${esc(lead.label)}</b>${lead.detail ? ` — ${esc(lead.detail)}` : ""}`
     : esc(v.summary);
-  const failedCount = checks.filter((r) => r.status === "failed").length;
   const seeAll =
-    checks.length && (topSignal || failedCount)
+    checks.length > 1 && (failed.length || topSignal)
       ? `<a class="see-checks" role="button" tabindex="0">See all ${checks.length} checks ↓</a>`
       : "";
 
@@ -381,7 +383,7 @@ async function renderRecentChecks() {
 }
 
 function renderNoCarrier() {
-  metaEl.innerHTML = `<span class="ok">●</span> Watching this page · nothing to check yet`;
+  metaEl.textContent = ""; // nothing checked → no status line
   for (const el of [enrichmentEl, checksEl, basicsEl]) el.hidden = true;
   verdictEl.hidden = false;
   verdictEl.className = "verdict no-carrier";
