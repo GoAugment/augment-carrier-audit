@@ -3,7 +3,7 @@
   "name": "Augie Carrier Check",
   "version": "0.1.0",
   "description": "Vet any carrier from the page you're on: FMCSA fraud audit, plus your lane history & rep when signed in to Augie.",
-  "permissions": ["activeTab", "scripting", "storage", "tabs", "cookies", "sidePanel"],
+  "permissions": ["scripting", "storage", "tabs", "cookies", "sidePanel"],
   "host_permissions": ["<all_urls>"],
   "side_panel": {
     "default_path": "sidepanel/sidepanel.html"

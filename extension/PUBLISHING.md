@@ -37,20 +37,37 @@ Bump `version` in `src/manifest.json` first (the store rejects a re-upload of
 the same version). Each publish still goes through Google review before it
 goes live to Unlisted users.
 
-## Permission justifications (mirror "Augie Browser", trimmed to our subset)
-- **cookies** — read the Augie `_session` cookie on `*.goaugment.com` to
-  authenticate the signed-in user (no separate login); never written or sent
-  anywhere except Augie's own API.
-- **host `<all_urls>`** — the user checks a carrier from whatever page they're
-  on (Gmail/Outlook email, a TMS load, an FMCSA SAFER page), so the content
-  script must be able to read the active page on request.
-- **tabs / activeTab / scripting** — read the active tab's URL + content when
-  the user runs a check, and re-check on SPA navigation.
-- **storage** — remember the user's recent checks + (dev only) environment.
-- **sidePanel** — the UI is a side panel.
-- **Single purpose** — vet a freight carrier (FMCSA fraud audit + the
-  brokerage's own history with that carrier) from the page the user is viewing.
-- **Remote code** — none; all code is bundled.
-- **Data use** — reads the Augie session cookie + the visible page to identify
-  a carrier; sends the carrier identifier (DOT/MC) to Augie's API; shows the
-  result. No selling/transfer of data; customer data stays within Augie.
+## Permission justifications (each verified against actual API usage)
+
+Permissions: `scripting, storage, tabs, cookies, sidePanel` + host `<all_urls>`.
+(`activeTab` was removed — unused and redundant with the host permission.)
+
+- **host `<all_urls>`** — The extension vets a carrier from whatever page the
+  broker is on: a carrier's email in Gmail/Outlook, a load/tender in any TMS,
+  or an FMCSA SAFER page. The content script reads the visible page on request
+  to find the carrier's DOT/MC and re-checks when the page changes. Brokers use
+  many different web apps, so the hosts can't be enumerated in advance.
+- **cookies** — Reads the Augie `_session` cookie on `*.goaugment.com`
+  (`chrome.cookies.get`/`onChanged`) to authenticate the signed-in user so they
+  don't log in again inside the extension. Read-only, used solely to obtain the
+  session token for Augie's own API; never written, never sent to a third party.
+- **scripting** — When a page was already open before the extension loaded (so
+  the content script isn't present), the worker injects it once via
+  `chrome.scripting.executeScript` to read that page. Without it, checks fail on
+  pre-existing tabs.
+- **tabs** — Identifies the page to check (`chrome.tabs.query` active tab),
+  re-checks automatically when the active tab's URL changes in single-page apps
+  like Gmail (`chrome.tabs.onUpdated`), and opens the Augie sign-in page
+  (`chrome.tabs.create`). Only the tab the user is checking.
+- **storage** — `chrome.storage.local` keeps the user's recent checks (to
+  re-open prior results) and, in dev builds only, environment/brokerage test
+  settings. No remote storage.
+- **sidePanel** — The entire UI is a Chrome side panel (`chrome.sidePanel` +
+  the manifest `side_panel` entry).
+
+- **Single purpose** — Vet a freight carrier (FMCSA fraud/safety audit + the
+  broker's own history with that carrier) from the page the user is viewing.
+- **Remote code** — None; all JS is bundled in the package.
+- **Data use** — Reads the Augie session cookie + the visible page to identify
+  a carrier, sends the carrier identifier (DOT/MC) to Augie's API, and shows the
+  result. No sale or third-party transfer; customer data stays within Augie.
