@@ -257,9 +257,8 @@ function renderEnrichment(e: CarrierEnrichment) {
       ? ""
       : `<span class="hist-pill ${active ? "ok" : "stale"}">${active ? "Active" : "Dormant"}</span>`;
 
-  // Big stats: DSLS · loads (with on-time delivery % inline + "since <month>").
-  const ot = e.onTimeDeliveryPct ?? e.onTimePickupPct;
-  const otLabel = e.onTimeDeliveryPct != null ? "OT" : "OTP";
+  // Big stats: DSLS · loads ("since <month>"). On-time %s are intentionally not
+  // shown — without the appointment window END they read biased-low/unreliable.
   const sinceLabel = e.firstShipmentDate ? `Loads since ${monthYear(e.firstShipmentDate)}` : "Loads together";
 
   // Owner card.
@@ -303,7 +302,7 @@ function renderEnrichment(e: CarrierEnrichment) {
          <div class="hstat-l">Since last shipment</div>
        </div>
        <div class="hstat">
-         <div class="hstat-v">${e.loadCount}${ot != null ? ` <span class="ot">${ot}% ${otLabel}</span>` : ""}</div>
+         <div class="hstat-v">${e.loadCount}</div>
          <div class="hstat-l">${esc(sinceLabel)}</div>
        </div>
      </div>` +
