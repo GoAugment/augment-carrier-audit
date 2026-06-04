@@ -45,22 +45,19 @@ const AUGMENT_WEB_URLS: Record<Environment, string> = {
 // gateway; returns the CarrierEnrichment shape directly.
 // See augment-services PR #12107.
 // Per-service host (not a shared api.* gateway): load-service is exposed at
-// load[.staging].goaugment.com. Staging is public + CONFIRMED end-to-end.
-// PRODUCTION CAVEAT: in prod the per-service hosts are PRIVATE (load.goaugment.com
-// does not resolve publicly), so a browser extension cannot reach it directly.
-// The prod value below is a placeholder — the real browser-reachable prod
-// ingress for load-service must be found before enabling prod (see
-// LIVE_ENRICHMENT_ENVIRONMENTS).
+// load.<env>.goaugment.com (env infix: ".prod"/".staging"; bare
+// load.goaugment.com does NOT resolve). Both hosts are public + resolve;
+// staging is CONFIRMED end-to-end.
 const ENRICHMENT_BASE: Record<Environment, string> = {
-  production: "https://load.goaugment.com",
+  production: "https://load.prod.goaugment.com",
   staging: "https://load.staging.goaugment.com",
 };
 const ENRICHMENT_PATH = "/unstable/loads/carrier-history";
 // Environments where we call the live endpoint instead of the stub. Staging is
 // deployed + confirmed (augment-services PR #12107). Production stays stubbed
-// until: load-service is deployed to prod, the browser-reachable prod host is
-// confirmed (per-service hosts are private — need the public ingress), and
-// security review clears. The stub keeps the prod UI demoable until then.
+// until load-service (PR #12107) is deployed to prod and security review
+// clears — then add "production" here. The prod host is already correct above.
+// The stub keeps the prod UI demoable until then.
 const LIVE_ENRICHMENT_ENVIRONMENTS = new Set<Environment>(["staging"]);
 
 const SESSION_COOKIE = "_session";
