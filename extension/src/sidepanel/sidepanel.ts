@@ -139,8 +139,9 @@ function renderAuth(info: AuthStateInfo) {
     const name = info.user.profile.displayName || info.user.claims.email;
     authChip.classList.add("signed-in");
     authChip.title = `Signed in to Augie · ${info.brokerageKey ?? ""}`;
+    const firstName = name.trim().split(/\s+/)[0] || name;
     authChip.innerHTML =
-      `<span class="avatar">${esc(initials(name))}</span><span class="chip-name">${esc(name)}</span>`;
+      `<span class="avatar">${esc(initials(name))}</span><span class="chip-name">${esc(firstName)}</span>`;
   } else {
     authChip.classList.remove("signed-in");
     authChip.title = "Sign in to Augie for lane history, rep owner & DSLS";
