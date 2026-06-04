@@ -197,36 +197,81 @@ body { display: flex; flex-direction: column; height: 100vh; }
 .cd-value a:hover { text-decoration: underline; }
 .cd-value .danger { color: var(--red); font-weight: 700; }
 
-/* ---------- enrichment ("Your relationship") ---------- */
+/* ---------- enrichment ("Your history with this carrier") ---------- */
 .enrichment {
   margin-bottom: 18px; padding: 14px 16px;
   background: var(--surface); border: 1px solid var(--ink-150);
   border-radius: var(--radius-xl); box-shadow: var(--shadow);
 }
-.enrichment.unlocked { background: var(--brand-tint); border-color: transparent; }
 .enrichment h3 {
   margin: 0 0 12px; font-size: 11px; font-weight: 700;
   letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-400);
 }
-.enrichment .stat-row { display: flex; gap: 18px; margin-bottom: 12px; }
-.enrichment .stat .s-value { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
-.enrichment .stat .s-value.fresh { color: var(--brand); }
-.enrichment .stat .s-value.stale { color: var(--amber); }
-.enrichment .stat .s-label { font-size: 11px; color: var(--ink-400); letter-spacing: 0.03em; text-transform: uppercase; font-weight: 600; margin-top: 2px; }
-.enrichment .owner { font-size: 13px; color: var(--ink-900); margin-bottom: 10px; }
-.enrichment .owner b { font-weight: 700; }
-.enrichment .lanes-h { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-400); margin-bottom: 4px; }
-.enrichment .lanes { margin: 0; padding: 0; list-style: none; }
-.enrichment .lanes li { padding: 7px 0; border-top: 1px solid rgba(10,14,12,0.07); }
-.enrichment .lane-main { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
-.enrichment .lane-route { font-weight: 600; }
-.enrichment .lane-rate { font-weight: 700; white-space: nowrap; }
-.enrichment .lane-sub { font-size: 12px; color: var(--ink-400); margin-top: 1px; }
 
-/* history card header + empty state */
-.enrichment.history h3 { display: flex; align-items: center; gap: 6px; color: var(--bg-brand); }
-.enrichment.history.empty { background: var(--brand-tint); border-color: transparent; }
+/* history card (has relationship) */
+.enrichment.history { padding: 0; overflow: hidden; border-color: #cbe8d8; }
+.hist-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 13px 16px; background: var(--brand-tint); border-bottom: 1px solid #d8efe2;
+}
+.hist-title {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--bg-brand);
+}
 .hist-star { color: var(--brand); }
+.hist-pill {
+  flex: 0 0 auto; font-size: 12px; font-weight: 700; padding: 4px 12px;
+  border-radius: 999px; border: 1px solid var(--bg-brand); color: var(--bg-brand);
+}
+.hist-pill.stale { color: var(--amber); border-color: var(--amber); }
+
+.hist-stats { display: flex; padding: 16px; }
+.hstat { flex: 1 1 0; }
+.hstat + .hstat { border-left: 1px solid var(--ink-150); padding-left: 16px; }
+.hstat-v { font-size: 34px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; color: var(--ink-950); }
+.hstat-u { font-size: 14px; font-weight: 600; color: var(--ink-400); letter-spacing: 0; }
+.hstat .ot { font-size: 14px; font-weight: 700; color: var(--brand); letter-spacing: 0; }
+.hstat-l { margin-top: 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-400); }
+
+.owner-card {
+  display: flex; align-items: center; gap: 12px; margin: 0 16px 14px; padding: 12px;
+  background: var(--bg); border-radius: var(--radius-lg);
+}
+.avatar.lg {
+  width: 42px; height: 42px; border-radius: 999px; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bg-brand); color: #fff; font-size: 14px; font-weight: 700;
+}
+.owner-main { flex: 1 1 auto; min-width: 0; }
+.owner-name { font-size: 14px; color: var(--ink-900); }
+.owner-name b { font-weight: 700; }
+.owner-sub { font-size: 12px; color: var(--ink-400); margin-top: 2px; }
+.brokerage-badge {
+  flex: 0 0 auto; font-size: 13px; font-weight: 800; color: #fff;
+  background: var(--bg-brand); padding: 8px 12px; border-radius: var(--radius-md);
+}
+
+.lane-head {
+  display: flex; justify-content: space-between; padding: 6px 16px 8px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ink-400); border-top: 1px solid var(--ink-150);
+}
+.lane-row {
+  display: flex; align-items: center; gap: 10px; padding: 11px 16px;
+  border-top: 1px solid var(--ink-150);
+}
+.lane-route { flex: 1 1 auto; font-size: 13.5px; font-weight: 600; color: var(--ink-900); }
+.lane-count { flex: 0 0 auto; font-size: 13px; color: var(--ink-400); }
+.lane-rate { flex: 0 0 auto; font-size: 14px; font-weight: 700; color: var(--ink-950); white-space: nowrap; }
+.lane-trend { flex: 0 0 auto; width: 16px; text-align: center; font-size: 10px; }
+.lane-trend.up { color: var(--brand); }
+.lane-trend.down { color: var(--red); }
+.lane-trend.flat { color: var(--ink-200); }
+
+/* empty history (signed in, no prior loads) */
+.enrichment.history.empty { padding: 14px 16px; background: var(--brand-tint); border-color: transparent; }
+.enrichment.history.empty h3 { display: flex; align-items: center; gap: 6px; color: var(--bg-brand); }
 .empty-history {
   background: var(--surface); border: 1px solid var(--ink-150);
   border-radius: var(--radius-lg); padding: 16px;

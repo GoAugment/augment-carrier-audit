@@ -225,19 +225,27 @@ function stubEnrichment(dot: string | null, mc: string | null): CarrierEnrichmen
   // Deterministic mock so the signed-in UI is demoable on environments not yet
   // in LIVE_ENRICHMENT_ENVIRONMENTS (currently production).
   if (!dot && !mc) {
-    return { hasRelationship: false, dsls: null, lastShipmentDate: null, repOwner: null, lanes: [], loadCount: 0 };
+    return {
+      hasRelationship: false, dsls: null, lastShipmentDate: null, firstShipmentDate: null,
+      onTimePickupPct: null, onTimeDeliveryPct: null, repOwner: null, repLoadCount: 0,
+      lanes: [], loadCount: 0,
+    };
   }
   return {
     hasRelationship: true,
     dsls: 47,
     lastShipmentDate: new Date(Date.now() - 47 * 864e5).toISOString().slice(0, 10),
+    firstShipmentDate: "2023-03-14",
+    onTimePickupPct: 94,
+    onTimeDeliveryPct: 91,
     repOwner: { name: "Dana Whitfield", email: "dana.whitfield@example.com" },
+    repLoadCount: 88,
     loadCount: 134,
     lanes: [
-      { origin: "Chicago, IL", destination: "Dallas, TX", count: 18, lastDate: "2026-04-12", avgRate: 3180 },
-      { origin: "Chicago, IL", destination: "Atlanta, GA", count: 11, lastDate: "2026-03-28", avgRate: 2640 },
-      { origin: "Joliet, IL", destination: "Memphis, TN", count: 7, lastDate: "2026-03-09", avgRate: 2510 },
-      { origin: "Chicago, IL", destination: "Kansas City, MO", count: 6, lastDate: "2026-02-22", avgRate: 1980 },
+      { origin: "Chicago, IL", destination: "Dallas, TX", count: 41, lastDate: "2026-04-12", avgRate: 2100, lastRate: 2180, trend: "up" },
+      { origin: "Chicago, IL", destination: "Atlanta, GA", count: 28, lastDate: "2026-03-28", avgRate: 2640, lastRate: 2640, trend: "flat" },
+      { origin: "Joliet, IL", destination: "Memphis, TN", count: 19, lastDate: "2026-03-09", avgRate: 1600, lastRate: 1520, trend: "down" },
+      { origin: "Chicago, IL", destination: "Kansas City, MO", count: 12, lastDate: "2026-02-22", avgRate: 1050, lastRate: 1090, trend: "up" },
     ],
   };
 }

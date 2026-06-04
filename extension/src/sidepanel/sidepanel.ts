@@ -51,6 +51,25 @@ const TIER_HEADLINE: Record<AuditVerdict["tier"], string> = {
 
 const usd = (n: number) => `$${n.toLocaleString("en-US")}`;
 
+const monthYear = (d: string) =>
+  new Date(`${d}T00:00:00`).toLocaleString("en-US", { month: "short", year: "numeric" });
+
+// Brokerage badge label. The data is scoped to the override (dev) or the
+// signed-in user's brokerage; map the known ones, else initialize the key.
+let authBrokerageKey = "";
+let brokerageOverride = "";
+const BROKERAGE_LABEL: Record<string, string> = { "transportation-one": "T1" };
+function brokerageLabel(): string {
+  const key = brokerageOverride || authBrokerageKey;
+  if (!key) return "";
+  return (
+    BROKERAGE_LABEL[key] ??
+    key.split(/[-_\s]+/).map((w) => w[0]).join("").slice(0, 3).toUpperCase()
+  );
+}
+
+const TREND_GLYPH: Record<"up" | "down" | "flat", string> = { up: "▲", down: "▼", flat: "–" };
+
 const OPERATING_AREA: Record<string, string> = {
   interstate_otr: "Interstate, long-haul",
   interstate_local: "Interstate, local",
@@ -115,6 +134,7 @@ function initials(name: string): string {
 }
 
 function renderAuth(info: AuthStateInfo) {
+  authBrokerageKey = info.brokerageKey ?? "";
   if (info.isAuthenticated && info.user) {
     const name = info.user.profile.displayName || info.user.claims.email;
     authChip.classList.add("signed-in");
@@ -228,29 +248,69 @@ function renderEnrichment(e: CarrierEnrichment) {
     return;
   }
 
-  enrichmentEl.className = "enrichment unlocked";
-  const dslsCls = e.dsls == null ? "" : e.dsls <= 30 ? "fresh" : "stale";
+  enrichmentEl.className = "enrichment history unlocked";
+
+  // Header status pill — recency-based (we don't have FMCSA status here).
+  const active = e.dsls != null && e.dsls <= 120;
+  const statusPill =
+    e.dsls == null
+      ? ""
+      : `<span class="hist-pill ${active ? "ok" : "stale"}">${active ? "Active" : "Dormant"}</span>`;
+
+  // Big stats: DSLS · loads (with on-time delivery % inline + "since <month>").
+  const ot = e.onTimeDeliveryPct ?? e.onTimePickupPct;
+  const otLabel = e.onTimeDeliveryPct != null ? "OT" : "OTP";
+  const sinceLabel = e.firstShipmentDate ? `Loads since ${monthYear(e.firstShipmentDate)}` : "Loads together";
+
+  // Owner card.
+  const badge = brokerageLabel();
+  const ownerCard = e.repOwner
+    ? `<div class="owner-card">
+         <span class="avatar lg">${esc(initials(e.repOwner.name))}</span>
+         <div class="owner-main">
+           <div class="owner-name">Owned by <b>${esc(e.repOwner.name)}</b></div>
+           <div class="owner-sub">${e.repLoadCount ? `${e.repLoadCount} of ${e.loadCount} loads` : "owning rep"}</div>
+         </div>
+         ${badge ? `<span class="brokerage-badge">${esc(badge)}</span>` : ""}
+       </div>`
+    : `<div class="owner-card">
+         <div class="owner-main">
+           <div class="owner-name">Unassigned</div>
+           <div class="owner-sub">No owning rep on these loads</div>
+         </div>
+       </div>`;
+
+  // Lane history.
   const laneList = Array.isArray(e.lanes) ? e.lanes : [];
-  const lanes = laneList.length
-    ? `<div class="lanes-h">Top lanes</div><ul class="lanes">${laneList
-        .map(
-          (l) =>
-            `<li><div class="lane-main">` +
-            `<span class="lane-route">${esc(l.origin)} → ${esc(l.destination)}</span>` +
-            `<span class="lane-rate">${l.avgRate != null ? usd(l.avgRate) : ""}</span></div>` +
-            `<div class="lane-sub">${l.count}× loads${l.lastDate ? ` · last ${esc(l.lastDate)}` : ""}</div></li>`
-        )
-        .join("")}</ul>`
-    : "";
+  const laneRows = laneList
+    .map((l) => {
+      const rate = l.lastRate ?? l.avgRate;
+      const tr = l.trend ? `<span class="lane-trend ${l.trend}">${TREND_GLYPH[l.trend]}</span>` : "";
+      return `<div class="lane-row">
+        <span class="lane-route">${esc(l.origin)} → ${esc(l.destination)}</span>
+        <span class="lane-count">${l.count}×</span>
+        <span class="lane-rate">${rate != null ? usd(rate) : "—"}</span>
+        ${tr}
+      </div>`;
+    })
+    .join("");
 
   enrichmentEl.innerHTML =
-    `<h3>Your history with this carrier</h3>` +
-    `<div class="stat-row">
-       <div class="stat"><div class="s-value ${dslsCls}">${e.dsls == null ? "—" : e.dsls}</div><div class="s-label">Days since last load</div></div>
-       <div class="stat"><div class="s-value">${e.loadCount}</div><div class="s-label">Loads together</div></div>
+    `<div class="hist-head"><span class="hist-title"><span class="hist-star">★</span> Your history with this carrier</span>${statusPill}</div>` +
+    `<div class="hist-stats">
+       <div class="hstat">
+         <div class="hstat-v">${e.dsls == null ? "—" : e.dsls}<span class="hstat-u"> days</span></div>
+         <div class="hstat-l">Since last shipment</div>
+       </div>
+       <div class="hstat">
+         <div class="hstat-v">${e.loadCount}${ot != null ? ` <span class="ot">${ot}% ${otLabel}</span>` : ""}</div>
+         <div class="hstat-l">${esc(sinceLabel)}</div>
+       </div>
      </div>` +
-    (e.repOwner ? `<div class="owner">Owned by <b>${esc(e.repOwner.name)}</b></div>` : `<div class="owner">Unassigned</div>`) +
-    lanes;
+    ownerCard +
+    (laneRows
+      ? `<div class="lane-head"><span>Lane history</span><span>Loads · Last rate</span></div>${laneRows}`
+      : "");
 }
 
 // ---------- safety checks ----------
@@ -493,6 +553,7 @@ async function renderDevbar() {
   }
   devbar.hidden = false;
   const { environment, brokerageKey } = await chrome.storage.local.get(["environment", "brokerageKey"]);
+  brokerageOverride = brokerageKey ?? "";
   const staging = environment === "staging";
   envToggle.textContent = staging ? "staging" : "prod";
   envToggle.dataset.env = staging ? "staging" : "production";
@@ -514,6 +575,7 @@ envToggle.addEventListener("click", async () => {
 });
 brokerageInput.addEventListener("change", async () => {
   const v = brokerageInput.value.trim();
+  brokerageOverride = v;
   if (v) await chrome.storage.local.set({ brokerageKey: v });
   else await chrome.storage.local.remove("brokerageKey");
   void runCheck();

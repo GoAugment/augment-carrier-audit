@@ -68,6 +68,10 @@ export interface CarrierLane {
   lastDate: string | null;
   /** Average linehaul on this lane (USD), when known. */
   avgRate: number | null;
+  /** Most recent linehaul on this lane (USD), when known. */
+  lastRate: number | null;
+  /** Last rate vs the lane's prior average. */
+  trend: "up" | "down" | "flat" | null;
 }
 
 /** Customer-private enrichment, scoped to the signed-in user's brokerage. */
@@ -75,7 +79,14 @@ export interface CarrierEnrichment {
   hasRelationship: boolean;
   dsls: number | null;
   lastShipmentDate: string | null;
+  /** First shipment date (YYYY-MM-DD) in the window — for "loads since …". */
+  firstShipmentDate: string | null;
+  /** On-time pickup / delivery % (0–100), or null when too few timestamps. */
+  onTimePickupPct: number | null;
+  onTimeDeliveryPct: number | null;
   repOwner: { name: string; email: string | null } | null;
+  /** Loads owned by the rep (the "N of M" share); 0 when no rep. */
+  repLoadCount: number;
   lanes: CarrierLane[];
   loadCount: number;
 }
