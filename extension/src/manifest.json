@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Augie Carrier Check",
   "version": "0.1.0",
-  "description": "Vet any carrier from the page you're on: FMCSA fraud audit, plus your lane history & rep when signed in to Augie.",
+  "description": "Vet a freight carrier from the page you're on — FMCSA safety, authority, and fraud checks before you tender a load.",
   "permissions": ["scripting", "storage", "tabs", "cookies", "sidePanel"],
   "host_permissions": ["<all_urls>"],
   "side_panel": {
