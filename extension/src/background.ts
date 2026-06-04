@@ -278,8 +278,12 @@ async function fetchEnrichment(dot: string | null, mc: string | null): Promise<C
 // Full check
 // ---------------------------------------------------------------------------
 
-async function runCheck(): Promise<CheckResult> {
-  const { capture } = await captureActiveTab();
+async function runCheck(manual?: string): Promise<CheckResult> {
+  // A manually typed DOT/MC bypasses page capture: we hand it to the audit as
+  // the "selection", which the server's selection-priority extraction trusts.
+  const capture: PageCapture = manual?.trim()
+    ? { html: "", url: "", sel: manual.trim(), fields: "", text: "" }
+    : (await captureActiveTab()).capture;
   const { verdict, checks, dot, mc } = await runAudit(capture);
 
   let enrichment: CarrierEnrichment | null = null;
@@ -330,7 +334,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse({ ok: true, ...authStateInfo() });
           return;
         case "RUN_CHECK":
-          sendResponse({ ok: true, result: await runCheck() });
+          sendResponse({ ok: true, result: await runCheck(msg.manual) });
           return;
         case "OPEN_SIGNIN": {
           // No in-extension login: send the user to the Augie web app to sign

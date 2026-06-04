@@ -191,7 +191,7 @@ function renderLocked() {
   const field = (ico: string, title: string, sub: string) =>
     `<li><span class="lock-ico">${ico}</span><div><div class="l-title">${title}</div><div class="l-sub">${sub}</div></div></li>`;
   enrichmentEl.innerHTML =
-    `<h3>Your relationship</h3>` +
+    `<h3>Your history with this carrier</h3>` +
     `<ul class="lock-list">
        ${field("🛣️", "Lane history", "Lanes & rates you've run this carrier")}
        ${field("👤", "Owning rep", "Who on your team owns the relationship")}
@@ -205,9 +205,13 @@ function renderEnrichment(e: CarrierEnrichment) {
   enrichmentEl.hidden = false;
 
   if (!e.hasRelationship) {
-    enrichmentEl.className = "enrichment";
+    enrichmentEl.className = "enrichment history empty";
     enrichmentEl.innerHTML =
-      `<h3>Your relationship</h3><div class="summary">No prior loads with this carrier in your book.</div>`;
+      `<h3><span class="hist-star">★</span> Your history with this carrier</h3>` +
+      `<div class="empty-history">
+         <div class="eh-title">No prior shipments</div>
+         <div class="eh-sub">You haven't booked this carrier before. If you do, it'll show up here — loads, lanes, rates, and the owning rep.</div>
+       </div>`;
     return;
   }
 
@@ -227,7 +231,7 @@ function renderEnrichment(e: CarrierEnrichment) {
     : "";
 
   enrichmentEl.innerHTML =
-    `<h3>Your relationship</h3>` +
+    `<h3>Your history with this carrier</h3>` +
     `<div class="stat-row">
        <div class="stat"><div class="s-value ${dslsCls}">${e.dsls == null ? "—" : e.dsls}</div><div class="s-label">Days since last load</div></div>
        <div class="stat"><div class="s-value">${e.loadCount}</div><div class="s-label">Loads together</div></div>
@@ -313,15 +317,95 @@ function renderBasics(c: VerdictCarrier | null) {
     basics.map(bar).join("");
 }
 
+// ---------- recent checks (persisted) ----------
+
+interface RecentCheck {
+  name: string | null;
+  dot: number | null;
+  tier: AuditVerdict["tier"];
+  ts: number;
+}
+
+async function storeRecentCheck(entry: RecentCheck) {
+  const { recentChecks } = await chrome.storage.local.get("recentChecks");
+  const list: RecentCheck[] = Array.isArray(recentChecks) ? recentChecks : [];
+  const deduped = [entry, ...list.filter((r) => r.dot !== entry.dot)].slice(0, 12);
+  await chrome.storage.local.set({ recentChecks: deduped });
+}
+
+function relTime(ts: number): string {
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return days === 1 ? "Yesterday" : `${days}d ago`;
+}
+
 // ---------- run ----------
 
+const SOURCE = (title: string, sub: string) =>
+  `<div class="source-card"><span class="src-dot"></span><div><div class="src-title">${title}</div><div class="src-sub">${sub}</div></div></div>`;
+
+async function renderRecentChecks() {
+  const { recentChecks } = await chrome.storage.local.get("recentChecks");
+  const list: RecentCheck[] = Array.isArray(recentChecks) ? recentChecks : [];
+  if (!list.length || verdictEl.querySelector(".recent")) return;
+  const rows = list
+    .slice(0, 6)
+    .map(
+      (r) =>
+        `<div class="recent-item" data-dot="${r.dot ?? ""}">
+           <div><div class="ri-name">${esc(r.name ?? "Unknown carrier")}</div>` +
+        `<div class="ri-sub">${r.dot ? `DOT ${r.dot}` : ""} · ${relTime(r.ts)}</div></div>` +
+        `<span class="ri-tier tier-${r.tier}">${esc(r.tier)}</span></div>`
+    )
+    .join("");
+  const block = document.createElement("div");
+  block.className = "recent";
+  block.innerHTML = `<div class="nc-section-h">Recent checks</div>${rows}`;
+  verdictEl.appendChild(block);
+  block.querySelectorAll<HTMLElement>(".recent-item").forEach((el) =>
+    el.addEventListener("click", () => {
+      const dot = el.dataset.dot;
+      if (dot) void runCheck(dot);
+    })
+  );
+}
+
 function renderNoCarrier() {
+  metaEl.innerHTML = `<span class="ok">●</span> Watching this page · nothing to check yet`;
   for (const el of [enrichmentEl, checksEl, basicsEl]) el.hidden = true;
   verdictEl.hidden = false;
-  verdictEl.className = "verdict tier-none";
+  verdictEl.className = "verdict no-carrier";
   verdictEl.innerHTML =
-    `<div class="headline">No carrier detected</div>` +
-    `<div class="summary">No DOT or MC number is visible on this page. Open the carrier's email, a load, or their FMCSA SAFER page — or highlight a DOT/MC number — and the check runs automatically. Never tender a carrier you can't verify.</div>`;
+    `<div class="nc-head"><span class="nc-ico">🔍</span><div>
+       <div class="nc-title">No carrier detected</div>
+       <div class="nc-sub">No DOT or MC number is visible on this page. Open a carrier's email, a load, or their FMCSA SAFER page — or paste a number below — and the check runs automatically.</div>
+     </div></div>` +
+    `<div class="nc-section-h">Check a number now</div>` +
+    `<div class="nc-manual">
+       <input class="nc-input" type="text" placeholder="DOT or MC number" inputmode="numeric" aria-label="DOT or MC number" />
+       <button class="btn-primary nc-check" type="button">Check</button>
+     </div>` +
+    `<div class="nc-tip">Tip: highlight any DOT/MC on the page and the check runs on its own.</div>` +
+    `<div class="nc-section-h">Where Augie reads a carrier</div>` +
+    SOURCE("Carrier email or rate con", "DOT/MC in the body or signature") +
+    SOURCE("A load or tender", "the assigned carrier's identifiers") +
+    SOURCE("FMCSA SAFER / a load board", "the carrier profile you're viewing");
+
+  const input = verdictEl.querySelector<HTMLInputElement>(".nc-input");
+  const submit = () => {
+    const v = input?.value.trim();
+    if (v) void runCheck(v);
+  };
+  verdictEl.querySelector(".nc-check")?.addEventListener("click", submit);
+  input?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submit();
+  });
+
+  void renderRecentChecks();
 }
 
 function renderResult(result: CheckResult) {
@@ -342,16 +426,26 @@ function renderResult(result: CheckResult) {
   else if (result.enrichmentError) {
     enrichmentEl.hidden = false;
     enrichmentEl.className = "enrichment locked";
-    enrichmentEl.innerHTML = `<h3>Your relationship</h3><div class="summary">${esc(result.enrichmentError)}</div>`;
+    enrichmentEl.innerHTML = `<h3>Your history with this carrier</h3><div class="summary">${esc(result.enrichmentError)}</div>`;
   } else renderLocked();
 
   renderChecks(checks);
   renderBasics(result.verdict.carrier);
+
+  const c = result.verdict.carrier;
+  if (c?.dotNumber) {
+    void storeRecentCheck({
+      name: c.legalName,
+      dot: c.dotNumber,
+      tier: result.verdict.tier,
+      ts: Date.now(),
+    });
+  }
 }
 
 let running = false;
 
-async function runCheck() {
+async function runCheck(manual?: string) {
   if (running) return; // ignore overlapping triggers (re-check on page change)
   running = true;
   recheckBtn.disabled = true;
@@ -362,7 +456,7 @@ async function runCheck() {
   for (const el of [verdictEl, enrichmentEl, checksEl, basicsEl]) el.hidden = true;
 
   try {
-    const res = await send<{ ok: boolean; result?: CheckResult; error?: string }>({ type: "RUN_CHECK" });
+    const res = await send<{ ok: boolean; result?: CheckResult; error?: string }>({ type: "RUN_CHECK", manual });
     if (!res.ok || !res.result) throw new Error(res.error || "Check failed.");
     renderResult(res.result);
   } catch (e) {

@@ -160,7 +160,7 @@ export interface CheckResult {
 export type BgRequest =
   | { type: "GET_AUTH_STATE" }
   | { type: "REFRESH_AUTH" }
-  | { type: "RUN_CHECK" };
+  | { type: "RUN_CHECK"; manual?: string };
 
 export type BgResponse =
   | ({ ok: true } & AuthStateInfo)
