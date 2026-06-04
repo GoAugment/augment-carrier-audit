@@ -112,6 +112,12 @@ export interface VerdictCarrier {
   inspections24mo: number;
   crashes24mo: number;
   fmcsaPhone: string | null;
+  /** Full FMCSA-registered email address, when present. */
+  fmcsaEmail: string | null;
+  /** Up to 3 self-declared cargo types from MCS-150. */
+  cargoCapabilities: string[];
+  /** Primary company officer (MCS-150 officer_1), for out-of-band verification. */
+  companyOfficer: string | null;
   basicAlerts: string[];
   /** The 7 FMCSA SMS BASICs: peer percentile (0–100, higher = worse; null when
    *  FMCSA publishes none) + whether FMCSA set an alert. */

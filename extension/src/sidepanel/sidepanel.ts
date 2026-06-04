@@ -45,6 +45,62 @@ const TIER_HEADLINE: Record<AuditVerdict["tier"], string> = {
 
 const usd = (n: number) => `$${n.toLocaleString("en-US")}`;
 
+const OPERATING_AREA: Record<string, string> = {
+  interstate_otr: "Interstate, long-haul",
+  interstate_local: "Interstate, local",
+  intrastate_otr: "Intrastate, long-haul",
+  intrastate_local: "Intrastate, local",
+};
+const humanizeArea = (a: string) =>
+  OPERATING_AREA[a] ?? a.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+
+/**
+ * The full "everything FMCSA tells us about the company" card — collapsed by
+ * default behind a <details> so it doesn't dominate the panel. Only renders
+ * cells we actually have data for.
+ */
+function carrierDetails(c: VerdictCarrier): string {
+  const cells: Array<[string, string]> = [];
+
+  const revoked = c.allowedToOperate === "N" || (c.statusCode != null && c.statusCode !== "A");
+  if (c.mostRecentRevocationDate && revoked) {
+    cells.push(["Authority", `<span class="danger">REVOKED ${esc(c.mostRecentRevocationDate)}</span>`]);
+  } else if (revoked) {
+    cells.push(["Authority", `<span class="danger">Not authorized to operate</span>`]);
+  } else if (c.allowedToOperate === "Y") {
+    cells.push(["Authority", "Authorized to operate"]);
+  }
+
+  if (c.powerUnits != null || c.drivers != null) {
+    const parts: string[] = [];
+    if (c.powerUnits != null) parts.push(`${c.powerUnits} power units`);
+    if (c.drivers != null) parts.push(`${c.drivers} drivers`);
+    cells.push(["Fleet", parts.join(" · ")]);
+  }
+  if (c.operatingArea) cells.push(["Operation", esc(humanizeArea(c.operatingArea))]);
+  if (c.cargoCapabilities?.length) cells.push(["Cargo", esc(c.cargoCapabilities.join(", "))]);
+  if (c.fmcsaPhone) cells.push(["Phone on file", esc(c.fmcsaPhone)]);
+  if (c.fmcsaEmail)
+    cells.push(["Email on file", `<a href="mailto:${esc(c.fmcsaEmail)}">${esc(c.fmcsaEmail)}</a>`]);
+  cells.push([
+    "Activity (24mo)",
+    `${c.inspections24mo} inspections${c.crashes24mo ? ` · <span class="danger">${c.crashes24mo} crashes</span>` : ""}`,
+  ]);
+  if (c.companyOfficer) cells.push(["Primary officer", esc(c.companyOfficer)]);
+  if (c.dotIssued) cells.push(["DOT issued", esc(c.dotIssued)]);
+  if (c.safetyRating) cells.push(["Safety rating", esc(c.safetyRating)]);
+  if (c.bipdInsurer || c.bipdAmount != null) {
+    const amt = c.bipdAmount != null ? usd(c.bipdAmount) : "";
+    cells.push(["BIPD insurance", `${amt}${c.bipdInsurer ? `${amt ? " · " : ""}${esc(c.bipdInsurer)}` : ""}`]);
+  }
+
+  if (!cells.length) return "";
+  const grid = cells
+    .map(([k, val]) => `<div class="cd-cell"><div class="cd-label">${esc(k)}</div><div class="cd-value">${val}</div></div>`)
+    .join("");
+  return `<details class="carrier-details"><summary>FMCSA company details</summary><div class="cd-grid">${grid}</div></details>`;
+}
+
 // ---------- auth chip ----------
 
 function renderAuth(info: AuthStateInfo) {
@@ -62,7 +118,7 @@ function renderAuth(info: AuthStateInfo) {
 
 // ---------- verdict ----------
 
-function renderVerdict(v: AuditVerdict, checks: CheckRow[]) {
+function renderVerdict(v: AuditVerdict) {
   verdictEl.hidden = false;
   verdictEl.className = `verdict tier-${v.tier}`;
   const c = v.carrier;
@@ -83,14 +139,8 @@ function renderVerdict(v: AuditVerdict, checks: CheckRow[]) {
            ${c.mcNumber ? `<span class="id-pill">${esc(c.mcNumber)}</span>` : ""}
            ${c.physicalLocation ? `<span class="id-pill">${esc(c.physicalLocation)}</span>` : ""}
          </div>
+         ${carrierDetails(c)}
        </div>`
-    : "";
-
-  const passed = checks.filter((r) => r.status === "passed").length;
-  const failed = checks.filter((r) => r.status === "failed").length;
-  const skipped = checks.filter((r) => r.status === "skipped").length;
-  const tally = checks.length
-    ? `<div class="tally"><b class="p">${passed} passed</b>${failed ? ` · <b class="f">${failed} failed</b>` : ""} · <b>${skipped} skipped</b></div>`
     : "";
 
   verdictEl.innerHTML =
@@ -98,8 +148,7 @@ function renderVerdict(v: AuditVerdict, checks: CheckRow[]) {
     `<div class="headline">${esc(TIER_HEADLINE[v.tier])}</div>` +
     `<div class="summary">${esc(v.summary)}</div>` +
     carrierBlock +
-    tiles +
-    tally;
+    tiles;
 }
 
 // ---------- enrichment ----------
@@ -176,6 +225,7 @@ function renderChecks(checks: CheckRow[]) {
   const order = { failed: 0, passed: 1, skipped: 2 };
   const sorted = [...checks].sort((a, b) => order[a.status] - order[b.status]);
   const passed = checks.filter((r) => r.status === "passed").length;
+  const failed = checks.filter((r) => r.status === "failed").length;
   const skipped = checks.filter((r) => r.status === "skipped").length;
 
   const rows = sorted
@@ -193,8 +243,12 @@ function renderChecks(checks: CheckRow[]) {
   if (passed) toggles.push(`<button class="toggle" data-t="passed">${hidePassed ? "Show" : "Hide"} passed checks</button>`);
   if (skipped) toggles.push(`<button class="toggle" data-t="skipped">${hideSkipped ? "Show" : "Hide"} skipped</button>`);
 
+  const tally =
+    `<span class="tally"><b class="p">${passed}</b> passed · ` +
+    `<b class="f">${failed}</b> failed · <b>${skipped}</b> skipped</span>`;
+
   checksEl.innerHTML =
-    `<div class="section-h"><span>Safety checks</span></div>` +
+    `<div class="section-h"><span>Safety checks</span>${tally}</div>` +
     rows +
     (toggles.length ? `<div class="checks-toggles">${toggles.join("")}</div>` : "");
 
@@ -218,11 +272,12 @@ function renderBasics(c: VerdictCarrier | null) {
   basicsEl.hidden = false;
   const bar = (b: { name: string; percentile: number | null; alert: boolean }) => {
     const p = b.percentile ?? 0;
+    const pct = Math.round(p);
     const cls = b.alert || p >= 90 ? "bad" : p >= 75 ? "warn" : "";
     return `<div class="bar-row">
       <span class="bar-name">${esc(b.name)}</span>
-      <span class="bar-track"><span class="bar-fill ${cls}" style="width:${Math.max(2, p)}%"></span></span>
-      <span class="bar-val">${p}</span>
+      <span class="bar-track"><span class="bar-fill ${cls}" style="width:${Math.max(3, pct)}%"></span></span>
+      <span class="bar-val ${cls}">${pct}</span>
     </div>`;
   };
   basicsEl.innerHTML =
@@ -238,7 +293,7 @@ function renderResult(result: CheckResult) {
 
   // Be defensive: an older background service worker may not include `checks`.
   const checks = Array.isArray(result.checks) ? result.checks : [];
-  renderVerdict(result.verdict, checks);
+  renderVerdict(result.verdict);
 
   if (result.enrichment) renderEnrichment(result.enrichment);
   else if (result.enrichmentError) {
