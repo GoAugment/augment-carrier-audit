@@ -283,34 +283,58 @@ export function pageDiagnostics(cap: PageCapture): PageDiagnostics {
   };
 }
 
+/**
+ * Pull a DOT and/or MC out of a chunk of text. `allowBareDot` treats a lone
+ * number (a selection like "2902577") as a DOT, which only makes sense for the
+ * user's deliberate selection — never for whole-page scanning, where stray
+ * 4–8 digit numbers (zips, order ids, phone fragments) are everywhere.
+ */
+function identifiersFromText(
+  t: string,
+  allowBareDot = false
+): { dot: string | null; mc: string | null } {
+  let dot: string | null = null;
+  let mc: string | null = null;
+  // Type-attached forms first ("MC116400", "MC-116400", "USDOT 116400").
+  const mcAttached = t.match(/(?:^|[^A-Za-z0-9])MC[-#]?\s?(\d{3,8})\b/i);
+  const dotAttached = t.match(/(?:^|[^A-Za-z0-9])(?:US[-\s]?)?DOT[-#:]?\s?(\d{4,8})\b/i);
+  if (mcAttached) mc = `MC-${mcAttached[1]}`;
+  if (dotAttached) dot = dotAttached[1];
+  if (!dot && !mc) {
+    // Looser label form: "MC/DOT Number: 1234567", "our DOT is 3533697".
+    const dotLabeled = t.match(/\b(?:US)?DOT\b\D{0,14}?(\d{4,8})\b/i);
+    if (dotLabeled) dot = dotLabeled[1];
+    else {
+      const mcLabeled = t.match(/\bMC\b\D{0,12}?(\d{3,8})\b/i);
+      if (mcLabeled) mc = `MC-${mcLabeled[1]}`;
+    }
+  }
+  // A lone selected number ("2902577", "#2902577") — the user picked it on
+  // purpose, so treat it as a DOT.
+  if (!dot && !mc && allowBareDot) {
+    const bare = t.trim().match(/^#?\s*(\d{5,8})\s*$/);
+    if (bare) dot = bare[1];
+  }
+  return { dot, mc };
+}
+
 export function extractFromPage(cap: PageCapture): ExtractedEmail {
   const html = (cap.html || "").slice(0, 3_000_000);
   const { text } = scanText(cap);
 
   // --- DOT / MC ---
-  // The "MC/DOT Number" label (T1) is ambiguous, so trust the VALUE's own
-  // prefix first: a digit-attached "MC116400" / "MC-116400" / "USDOT 116400"
-  // tells us the type for certain. Only when no prefixed-attached form exists
-  // do we fall back to the looser label form ("DOT is 3533697"), defaulting a
-  // bare number to DOT.
-  let dot_number: string | null = null;
-  let mc_number: string | null = null;
-  // MC bound to its digits (optional - or # or a single space, e.g. the T1
-  // value "MC116400"). The leading boundary stops it matching "...MC" inside
-  // a word.
-  const mcAttached = text.match(/(?:^|[^A-Za-z0-9])MC[-#]?\s?(\d{3,8})\b/i);
-  // (US)DOT bound to its digits.
-  const dotAttached = text.match(/(?:^|[^A-Za-z0-9])(?:US[-\s]?)?DOT[-#:]?\s?(\d{4,8})\b/i);
-  if (mcAttached) mc_number = `MC-${mcAttached[1]}`;
-  if (dotAttached) dot_number = dotAttached[1];
+  // The user's text SELECTION wins when it names a carrier — this is the
+  // disambiguator on a busy inbox/TMS page where many DOTs are present and a
+  // plain document-order scan would grab the wrong one (e.g. another email's
+  // carrier, or a prior Augie audit reply). Highlight the DOT/MC (or just the
+  // number) of the carrier you mean and we use that; otherwise fall back to
+  // scanning the page.
+  const selTrim = (cap.sel || "").trim();
+  let { dot: dot_number, mc: mc_number } = selTrim
+    ? identifiersFromText(selTrim, true)
+    : { dot: null, mc: null };
   if (!dot_number && !mc_number) {
-    // Ambiguous label form: "MC/DOT Number: 1234567", "our DOT is 3533697".
-    const dotLabeled = text.match(/\b(?:US)?DOT\b\D{0,14}?(\d{4,8})\b/i);
-    if (dotLabeled) dot_number = dotLabeled[1];
-    else {
-      const mcLabeled = text.match(/\bMC\b\D{0,12}?(\d{3,8})\b/i);
-      if (mcLabeled) mc_number = `MC-${mcLabeled[1]}`;
-    }
+    ({ dot: dot_number, mc: mc_number } = identifiersFromText(text));
   }
 
   // --- sender (email gut check) ---
