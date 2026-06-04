@@ -244,7 +244,9 @@ function stubEnrichment(dot: string | null, mc: string | null): CarrierEnrichmen
 
 async function fetchEnrichment(dot: string | null, mc: string | null): Promise<CarrierEnrichment> {
   const env = await getEnvironment();
-  if (!LIVE_ENRICHMENT_ENVIRONMENTS.has(env)) return stubEnrichment(dot, mc);
+  const live = LIVE_ENRICHMENT_ENVIRONMENTS.has(env);
+  console.log("[Augie] enrichment:", { env, live, dot, mc });
+  if (!live) return stubEnrichment(dot, mc);
 
   const params = new URLSearchParams();
   if (dot) params.set("dotNumber", dot.replace(/\D/g, ""));
@@ -255,14 +257,20 @@ async function fetchEnrichment(dot: string | null, mc: string | null): Promise<C
   // authorized for.
   const { brokerageKey } = await chrome.storage.local.get("brokerageKey");
   if (brokerageKey) params.set("brokerageKey", String(brokerageKey));
-  const res = await fetch(`${ENRICHMENT_BASE[env]}${ENRICHMENT_PATH}?${params}`, {
+  const url = `${ENRICHMENT_BASE[env]}${ENRICHMENT_PATH}?${params}`;
+  console.log("[Augie] enrichment GET", url);
+  const res = await fetch(url, {
     headers: { Authorization: `Bearer ${authState.accessToken ?? ""}` },
   });
   if (res.status === 401 || res.status === 403) {
     authState = { accessToken: null, user: null, expiresAt: null };
     throw new Error("Augie session expired — sign in again.");
   }
-  if (!res.ok) throw new Error(`Enrichment unavailable (${res.status}).`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    console.warn("[Augie] enrichment error", res.status, body);
+    throw new Error(`Enrichment unavailable (${res.status}).`);
+  }
   return (await res.json()) as CarrierEnrichment;
 }
 

@@ -55,6 +55,9 @@ export interface PageCapture {
   url: string;
   sel: string;
   fields: string;
+  /** Visible rendered text (document.body.innerText) — only what's on screen,
+   *  excluding hidden/collapsed DOM. The server scans this for DOT/MC/lane. */
+  text: string;
 }
 
 /** One lane the customer has historically run this carrier on. */

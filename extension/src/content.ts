@@ -13,6 +13,7 @@ import type { PageCapture } from "./types";
 
 const SKIP_INPUT_TYPES = /^(password|hidden|checkbox|radio|file|submit|button)$/;
 const MAX_HTML = 1_200_000;
+const MAX_TEXT = 250_000;
 
 /** Visible form field values, paired with their best-guess label. */
 function captureFields(): string {
@@ -58,7 +59,12 @@ function capturePage(): PageCapture {
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?<\/style>/gi, "")
     .slice(0, MAX_HTML);
-  return { html, url: location.href, sel, fields: captureFields() };
+  // innerText is layout-aware: only what's actually RENDERED/visible — it drops
+  // display:none / visibility:hidden (collapsed quoted replies, off-screen
+  // inbox rows, hidden panes). This is "see only what we can see", so the DOT
+  // detection keys off the email/page in front of the user, not the whole DOM.
+  const text = ((document.body && document.body.innerText) || "").slice(0, MAX_TEXT);
+  return { html, url: location.href, sel, fields: captureFields(), text };
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {

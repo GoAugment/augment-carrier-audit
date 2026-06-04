@@ -43,6 +43,13 @@ export interface PageCapture {
    *  bookmarklet reads el.value + the field's label and sends them here; we
    *  scan them first. */
   fields?: string;
+  /** Visible rendered text (document.body.innerText) when the client can
+   *  provide it. Layout-aware — only what's actually on screen, excluding
+   *  hidden/collapsed DOM (other inbox threads, collapsed quoted replies). When
+   *  present we scan THIS instead of flattening the whole outerHTML, so DOT/MC
+   *  come from the email/page the user is looking at, not the entire DOM. Older
+   *  callers (the bookmarklet) omit it and we fall back to htmlToText(html). */
+  text?: string;
 }
 
 /** Build the text we scan: live form fields first (highest signal on SPA
@@ -51,7 +58,12 @@ function scanText(cap: PageCapture): { text: string; usedSelection: boolean } {
   const html = (cap.html || "").slice(0, 3_000_000);
   const selTrim = (cap.sel || "").trim();
   const usedSelection = selTrim.length > 30;
-  const body = usedSelection ? selTrim : htmlToText(html);
+  // Prefer the client's visible innerText (what's actually on screen) over
+  // flattening the entire outerHTML — the latter drags in hidden/off-screen
+  // content (other inbox threads, collapsed quotes) that pollutes detection.
+  // Fall back to htmlToText(html) for callers that don't send visible text.
+  const visible = (cap.text || "").trim();
+  const body = usedSelection ? selTrim : visible || htmlToText(html);
   const fieldsText = (cap.fields || "").trim();
   const text = ((fieldsText ? fieldsText.slice(0, 60_000) + "\n\n" : "") + body).slice(0, 300_000);
   return { text, usedSelection };
