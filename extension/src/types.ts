@@ -88,7 +88,7 @@ export interface CarrierLane {
 /** Customer-private enrichment, scoped to the signed-in user's brokerage. */
 export interface CarrierEnrichment {
   hasRelationship: boolean;
-  dsls: number | null;
+  daysSinceLastShipment: number | null;
   lastShipmentDate: string | null;
   /** First shipment date (YYYY-MM-DD) in the window — for "loads since …". */
   firstShipmentDate: string | null;

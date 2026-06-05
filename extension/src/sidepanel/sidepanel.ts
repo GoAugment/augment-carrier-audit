@@ -155,7 +155,7 @@ function renderAuth(info: AuthStateInfo) {
       `<span class="avatar">${esc(initials(name))}</span><span class="chip-name">${esc(firstName)}</span>`;
   } else {
     authChip.classList.remove("signed-in");
-    authChip.title = "Sign in to Augie for lane history, rep owner & DSLS";
+    authChip.title = "Sign in to Augie for lane history, rep owner & days-since-last-shipment";
     authChip.textContent = "Sign in";
   }
 }
@@ -287,13 +287,13 @@ function renderEnrichment(e: CarrierEnrichment) {
   enrichmentEl.className = "enrichment history unlocked";
 
   // Header status pill — recency-based (we don't have FMCSA status here).
-  const active = e.dsls != null && e.dsls <= 120;
+  const active = e.daysSinceLastShipment != null && e.daysSinceLastShipment <= 120;
   const statusPill =
-    e.dsls == null
+    e.daysSinceLastShipment == null
       ? ""
       : `<span class="hist-pill ${active ? "ok" : "stale"}">${active ? "Active" : "Dormant"}</span>`;
 
-  // Big stats: DSLS · loads ("since <month>"). On-time %s are intentionally not
+  // Big stats: days-since-last-shipment · loads ("since <month>"). On-time %s are intentionally not
   // shown — without the appointment window END they read biased-low/unreliable.
   const sinceLabel = e.firstShipmentDate ? `Loads since ${monthYear(e.firstShipmentDate)}` : "Loads together";
 
@@ -336,7 +336,7 @@ function renderEnrichment(e: CarrierEnrichment) {
     `<div class="hist-head"><span class="hist-title"><span class="hist-star">★</span> Your history with this carrier</span>${statusPill}</div>` +
     `<div class="hist-stats">
        <div class="hstat">
-         <div class="hstat-v">${e.dsls == null ? "—" : e.dsls}<span class="hstat-u"> days</span></div>
+         <div class="hstat-v">${e.daysSinceLastShipment == null ? "—" : e.daysSinceLastShipment}<span class="hstat-u"> days</span></div>
          <div class="hstat-l">Since last shipment</div>
        </div>
        <div class="hstat">
