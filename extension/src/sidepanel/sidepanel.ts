@@ -62,9 +62,6 @@ function linkifyDots(detail: string): string {
   );
 }
 
-const monthYear = (d: string) =>
-  new Date(`${d}T00:00:00`).toLocaleString("en-US", { month: "short", year: "numeric" });
-
 // Brokerage badge label. The data is scoped to the override (dev) or the
 // signed-in user's brokerage; map the known ones, else initialize the key.
 let authBrokerageKey = "";
@@ -293,10 +290,6 @@ function renderEnrichment(e: CarrierEnrichment) {
       ? ""
       : `<span class="hist-pill ${active ? "ok" : "stale"}">${active ? "Active" : "Dormant"}</span>`;
 
-  // Big stats: days-since-last-shipment · loads ("since <month>"). On-time %s are intentionally not
-  // shown — without the appointment window END they read biased-low/unreliable.
-  const sinceLabel = e.firstShipmentDate ? `Loads since ${monthYear(e.firstShipmentDate)}` : "Loads together";
-
   // Owner card.
   const badge = brokerageLabel();
   const ownerCard = e.repOwner
@@ -304,7 +297,6 @@ function renderEnrichment(e: CarrierEnrichment) {
          <span class="avatar lg">${esc(initials(e.repOwner.name))}</span>
          <div class="owner-main">
            <div class="owner-name">Owned by <b>${esc(e.repOwner.name)}</b></div>
-           <div class="owner-sub">${e.repLoadCount ? `${e.repLoadCount} of ${e.loadCount} loads` : "owning rep"}</div>
          </div>
          ${badge ? `<span class="brokerage-badge">${esc(badge)}</span>` : ""}
        </div>`
@@ -338,10 +330,6 @@ function renderEnrichment(e: CarrierEnrichment) {
        <div class="hstat">
          <div class="hstat-v">${e.daysSinceLastShipment == null ? "—" : e.daysSinceLastShipment}<span class="hstat-u"> days</span></div>
          <div class="hstat-l">Since last shipment</div>
-       </div>
-       <div class="hstat">
-         <div class="hstat-v">${e.loadCount}</div>
-         <div class="hstat-l">${esc(sinceLabel)}</div>
        </div>
      </div>` +
     ownerCard +
