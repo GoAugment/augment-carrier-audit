@@ -54,12 +54,24 @@ SNAPSHOT_DATE = "2026-05-14"
 def main() -> None:
     print(f"Scanning InsHist: {INSHIST.name}")
 
+    # Two accepted sources, IDENTICAL 17-column layout and order:
+    #   - FMCSA native dump `inshist_allwithhistory.txt` — header-less.
+    #   - Socrata mirror `inshist_allwithhistory.csv` (dataset 6sqe-dvqs, pulled
+    #     by refresh_sms_data.py) — same columns/order but WITH a header row and
+    #     a zero-padded DOT_NUMBER (the Int64 cast on c02 absorbs the padding).
+    # Sniff the first line so we skip the header only when it's actually there;
+    # positional mapping (c01..c17) is unchanged either way.
+    with open(INSHIST, "r", encoding="utf-8", errors="replace") as _fh:
+        _first = _fh.readline()
+    has_header = _first.lower().lstrip('"').startswith("docket_number")
+
     cols = [f"c{i:02d}" for i in range(1, 18)]
     df = (
         pl.scan_csv(
             INSHIST,
             has_header=False,
             new_columns=cols,
+            skip_rows=1 if has_header else 0,
             schema_overrides={c: pl.Utf8 for c in cols},
             ignore_errors=True,
         )

@@ -3,16 +3,15 @@
   "reasonNote": "CRITICAL: $0 BIPD",
   "carrierName": "HOSELTON IMPORTS INC",
   "riskLevel": "Critical",
-  "riskScore": 48,
+  "riskScore": 44,
   "riskTier": "Medium",
   "riskContributions": [
     "+30 [Authority / insurance] Insurance lapsed",
-    "+10 [Operations] Very new authority",
+    "+6 [Operations] New authority",
     "+8 [Safety / compliance] Elevated safety context"
   ],
   "reasonLabels": [
     "Insurance lapsed",
-    "New authority",
     "Why the FMCSA SMS scores look clean"
   ],
   "axes": {
@@ -24,7 +23,7 @@
     "vehicleOos": "na",
     "hazmatOos": "na",
     "revocations": "clean",
-    "authority": "critical",
+    "authority": "clean",
     "insurance": "critical"
   }
 }

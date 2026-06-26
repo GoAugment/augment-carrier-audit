@@ -16,12 +16,12 @@ most-recent file matching each glob.
 | File (glob) | Size | Source | Used for |
 |---|---|---|---|
 | `Company_Census_File.csv` | ~1.7 GB | [data.transportation.gov — Company Census File](https://data.transportation.gov/Trucking-and-Motorcoaches/Company-Census-File/az4n-8mr2) | Identity, MCS-150 date, review date/type, safety rating + date, chameleon flag (`PRIOR_REVOKE_FLAG`), cargo flags, fleet composition |
-| `Carrier_All_With_History.csv` | ~335 MB | [data.transportation.gov — Carrier - All With History](https://data.transportation.gov/Trucking-and-Motorcoaches/Carrier-All-With-History/n76j-r3iz) | Operating authority, BIPD / cargo / bond insurance, business + mailing address |
+| `Carrier_All_With_History.csv` | ~335 MB | **Auto-downloaded** by `refresh_sms_data.py` (Socrata `6eyk-hxee`) | Operating authority, BIPD / cargo / bond insurance, business + mailing address |
 | `ActPendInsur_All_With_History.csv` | ~50 MB | [data.transportation.gov — ActPendInsur](https://data.transportation.gov/Trucking-and-Motorcoaches/ActPendInsur-All-With-History/ypue-kdue) | Current/pending insurance policies (insurer name, policy number, effective/cancel dates, amounts) |
-| `Revocation_-_All_With_History_*.csv` | ~120 MB | [data.transportation.gov — Revocation](https://data.transportation.gov/Trucking-and-Motorcoaches/Revocation-All-With-History/2eyu-5pc4) | Authority revocations (voluntary + involuntary) |
-| `inshist_allwithhistory.txt` | ~1.28 GB | [data.transportation.gov — InsHist](https://data.transportation.gov/Trucking-and-Motorcoaches/InsHist-All-With-History/szfe-tikd) | Historical insurance policy lifecycle (cancellation reasons: Cancelled / Replaced / Name Change / Transferred — chameleon detection) |
+| `Revocation_-_All_With_History*.csv` | ~120 MB | **Auto-downloaded** by `refresh_sms_data.py` (Socrata `sa6p-acbp`) | Authority revocations (voluntary + involuntary) |
+| `inshist_allwithhistory.csv` | ~1.3 GB | **Auto-downloaded** by `refresh_sms_data.py` (Socrata `6sqe-dvqs`) | Historical insurance policy lifecycle (cancellation reasons: Cancelled / Replaced / Name Change / Transferred — chameleon detection) |
 | `closed_enforcement_cases_*.xlsx` | ~25 KB | [data.transportation.gov — Closed Enforcement Cases](https://data.transportation.gov/Trucking-and-Motorcoaches/Closed-Enforcement-Cases/cur9-tfg7) | FMCSA civil-penalty cases against carriers/brokers |
-| `SMS_AB_PassProperty_*.csv` | ~65 MB | [SMS Tools — All Interstate + Intrastate Hazmat Property](https://ai.fmcsa.dot.gov/SMS/Tools/Downloads.aspx) | FMCSA's pre-computed BASIC measures + alert flags (Unsafe Driving, HOS, Driver Fitness, Controlled Substances, Vehicle Maintenance) |
+| `SMS_AB_PassProperty*.csv` | ~65 MB | **Auto-downloaded** by `refresh_sms_data.py` (Socrata `4y6x-dmck`) | FMCSA's pre-computed BASIC measures + alert flags (Unsafe Driving, HOS, Driver Fitness, Controlled Substances, Vehicle Maintenance) |
 | `SMS_Input_-_Inspection_*.csv` | ~1.45 GB | [data.transportation.gov — SMS Input: Inspection](https://data.transportation.gov/Trucking-and-Motorcoaches/SMS-Input-Inspection/v7sb-zsx5) | Per-inspection record with hazmat-placardable flag, BASIC inspection counts, VIN. **Fixes the hazmat undercount bug.** |
 | `SMS_Input_-_Violation_*.csv` | ~1.25 GB | [data.transportation.gov — SMS Input: Violation](https://data.transportation.gov/Trucking-and-Motorcoaches/SMS-Input-Violation/eaqq-trat) | Per-violation detail: violation code, BASIC mapping, OOS flag, FMCSA severity/time weights, section/group description |
 | `SMS_Input_-_Crash_*.csv` | ~55 MB | [data.transportation.gov — SMS Input: Crash](https://data.transportation.gov/Trucking-and-Motorcoaches/SMS-Input-Crash/eskx-7szm) | Per-crash-vehicle with FMCSA severity/time weights, preventability flag, hazmat-released flag |
@@ -38,19 +38,180 @@ most-recent file matching each glob.
 | `SMS_AB_Pass_*.csv` / `SMS_C_Pass_*.csv` | Passenger carriers (buses) — out of scope |
 | `BOC3 / Special_Studies / Rejected / Inspections_Per_Unit` | Niche or future-feature — see the README's "future" section below |
 
-## Refresh procedure (monthly)
+## Refresh runbook (monthly + daily insurance)
 
-FMCSA publishes new snapshots around the 13th-18th of each month. To refresh:
+FMCSA publishes new SMS snapshots around the 13th–18th of each month; the L&I
+insurance feeds update **daily**. The canonical builder is the Polars pipeline
+in `pipeline/fmcsa-aggregate/` (orchestrated by `build_all.py`). Everything
+below runs in THIS repo — there is no longer a sibling-workspace dependency.
 
-1. From [data.transportation.gov](https://data.transportation.gov/browse?category=Trucking+and+Motorcoaches&limitTo=datasets&utf8=%E2%9C%93), download each file in the "Files we use" table above (Datasets view, not External Datasets).
-2. From [SMS Tools Downloads](https://ai.fmcsa.dot.gov/SMS/Tools/Downloads.aspx), download `SMS_AB_PassProperty`.
-3. Drop them into this folder (`data/sources/`). The build script's globs will pick up the latest by mtime — no rename needed.
-4. Run the Polars pipeline (canonical builder, lives in the sibling workspace):
-   `uv run /Users/art/conductor/workspaces/augment-services/abuja/.context/fmcsa-aggregate/build_aggregates.py`
-5. Copy the resulting `carrier_aggregates.parquet` + `carrier_identity.parquet` into `data/`.
-6. Validate against the 12-DOT SAFER baseline (numbers in `data/national_thresholds.json` should match).
+> ⚠️ Insurance is NOT a standalone refresh. BIPD-on-file comes from
+> `build_aggregates` (reads `Carrier_All_With_History`); lapse/cancellation/
+> chameleon signals come from `add_inshist` + `add_pending_lapse` +
+> `add_revocations`. So "refresh insurance" = re-run the core build with fresh
+> `Company_Census` + `Carrier_All_With_History` + `ActPendInsur` + `inshist` +
+> `Revocation`.
 
-> A second DuckDB-based builder (`scripts/build_parquet.mjs`) was prototyped early on but is no longer maintained — the Polars pipeline is the source of truth for column schema and chameleon-cluster derivations.
+### 1. Download fresh sources → `data/sources/`
+
+**Automated (Socrata, resumable, uses `SOCRATA_API_KEY`/`SECRET` from `.env.local`):**
+```bash
+uv run pipeline/fmcsa-aggregate/refresh_sms_data.py --monthly   # SMS Inspection/Violation/Crash + Census + InsHist + Carrier auth + Revocation + SMS_AB PassProperty
+uv run pipeline/fmcsa-aggregate/refresh_sms_data.py --daily     # ActPendInsur (insurance pending-cancel dates)
+```
+Both stream to `data/sources/refresh_<YYYYMMDD>/` as `.part` → atomic rename;
+re-runs skip files whose row count already matches Socrata (large files like
+Census + InsHist page via SODA chunks — see `PAGINATED`). The working Socrata
+dataset IDs live in `refresh_sms_data.py` (`MONTHLY`/`DAILY` dicts) — **dataset
+IDs drift / get duplicated, so if a download 404s, re-confirm the live id via the
+catalog API** (`https://api.us.socrata.com/api/catalog/v1?domains=data.transportation.gov&q=<name>`),
+picking the entry with a recent `rowsUpdatedAt` and non-zero column count.
+
+`--monthly` now auto-pulls **9** datasets, including the four that used to be
+manual: InsHist (`6sqe-dvqs`), Carrier - All With History (`6eyk-hxee`),
+Revocation - All With History (`sa6p-acbp`), and SMS AB PassProperty
+(`4y6x-dmck`). Several old README ids are dead (`n76j-r3iz`, `2eyu-5pc4`,
+InsHist `szfe-tikd`) — the live ids are in the script.
+
+**Still manual — exactly one file:**
+- `closed_enforcement_cases_*.xlsx` — see "Closed enforcement cases" below. It's an **A&I-portal Excel export** (not a usable Socrata dataset) with a two-row header, so it can't go through the downloader.
+
+After downloading, move/symlink everything into `data/sources/` with the names
+`build_all.py` expects (see step 2's gotcha). The auto-downloaded files use
+undated names; `build_all.py` resolves InsHist (`.csv`/`.txt`), Revocation, and
+SMS_AB PassProperty (newest matching glob) automatically.
+
+### 2. Bump the date pins, then build
+
+`build_all.py`'s `DEFAULT_ENV` pins **hard-coded dated filenames**
+(`..._20260514.csv`, `..._20260518.csv`) and `add_inshist.py` has a
+`SNAPSHOT_DATE = "2026-05-14"` constant. Before building:
+```bash
+grep -rn "20260514\|20260518\|2026-05-14\|SNAPSHOT_DATE" pipeline/fmcsa-aggregate/
+```
+Update those to the new snapshot date (or rename the downloaded files to match
+the existing pins). Then:
+```bash
+# ~30 min: reuses the existing PU-history + serious-violation scrape parquets.
+# Insurance/authority/BIPD/BASIC do NOT need fresh scrapes.
+uv run pipeline/fmcsa-aggregate/build_all.py --no-scrape
+
+# ~2.8 h: full rebuild INCLUDING the two ZenRows scrapes (needs SCRAPE_PROXY_URL).
+# Only when you want fresh Crash-Indicator + PU-history + serious-violations.
+uv run pipeline/fmcsa-aggregate/build_all.py
+```
+`build_all.py --list` shows all steps + runtimes; `--from <step>` resumes.
+Outputs land directly in `data/`: `carrier_aggregates.parquet`,
+`carrier_identity.parquet`, `national_thresholds.json`, and the
+`lib/data/*-risk.json` lookup tables.
+
+### 3. Rebuild the single-carrier artifacts (low-latency `/check` path)
+```bash
+pnpm build:single-check-buckets    # data/single-check-buckets/{carriers,identities}/bucket=*, mc_index, phone_index
+pnpm build:single-check-compact    # data/single-check-compact/{mc,phone}/prefix=*.json.gz
+```
+
+### 4. Upload to Vercel Blob (parquets are too big to bundle)
+```bash
+export BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...   # from Vercel → Storage → Blob
+node scripts/upload-identity-blob.mjs             # carrier_identity.parquet → Blob (same pathname/URL)
+pnpm upload:single-check-buckets                  # bucket parquets → Blob
+pnpm upload:single-check-compact                  # compact json.gz → Blob
+```
+`upload-identity-blob.mjs` overwrites the same pathname, so `BLOB_IDENTITY_URL`
+doesn't change. `carrier_aggregates.parquet` (~95 MB) stays bundled in the
+function; `carrier_identity.parquet` (~96 MB) is Blob-only (250 MB limit).
+
+### 5. Validate, then deploy
+```bash
+pnpm test:rules        # 55 rule fixtures
+pnpm test:snapshots    # ~27 real-DOT audit snapshots — UPDATE with --update if tier drift is expected from fresh data
+```
+Spot-check a handful of known DOTs (`/check/<dot>`) against live SAFER. Then
+commit the refreshed `data/*` + bumped date pins and push to `main` (the deploy
+swaps the data globally for every user — that's the irreversible step).
+
+> A second DuckDB-based builder (`scripts/build_parquet.mjs`) was prototyped
+> early on but is no longer maintained — the Polars pipeline is the source of
+> truth for column schema and chameleon-cluster derivations.
+
+## `inshist` — now automated (was the manual gotcha)
+
+`inshist` used to require a manual browser download of FMCSA's native
+header-less positional `inshist_allwithhistory.txt`. It's now auto-downloaded
+from the **Socrata mirror** `InsHist - All With History` (dataset **`6sqe-dvqs`**;
+the old README id `szfe-tikd` was stale) by `refresh_sms_data.py --monthly`.
+
+Why this works without a parser rewrite: the Socrata bulk export
+(`/api/views/6sqe-dvqs/rows.csv?accessType=DOWNLOAD`) has the **same 17 columns
+in the same order** as the native dump, with `MM/DD/YYYY` dates — the only
+differences are a header row and a zero-padded `dot_number`. `add_inshist.py`
+sniffs the first line and skips the header when present (so it still reads the
+native `.txt` too), and the `Int64` cast absorbs the DOT padding. Verified
+against a 5k-row sample: cancel types (`Cancelled`/`Replaced`/`Name Changed`/
+`Transferred`), policy numbers, insurers, and parsed dates all land correctly.
+
+If you ever need the native file instead (e.g. Socrata outage), it's in FMCSA's
+**Data Dissemination Program** "Entities with Operating Authority" bulk set —
+<https://www.fmcsa.dot.gov/registration/fmcsa-data-dissemination-program> /
+<https://li-public.fmcsa.dot.gov/> (browser only; these 403 to scripts). Drop it
+in as `inshist_allwithhistory.txt` and the build picks it up (`build_all.py`
+prefers the `.csv`, falls back to the `.txt`).
+
+Note: `inshist` only feeds the chameleon insurance-*history* signals
+(cancel/replace-within-30-days, distinct-policy churn). Daily lapse detection
+keys off `ActPendInsur` (DAILY) instead, so `inshist` tolerates a monthly vintage.
+
+## Closed enforcement cases (the one remaining manual file)
+
+`closed_enforcement_cases_*.xlsx` comes from FMCSA's **A&I (Analysis &
+Information) Online** "Closed Enforcement Cases" report —
+<https://ai.fmcsa.dot.gov/EnforcementPrograms/EnforcementCases/Index?type=ClosedCases>
+— which is backed by FMCSA's **EMIS** (Enforcement Management Information System)
+and covers settled civil-penalty cases for the last 7 years (~200 rows). Export
+it to Excel from that page; the filename's long numeric suffix
+(`…_20260515005306`) is the A&I export timestamp.
+
+Why it stays manual: the data.transportation.gov mirror (`dxqq-yjrs`) is **dead**
+(stale 2018 snapshot, 0 columns, export errors), and `add_enforcement.py` reads
+the A&I **Excel layout** directly — `pl.read_excel(..., header_row=1)`, since the
+real header is on **row 2** (row 1 holds descriptive labels). So it's an A&I
+browser export, not a Socrata pull.
+
+`add_enforcement.py` aggregates per DOT into `enforcement_cases_count`,
+`enforcement_total_settled` ($), `enforcement_recent_date`, and
+`enforcement_violations` (semicolon-joined codes).
+
+**Is it used?** Yes — `classifyEnforcement` in `lib/analyzer.ts` makes it a
+verdict driver: a closed case within the last **24 months** (`recent`) **bumps
+the tier up one level**, and a "large" settlement (≥ `ENFORCEMENT_LARGE_SETTLEMENT`,
+currently **$25k** in code — note the `recent-enforcement` rule copy still says
+$75k) **floors the verdict at High**. It's also a CSV column + a reply pill. But
+coverage is tiny: only **~195 carriers** in the whole 2.08M-row parquet have any
+enforcement case, so for everyone else it's a clean no-op. Low-churn (a few new
+cases/month), so a slightly stale copy is low-risk — and it's worth keeping
+because when it *does* fire it's a strong signal (FMCSA found violations serious
+enough to fine).
+
+## `SMS_AB_PassProperty` (now automated)
+
+"AB Pass Property" = the A/B-eligible (interstate + intrastate-hazmat)
+**Property** carrier file. It's FMCSA's own **pre-computed BASIC output**: the
+five published BASIC measures (`UNSAFE_DRIV_MEASURE`, `HOS_DRIV_MEASURE`,
+`DRIV_FIT_MEASURE`, `CONTR_SUBST_MEASURE`, `VEH_MAINT_MEASURE`), their roadside
+inspection counts, and FMCSA's alert flags.
+
+It used to be a manual download from FMCSA's SMS Tools page
+(<https://ai.fmcsa.dot.gov/SMS/Tools/Downloads.aspx>), but data.transportation.gov
+carries a **Socrata mirror** — "SMS AB PassProperty", dataset **`4y6x-dmck`** —
+with the **identical 21-column schema**, so `refresh_sms_data.py --monthly` now
+auto-pulls it.
+
+`build_aggregates.py` (step 2) reads it for those five measures + alert flags;
+`compute_basics.py` then ranks them into the peer-group percentiles the analyzer
+shows. It's the FMCSA-authoritative source for the 5 public BASICs — we only
+*reconstruct* the two FMCSA doesn't publish (Crash Indicator, Hazmat Compliance)
+from the raw SMS Crash/Inspection files.
 
 ## Derived columns worth knowing about
 

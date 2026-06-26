@@ -40,23 +40,61 @@ SOURCES_DIR = DATA_DIR / "sources"
 SCRAPE_DIR = DATA_DIR / "fmcsa_scrape"
 LIB_DATA_DIR = ROOT / "lib" / "data"
 
+
+def _first_existing(*names: str) -> Path:
+    """First source file that exists, else the preferred (first) name. Lets a
+    source come from either of two filenames — e.g. inshist as the Socrata CSV
+    mirror (`inshist_allwithhistory.csv`, auto-downloaded) or FMCSA's native
+    `inshist_allwithhistory.txt`."""
+    for n in names:
+        p = SOURCES_DIR / n
+        if p.exists():
+            return p
+    return SOURCES_DIR / names[0]
+
+
+def _latest_glob(pattern: str, fallback: str) -> Path:
+    """Newest source file matching a glob (handles undated downloader output
+    and dated legacy files, e.g. Revocation_-_All_With_History*.csv)."""
+    matches = sorted(SOURCES_DIR.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+    return matches[0] if matches else SOURCES_DIR / fallback
+
+
 DEFAULT_ENV = {
     "FMCSA_OUTPUT_DIR": DATA_DIR,
+    # build_aggregates.py resolves a few inputs relative to INPUT_DIR/REFRESH_DIR
+    # rather than via a per-file env var (notably CRASH_PATH = INPUT_DIR/
+    # Crash_File.csv, and the motor-carrier-census _refreshable lookup). Point
+    # both at data/sources so it finds the promoted, undated refresh files
+    # instead of the ~/Downloads default.
+    "FMCSA_INPUT_DIR": SOURCES_DIR,
+    "FMCSA_REFRESH_DIR": SOURCES_DIR,
+    "FMCSA_MOTOR_CARRIER_CENSUS": SOURCES_DIR / "SMS_Input_-_Motor_Carrier_Census_Information.csv",
     "FMCSA_PARQUET": DATA_DIR / "carrier_aggregates.parquet",
     "FMCSA_IDENTITY_PARQUET": DATA_DIR / "carrier_identity.parquet",
     "FMCSA_THRESHOLDS_OUT": DATA_DIR / "national_thresholds.json",
     "FMCSA_THRESHOLDS_V2_OUT": DATA_DIR / "national_thresholds_v2.json",
     "FMCSA_SCRAPE_DIR": SCRAPE_DIR,
     "FMCSA_SERIOUS_VIOLATIONS": SCRAPE_DIR / "serious_violations_20260514.parquet",
-    "FMCSA_REVOCATION": SOURCES_DIR / "Revocation_-_All_With_History_20260514.csv",
-    "FMCSA_INSHIST": SOURCES_DIR / "inshist_allwithhistory.txt",
+    "FMCSA_REVOCATION": _latest_glob(
+        "Revocation_-_All_With_History*.csv",  # undated download or dated legacy
+        "Revocation_-_All_With_History.csv",
+    ),
+    "FMCSA_INSHIST": _first_existing(
+        "inshist_allwithhistory.csv",  # Socrata mirror (auto-downloaded), preferred
+        "inshist_allwithhistory.txt",  # FMCSA native dump (legacy/manual)
+    ),
     "FMCSA_ENFORCEMENT_XLSX": SOURCES_DIR / "closed_enforcement_cases_20260515005306.xlsx",
     "FMCSA_ACTPEND": SOURCES_DIR / "ActPendInsur_All_With_History.csv",
-    "FMCSA_PASSPROP": SOURCES_DIR / "SMS_AB_PassProperty_20260514.csv",
+    "FMCSA_PASSPROP": _latest_glob(
+        "SMS_AB_PassProperty*.csv",  # undated download or dated legacy
+        "SMS_AB_PassProperty.csv",
+    ),
     "FMCSA_CARRIER_AUTH": SOURCES_DIR / "Carrier_All_With_History.csv",
-    "FMCSA_INSPECTION_FILE": SOURCES_DIR / "SMS_Input_-_Inspection_20260518.csv",
-    "FMCSA_VIOLATION_FILE": SOURCES_DIR / "SMS_Input_-_Violation_20260518.csv",
-    "FMCSA_CRASH_FILE": SOURCES_DIR / "SMS_Input_-_Crash_20260518.csv",
+    # Downloader writes undated names; prefer those, fall back to dated legacy.
+    "FMCSA_INSPECTION_FILE": _first_existing("SMS_Input_-_Inspection.csv", "SMS_Input_-_Inspection_20260518.csv"),
+    "FMCSA_VIOLATION_FILE": _first_existing("SMS_Input_-_Violation.csv", "SMS_Input_-_Violation_20260518.csv"),
+    "FMCSA_CRASH_FILE": _first_existing("SMS_Input_-_Crash.csv", "SMS_Input_-_Crash_20260518.csv"),
     # Output tag for the per-DOT crash-scrape parquet (crash_indicator_<TAG>.parquet).
     # Bump this with the monthly drop so the scrape writes a fresh vintage file
     # (compute_basics globs the newest). The scraper recomputes Crash-Indicator

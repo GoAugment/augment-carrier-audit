@@ -3,11 +3,12 @@
   "reasonNote": "HIGH: crashes per million miles",
   "carrierName": "TARA WRECKER INC",
   "riskLevel": "Critical",
-  "riskScore": 32,
-  "riskTier": "Low",
+  "riskScore": 36,
+  "riskTier": "Medium",
   "riskContributions": [
     "+14 [Operations] Dormant authority reactivation pattern",
-    "+18 [Safety / compliance] Hard safety signal"
+    "+18 [Safety / compliance] Hard safety signal",
+    "+4 [Context] Insurer / ZIP risk context"
   ],
   "reasonLabels": [
     "Crashes"

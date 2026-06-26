@@ -11,7 +11,6 @@
     "+18 [Safety / compliance] Hard safety signal"
   ],
   "reasonLabels": [
-    "Insurance churn",
     "Crashes",
     "Recent revocation, since reinstated"
   ],
@@ -25,6 +24,6 @@
     "hazmatOos": "na",
     "revocations": "elevated",
     "authority": "clean",
-    "insurance": "elevated"
+    "insurance": "info"
   }
 }

@@ -91,7 +91,6 @@ const MIN_AUTHORITY_AGE_DAYS = 90;    // 90-day authority tenure
 const RECENT_REVOCATION_WINDOW_DAYS = 730;
 const CHRONIC_REVOCATION_THRESHOLD = 3;
 const RECENT_ENFORCEMENT_WINDOW_DAYS = 730;
-const ENFORCEMENT_LARGE_SETTLEMENT = 25_000;
 // MCS-150 freshness affects cpm reliability, denominator gets stale fast.
 const MCS150_STALE_DAYS = 730; // 24 months
 // Safety rating ages out, Hunt's 1992 Satisfactory shouldn't be treated as
@@ -1556,7 +1555,6 @@ function classifyEnforcement(c: FmcsaCarrier): {
   cell: AxisCell;
   reason: Reason | null;
   hit: boolean;
-  large: boolean;
 } {
   const since = daysAgo(c.enforcementRecentDate);
   const recent =
@@ -1572,22 +1570,30 @@ function classifyEnforcement(c: FmcsaCarrier): {
       },
       reason: null,
       hit: false,
-      large: false,
     };
   }
-  const large = c.enforcementTotalSettled >= ENFORCEMENT_LARGE_SETTLEMENT;
+  // A recent closed FMCSA civil-penalty case is the signal, full stop: FMCSA
+  // investigated, found violations, and fined the carrier. We deliberately do
+  // NOT tier on the settlement dollar amount — settled amounts are small and
+  // compressed (national median ≈ $5k, max ≈ $49k), don't scale with fleet
+  // size, and the negotiated figure says little about severity. The amount is
+  // kept as displayed context only.
+  const settled = c.enforcementTotalSettled;
+  const detail =
+    `${plural(c.enforcementCasesCount, "closed case")}` +
+    (settled > 0 ? `, $${settled.toLocaleString()} settled` : "") +
+    ` (latest ${c.enforcementRecentDate}).`;
   return {
     cell: {
-      status: large ? "high" : "elevated",
-      display: `$${(c.enforcementTotalSettled / 1000).toFixed(0)}k`,
-      detail: `${plural(c.enforcementCasesCount, "closed case")}, $${c.enforcementTotalSettled.toLocaleString()} settled (latest ${c.enforcementRecentDate}).`,
+      status: "elevated",
+      display: settled > 0 ? `$${(settled / 1000).toFixed(0)}k` : "case",
+      detail,
     },
     reason: {
       label: getRule("recent-enforcement").label,
-      detail: `${plural(c.enforcementCasesCount, "closed case")}, $${c.enforcementTotalSettled.toLocaleString()} settled (latest ${c.enforcementRecentDate}).`,
+      detail,
     },
     hit: true,
-    large,
   };
 }
 
@@ -2530,14 +2536,12 @@ function scoreCarrier(
   // Critical). Carriers now flag on their strongest INDIVIDUAL chameleon signal
   // (shared-fleet / diffuse-equipment / address-cluster, each with PU-scaled VIN
   // floors) and on the hard regulatory/fraud signals, no loose combined escalator.
-  if (enforcement.hit) {
-    if (enforcement.large) {
-      // Large settlement floor at High
-      if (level !== "Critical") level = "High";
-    } else if (level !== "Critical" && level !== "Low") {
-      // Bump existing tier up one for non-large enforcement
-      level = bumpUp(level);
-    }
+  if (enforcement.hit && level !== "Critical" && level !== "Low") {
+    // A recent closed enforcement case bumps the existing tier up one. We no
+    // longer special-case "large" settlements — the dollar amount is a poor
+    // severity proxy (see classifyEnforcement), so every recent case is treated
+    // the same.
+    level = bumpUp(level);
   }
 
   // Fold the strongest equipment-sharing signal into the carrier risk score.

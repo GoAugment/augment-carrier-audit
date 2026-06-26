@@ -24,21 +24,41 @@ ADAPTER = Path(os.environ.get("FMCSA_PARQUET_ADAPTER", ROOT / "lib" / "fmcsa-par
 
 def app_columns() -> list[str]:
     source = ADAPTER.read_text()
-    matches = re.findall(r"SELECT\s+([\s\S]*?)\s+FROM read_parquet", source)
-    if not matches:
-        raise RuntimeError(f"No SELECT ... FROM read_parquet block found in {ADAPTER}")
 
-    # fmcsa-parquet.ts also has a small SELECT for MC lookup; use the large
-    # carrier fetch projection.
-    body = max(matches, key=len)
+    # The carrier projection lives in the `CARRIER_SELECT_COLUMNS` template
+    # literal (interpolated into the fetch query as `SELECT ${...} FROM
+    # read_parquet`). Parse that const directly — regexing the SELECT site
+    # only captures the unexpanded `${CARRIER_SELECT_COLUMNS}` (or, worse, a
+    # neighbouring query), which silently drops columns including the
+    # DOT_NUMBER primary key.
+    const = re.search(
+        r"CARRIER_SELECT_COLUMNS\s*=\s*`([\s\S]*?)`", source
+    )
+    if const:
+        body = const.group(1)
+    else:
+        # Fallback: largest literal SELECT ... FROM read_parquet projection.
+        matches = re.findall(r"SELECT\s+([\s\S]*?)\s+FROM read_parquet", source)
+        if not matches:
+            raise RuntimeError(f"No CARRIER_SELECT_COLUMNS or SELECT block in {ADAPTER}")
+        body = max(matches, key=len)
+
     body = re.sub(r"--.*$", "", body, flags=re.MULTILINE)
     cols = []
     for part in body.split(","):
         col = part.strip()
-        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", col):
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", col) and col not in cols:
             cols.append(col)
     if not cols:
         raise RuntimeError(f"No projected columns parsed from {ADAPTER}")
+    # The DOT_NUMBER key is mandatory — the app filters/joins on it. Guard against
+    # ever pruning it out (a missing key silently breaks every parquet lookup).
+    if "DOT_NUMBER" not in cols:
+        raise RuntimeError(
+            f"Parsed app columns from {ADAPTER} but DOT_NUMBER is absent — refusing "
+            f"to prune away the primary key. Parsed {len(cols)} cols starting "
+            f"{cols[:3]}."
+        )
     return cols
 
 

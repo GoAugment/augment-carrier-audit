@@ -48,7 +48,11 @@ RESOURCE = "https://data.transportation.gov/resource/{id}.csv"
 # instead — a drop only costs one cheap chunk. The SODA values are byte-identical
 # to the export (same date formats, same :id order); only the header differs
 # (quoted/lowercase), so we reuse the export header verbatim to preserve casing.
-PAGINATED = {"az4n-8mr2"}  # Company_Census_File.csv (~4.4M rows / 1.5 GB)
+PAGINATED = {
+    "az4n-8mr2",  # Company_Census_File.csv (~4.4M rows / 1.5 GB)
+    "6sqe-dvqs",  # inshist_allwithhistory.csv (~7.4M rows / 1.3 GB)
+    "aayw-vxb3",  # Crash_File.csv (~5M rows / 1.85 GB)
+}
 PAGE_SIZE = 250_000
 
 # Socrata dataset id -> output filename (matches what the pipeline expects).
@@ -66,6 +70,32 @@ MONTHLY = {
     "4wxs-vbns": "SMS_Input_-_Crash.csv",
     "kjg3-diqy": "SMS_Input_-_Motor_Carrier_Census_Information.csv",
     "az4n-8mr2": "Company_Census_File.csv",
+    # InsHist - All With History (insurance policy lifecycle: cancel / replace /
+    # name-change / transfer). The Socrata export has the SAME 17-column layout,
+    # in the same order, as FMCSA's native header-less `inshist_allwithhistory.txt`
+    # — only difference is a header row (add_inshist.py sniffs + skips it) and a
+    # zero-padded DOT (cast handles it). ~7.4M rows / ~1.3 GB, so it pages.
+    # Replaces the old manual L&I Data-Dissemination browser download.
+    "6sqe-dvqs": "inshist_allwithhistory.csv",
+    # Carrier - All With History: operating authority + BIPD/cargo/bond
+    # insurance flags + business/mailing address. 43-col export matches
+    # build_aggregates.py's reader exactly. ~335 MB. (Old README id n76j-r3iz
+    # is dead; this is the live one, updated daily.)
+    "6eyk-hxee": "Carrier_All_With_History.csv",
+    # Revocation - All With History: authority revocations (voluntary +
+    # involuntary). 6-col export matches add_revocations.py. ~120 MB. (Old
+    # README id 2eyu-5pc4 is dead.)
+    "sa6p-acbp": "Revocation_-_All_With_History.csv",
+    # SMS AB PassProperty: FMCSA's pre-computed BASIC measures + alert flags for
+    # A/B-eligible Property carriers. Socrata mirror of the SMS Tools download —
+    # 21-col export matches build_aggregates.py's reader exactly. ~65 MB.
+    "4y6x-dmck": "SMS_AB_PassProperty.csv",
+    # Crash File: raw MCMIS state crash reports (59 cols, UPPER_CASE headers —
+    # DOT_NUMBER, REPORT_DATE, FATALITIES, INJURIES, TOW_AWAY, HAZMAT_RELEASED).
+    # build_aggregates.py reads this as CRASH_PATH for 24-mo crash counts /
+    # crashes-per-million. ~5M rows / ~1.85 GB, so it pages. (Was a manual
+    # ~/Downloads file before; the README's "do not use" note is wrong.)
+    "aayw-vxb3": "Crash_File.csv",
 }
 DAILY = {
     # ActPendInsur — Active & Pending Insurance, All With History. Exact schema
@@ -75,9 +105,10 @@ DAILY = {
     "qh9u-swkp": "ActPendInsur_All_With_History.csv",
 }
 DATASETS = {**MONTHLY, **DAILY}
-# NOTE: the full insurance *event* history (inshist_allwithhistory.txt, ~1.3 GB)
-# is a separate non-Socrata L&I feed; ActPendInsur above already carries the
-# pending-cancellation dates, so daily lapse detection doesn't need it.
+# NOTE: the full insurance *event* history now comes from the Socrata InsHist
+# mirror (6sqe-dvqs, in MONTHLY above) — no more manual L&I download. ActPendInsur
+# (DAILY) still carries the pending-cancellation dates daily lapse detection needs;
+# inshist only feeds the slower-moving chameleon cancel/replace-history signals.
 
 MAX_ATTEMPTS = 6
 

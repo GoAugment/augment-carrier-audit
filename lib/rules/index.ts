@@ -36,7 +36,7 @@ export const RULES: Rule[] = [
       critical: "FMCSA status_code is anything other than 'A' (Active).",
     },
     fixtures: {
-      critical: { dot: 4571505, reason: "GRANT GORDON: status_code=I (May 2026 snapshot)." },
+      critical: { dot: 4440122, reason: "GENESIS TRANSPORT LLC: status_code=I (Jun 2026 snapshot)." },
       none: { dot: 53467, reason: "Werner Enterprises: status_code=A." },
     },
   },
@@ -210,12 +210,12 @@ export const RULES: Rule[] = [
     category: "authority",
     label: "Recent enforcement",
     definition:
-      "FMCSA closed at least one civil-penalty enforcement case against this carrier in recent history. Enforcement cases follow compliance reviews and indicate FMCSA found violations serious enough to fine. Large settlements ($75k+) often correlate with safety patterns the carrier has not corrected.",
+      "FMCSA closed at least one civil-penalty enforcement case against this carrier within the last 24 months. Enforcement cases follow compliance reviews and indicate FMCSA found violations serious enough to fine — a documented, adjudicated compliance failure. We bump the verdict one tier on any recent case; the settlement dollar amount is shown for context but does not change the tier (amounts are small and don't track severity).",
     thresholds: {
-      high: "≥1 closed enforcement case (large = settlement ≥ $75,000).",
+      caution: "≥1 closed enforcement case in the last 24 months (settlement $ is context only).",
     },
     fixtures: {
-      high: { dot: 3122364, reason: "MARIC TRANSPORTATION CORP: $48k settled, 1 closed case." },
+      caution: { dot: 3122364, reason: "MARIC TRANSPORTATION CORP: $48k settled, 1 closed case." },
       none: { dot: 53467, reason: "Werner: no enforcement cases." },
     },
   },
