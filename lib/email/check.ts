@@ -857,10 +857,18 @@ async function evalChameleonCluster(
   const otherDots = matchDots.filter((d) => d !== focalDot);
   if (otherDots.length === 0) return [];
 
-  const others = otherDots; // alias kept for the threshold checks below
+  const others = otherDots; // full list — drives the count + threshold checks
+  // PERF: only fetch the per-sibling records for a capped SAMPLE. fetchCarriers
+  // and fetchIdentity fall back to the full ~95MB/96MB parquets above 25 DOTs
+  // (bypassing the fast Blob bucket path), so a corporate-switchboard phone on
+  // 25+ DOTs would otherwise cost ~4s. The switchboard branch only needs the
+  // COUNT (others.length, free) plus one revoked sibling for an info-tier note,
+  // and the chameleon branch only triggers below the threshold (1-2 siblings),
+  // so a 25-DOT sample is always sufficient and keeps us on buckets.
+  const sample = otherDots.slice(0, 25);
   const [otherCarriers, otherIdentities, focalCarriers] = await Promise.all([
-    fetchCarriers(otherDots),
-    fetchIdentity(otherDots),
+    fetchCarriers(sample),
+    fetchIdentity(sample),
     fetchCarriers([focalDot]),
   ]);
   const focal = focalCarriers.get(focalDot);
@@ -871,7 +879,8 @@ async function evalChameleonCluster(
   // Even if one of them happens to have revocation history, that's not a
   // chameleon signal for the focal, it's just a sibling DOT.
   if (others.length >= CORPORATE_PHONE_MATCH_THRESHOLD) {
-    const revokedSibling = others.find((o) => {
+    // Search the fetched sample for a revoked sibling (info-tier note only).
+    const revokedSibling = sample.find((o) => {
       const c = otherCarriers.get(o);
       return c && (c.involuntaryRevocations > 0 || c.priorRevokeFlag);
     });
@@ -887,10 +896,11 @@ async function evalChameleonCluster(
     ];
   }
 
-  // Few matches (1-2). Now distinguish "true chameleon" from "sister entity"
-  // by relative timing.
+  // Few matches (1-2, below the switchboard threshold). Now distinguish "true
+  // chameleon" from "sister entity" by relative timing. (sample === otherDots
+  // here since the count is under the threshold, well within the 25 cap.)
   const signals: Signal[] = [];
-  for (const o of otherDots) {
+  for (const o of sample) {
     const c = otherCarriers.get(o);
     if (!c) continue;
     const matchedIdentity = otherIdentities.get(o);
