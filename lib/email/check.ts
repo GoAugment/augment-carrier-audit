@@ -857,50 +857,38 @@ async function evalChameleonCluster(
   const otherDots = matchDots.filter((d) => d !== focalDot);
   if (otherDots.length === 0) return [];
 
-  const others = otherDots; // full list — drives the count + threshold checks
-  // PERF: only fetch the per-sibling records for a capped SAMPLE. fetchCarriers
-  // and fetchIdentity fall back to the full ~95MB/96MB parquets above 25 DOTs
-  // (bypassing the fast Blob bucket path), so a corporate-switchboard phone on
-  // 25+ DOTs would otherwise cost ~4s. The switchboard branch only needs the
-  // COUNT (others.length, free) plus one revoked sibling for an info-tier note,
-  // and the chameleon branch only triggers below the threshold (1-2 siblings),
-  // so a 25-DOT sample is always sufficient and keeps us on buckets.
-  const sample = otherDots.slice(0, 25);
-  const [otherCarriers, otherIdentities, focalCarriers] = await Promise.all([
-    fetchCarriers(sample),
-    fetchIdentity(sample),
-    fetchCarriers([focalDot]),
-  ]);
-  const focal = focalCarriers.get(focalDot);
-  const focalAddDate = focal?.dotAddDate ? Date.parse(focal.dotAddDate) : null;
-
-  // Corporate-phone heuristic: when many DOTs share the phone, it's almost
-  // always a corporate switchboard (Schneider's 800-558-6767 is on 6+ DOTs).
-  // Even if one of them happens to have revocation history, that's not a
-  // chameleon signal for the focal, it's just a sibling DOT.
-  if (others.length >= CORPORATE_PHONE_MATCH_THRESHOLD) {
-    // Search the fetched sample for a revoked sibling (info-tier note only).
-    const revokedSibling = sample.find((o) => {
-      const c = otherCarriers.get(o);
-      return c && (c.involuntaryRevocations > 0 || c.priorRevokeFlag);
-    });
+  // Corporate switchboard: 3+ DOTs share the phone (Schneider's 800-558-6767 is
+  // on 6+ DOTs). This is info-tier — explicitly NOT a chameleon signal for the
+  // focal — so we report the COUNT and stop. We deliberately do NOT fetch the
+  // siblings' records here: on a big cluster those DOTs scatter across many
+  // 10k-DOT buckets, and fetchCarriers/fetchIdentity read each bucket serially
+  // from Blob (~150ms each) — ~4s for a non-actionable note. The count alone
+  // (from the phone index) makes the point that the line is shared.
+  if (otherDots.length >= CORPORATE_PHONE_MATCH_THRESHOLD) {
     return [
       {
         category: "chameleon_cluster",
         tier: "info",
         label: getRule("phone-corp-switchboard").label,
-        detail: revokedSibling
-          ? `${others.length} other DOTs use this phone. Appears to be a corporate dispatch line. One sibling DOT (${carrierHistoryBrief(revokedSibling, otherCarriers.get(revokedSibling), otherIdentities.get(revokedSibling))}) has historical revocations, but this is sibling/family history, not re-incarnation of the focal carrier.`
-          : `${others.length} other DOTs use this phone. Appears to be a corporate dispatch line shared across affiliated authorities.`,
+        detail: `${otherDots.length} other DOTs use this phone. Appears to be a corporate dispatch line shared across affiliated authorities.`,
       },
     ];
   }
 
-  // Few matches (1-2, below the switchboard threshold). Now distinguish "true
-  // chameleon" from "sister entity" by relative timing. (sample === otherDots
-  // here since the count is under the threshold, well within the 25 cap.)
+  // Few matches (1-2, below the switchboard threshold) — these ARE verdict-
+  // relevant (a revoked predecessor on a shared phone is the chameleon tell), so
+  // fetch their records. Cheap: 1-2 DOTs = 1-2 bucket reads.
+  const [otherCarriers, otherIdentities, focalCarriers] = await Promise.all([
+    fetchCarriers(otherDots),
+    fetchIdentity(otherDots),
+    fetchCarriers([focalDot]),
+  ]);
+  const focal = focalCarriers.get(focalDot);
+  const focalAddDate = focal?.dotAddDate ? Date.parse(focal.dotAddDate) : null;
+
+  // Distinguish "true chameleon" from "sister entity" by relative timing.
   const signals: Signal[] = [];
-  for (const o of sample) {
+  for (const o of otherDots) {
     const c = otherCarriers.get(o);
     if (!c) continue;
     const matchedIdentity = otherIdentities.get(o);
