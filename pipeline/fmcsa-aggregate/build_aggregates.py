@@ -31,8 +31,8 @@ import polars as pl
 
 # --- config -----------------------------------------------------------------
 
-SNAPSHOT_DATE = 20260514  # YYYYMMDD int — used to derive 24-mo window
-WINDOW_START = 20240514   # 24 months before snapshot
+SNAPSHOT_DATE = 20260626  # YYYYMMDD int — used to derive 24-mo window
+WINDOW_START = 20240626   # 24 months before snapshot
 
 # Non-API feeds (PassProperty, Crash_File, Carrier auth, ActPendInsur) live here.
 # Override with FMCSA_INPUT_DIR for a candidate build from a staging dir.

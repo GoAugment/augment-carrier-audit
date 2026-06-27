@@ -100,7 +100,7 @@ DEFAULT_ENV = {
     # (compute_basics globs the newest). The scraper recomputes Crash-Indicator
     # eligibility from FMCSA_CRASH_FILE's date automatically, so only this tag +
     # the dated filenames above need updating each month.
-    "SMS_DATA_TAG": "20260514",
+    "SMS_DATA_TAG": "20260626",
     "FMCSA_COMPANY_CENSUS": SOURCES_DIR / "Company_Census_File.csv",
     "FMCSA_ZIP_RISK_OUT": LIB_DATA_DIR / "zip-risk.json",
     "FMCSA_INSURER_RISK_OUT": LIB_DATA_DIR / "insurer-risk.json",

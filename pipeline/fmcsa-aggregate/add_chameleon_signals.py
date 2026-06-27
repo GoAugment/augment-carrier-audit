@@ -38,7 +38,7 @@ INSP = (
     else Path("/Users/art/Downloads/SMS_Input_-_Inspection_20260518.csv")
 )
 INSHIST = Path(os.environ.get("FMCSA_INSHIST", "/Users/art/Downloads/inshist_allwithhistory.txt"))
-SNAPSHOT_DATE = "2026-05-14"
+SNAPSHOT_DATE = "2026-06-26"
 
 def log(m): print(f"[add_new_signals] {m}", flush=True)
 
