@@ -161,7 +161,7 @@ async function computeVerdict(e: ExtractedEmail): Promise<Verdict> {
   signals.push(...evalSenderCandidates(e, identity));
   signals.push(...evalPhoneCandidates(e, identity));
   signals.push(...evalMessageAuth(e, identity));
-  signals.push(...evalLaneViability(e, identity));
+  signals.push(...evalLaneViability(e, carrier, identity));
   signals.push(...evalLaneCoverage(e, carrier));
   signals.push(...evalHazmat(e, identity, carrier));
   signals.push(...evalChameleonAddressCluster(carrier));
@@ -572,6 +572,7 @@ function evalMessageAuth(
  */
 function evalLaneViability(
   e: ExtractedEmail,
+  carrier: FmcsaCarrier,
   identity: CarrierIdentity | undefined
 ): Signal[] {
   if (!identity) return [];
@@ -587,6 +588,20 @@ function evalLaneViability(
   const hasInterstate =
     identity.interstateBeyond100mi || identity.interstateWithin100mi;
   if (!hasInterstate) {
+    if (carrier.hasBrokerAuthority) {
+      const authority = authorityTypesText(carrier);
+      const operation = identity.operatingArea
+        ? ` (${operatingAreaLabel(identity.operatingArea)})`
+        : "";
+      return [
+        {
+          category: "lane_viability",
+          tier: "caution",
+          label: "Verify operating carrier DOT",
+          detail: `The checked DOT has ${authority} authority and the page proposes lane ${origin} → ${dest} (interstate), but MCS-150 records 0 interstate drivers for this DOT${operation}. If this DOT is the broker/parent authority, confirm the DOT/MC that will operate the truck. If this DOT is supposed to haul the load itself, do not tender until interstate authority is verified.`,
+        },
+      ];
+    }
     return [
       {
         category: "lane_viability",
@@ -611,6 +626,39 @@ function evalLaneViability(
   }
 
   return [];
+}
+
+function authorityTypes(carrier: FmcsaCarrier): string[] {
+  const out: string[] = [];
+  if (carrier.hasPropertyAuthority) out.push("Property");
+  if (carrier.hasBrokerAuthority) out.push("Broker");
+  if (carrier.hasPassengerAuthority) out.push("Passenger");
+  if (carrier.hasHhgAuthority) out.push("HHG");
+  if (carrier.hasPrivateAuthority) out.push("Private");
+  if (carrier.hasEnterpriseAuthority) out.push("Enterprise");
+  return out;
+}
+
+function authorityTypesText(carrier: FmcsaCarrier): string {
+  const types = authorityTypes(carrier);
+  return types.length > 0
+    ? types.join(" + ")
+    : carrier.operationClassification || "unknown";
+}
+
+function operatingAreaLabel(area: string): string {
+  switch (area) {
+    case "interstate_otr":
+      return "Interstate OTR";
+    case "interstate_local":
+      return "Interstate local";
+    case "intrastate_long":
+      return "Intrastate beyond 100 mi";
+    case "intrastate_local":
+      return "Intrastate local";
+    default:
+      return area;
+  }
 }
 
 // ============================================================================
@@ -810,8 +858,12 @@ async function evalChameleonCluster(
   if (otherDots.length === 0) return [];
 
   const others = otherDots; // alias kept for the threshold checks below
-  const otherCarriers = await fetchCarriers(otherDots);
-  const focal = (await fetchCarriers([focalDot])).get(focalDot);
+  const [otherCarriers, otherIdentities, focalCarriers] = await Promise.all([
+    fetchCarriers(otherDots),
+    fetchIdentity(otherDots),
+    fetchCarriers([focalDot]),
+  ]);
+  const focal = focalCarriers.get(focalDot);
   const focalAddDate = focal?.dotAddDate ? Date.parse(focal.dotAddDate) : null;
 
   // Corporate-phone heuristic: when many DOTs share the phone, it's almost
@@ -829,7 +881,7 @@ async function evalChameleonCluster(
         tier: "info",
         label: getRule("phone-corp-switchboard").label,
         detail: revokedSibling
-          ? `${others.length} other DOTs use this phone. Appears to be a corporate dispatch line. One sibling DOT (${revokedSibling}) has historical revocations, but this is sibling/family history, not re-incarnation of the focal carrier.`
+          ? `${others.length} other DOTs use this phone. Appears to be a corporate dispatch line. One sibling DOT (${carrierHistoryBrief(revokedSibling, otherCarriers.get(revokedSibling), otherIdentities.get(revokedSibling))}) has historical revocations, but this is sibling/family history, not re-incarnation of the focal carrier.`
           : `${others.length} other DOTs use this phone. Appears to be a corporate dispatch line shared across affiliated authorities.`,
       },
     ];
@@ -841,6 +893,8 @@ async function evalChameleonCluster(
   for (const o of otherDots) {
     const c = otherCarriers.get(o);
     if (!c) continue;
+    const matchedIdentity = otherIdentities.get(o);
+    const matchedBrief = carrierHistoryBrief(o, c, matchedIdentity);
 
     const hasRevocation = c.involuntaryRevocations > 0 || c.priorRevokeFlag;
     const matchedRevokeDate = c.mostRecentInvoluntaryDate
@@ -860,7 +914,7 @@ async function evalChameleonCluster(
         category: "chameleon_cluster",
         tier: "critical",
         label: getRule("phone-chameleon-revoked-predecessor").label,
-        detail: `Sender's phone matches DOT ${o} (${c.legalName ?? "unnamed"}), which had authority revoked ${c.mostRecentInvoluntaryDate}. Focal DOT ${focalDot} was registered after that revocation. Textbook chameleon pattern.`,
+        detail: `Phone also maps to ${matchedBrief}, which had authority revoked ${c.mostRecentInvoluntaryDate}. Focal DOT ${focalDot} was registered after that revocation. Textbook chameleon pattern.`,
       });
     } else if (hasRevocation) {
       // Phone match with a revoked carrier, but timing doesn't support
@@ -869,7 +923,7 @@ async function evalChameleonCluster(
         category: "chameleon_cluster",
         tier: "caution",
         label: getRule("phone-shared-with-revoked-carrier").label,
-        detail: `Phone matches DOT ${o} (${c.legalName ?? "unnamed"}), which has revocation history. Timing doesn't fit a re-incarnation pattern (focal carrier is older or the revocation is more recent than focal registration). Likely a sibling/family entity; verify if uncertain.`,
+        detail: `Phone also maps to ${matchedBrief}, which has revocation history. Timing doesn't fit a re-incarnation pattern (focal carrier is older or the revocation is more recent than focal registration). Likely a sibling/family entity; verify if uncertain.`,
       });
     } else {
       // Few live siblings on the same phone. Previously dismissed as a benign
@@ -882,12 +936,35 @@ async function evalChameleonCluster(
         category: "chameleon_cluster",
         tier: "caution",
         label: getRule("phone-shared-one-other-dot").label,
-        detail: `Sender's phone also belongs to active DOT ${o} (${c.legalName ?? "unnamed"}), which has no revocation history. Shared contact between separate active carriers can mean one operator running multiple authorities, verify they're the same legitimate business before tendering.`,
+        detail: `Phone also maps to ${matchedBrief}, which has no revocation history. Shared contact between separate active carriers can mean one operator running multiple authorities, verify they're the same legitimate business before tendering.`,
       });
     }
   }
 
   return signals;
+}
+
+function carrierHistoryBrief(
+  dot: number,
+  carrier: FmcsaCarrier | undefined,
+  identity: CarrierIdentity | undefined
+): string {
+  if (!carrier) return `DOT ${dot}`;
+  const parts: string[] = [];
+  if (carrier.mcNumber) parts.push(carrier.mcNumber);
+  const auth = authorityTypesText(carrier);
+  if (auth) parts.push(auth);
+  if (identity?.operatingArea) parts.push(operatingAreaLabel(identity.operatingArea));
+  const cargo = identity ? cargoLabels(identity.cargo).slice(0, 2) : [];
+  if (cargo.length > 0) parts.push(cargo.join(" + "));
+  if (carrier.totalPowerUnits > 0) parts.push(`${carrier.totalPowerUnits} PU`);
+  if (carrier.statusCode) parts.push(`status ${carrier.statusCode}`);
+  if (carrier.involuntaryRevocations > 0) {
+    parts.push(`${carrier.involuntaryRevocations} revocation${carrier.involuntaryRevocations === 1 ? "" : "s"}`);
+  } else if (carrier.priorRevokeFlag) {
+    parts.push("prior-revoke flag");
+  }
+  return `DOT ${dot} (${[carrier.legalName ?? "unnamed", ...parts].join("; ")})`;
 }
 
 // ============================================================================
@@ -1151,6 +1228,14 @@ function composeVerdict(
       mostRecentRevocationDate: carrier.mostRecentInvoluntaryDate ?? null,
       allowedToOperate: carrier.allowedToOperate ?? null,
       statusCode: carrier.statusCode ?? null,
+      operationClassification: carrier.operationClassification ?? null,
+      authorityTypes: authorityTypes(carrier),
+      hasPropertyAuthority: carrier.hasPropertyAuthority,
+      hasBrokerAuthority: carrier.hasBrokerAuthority,
+      hasPassengerAuthority: carrier.hasPassengerAuthority,
+      hasHhgAuthority: carrier.hasHhgAuthority,
+      hasPrivateAuthority: carrier.hasPrivateAuthority,
+      hasEnterpriseAuthority: carrier.hasEnterpriseAuthority,
       operatingArea: identity?.operatingArea ?? null,
       cargoCapabilities: cargoCaps,
       fmcsaEmailDomain: identity?.emailDomain ?? null,
@@ -1340,12 +1425,18 @@ function buildVerifyActions(
     add("review the inspection & out-of-service history");
   }
   if (/(chameleon|fleet|equipment spread|address|sibling|re-?incarnat|prior.?revoke)/.test(txt)) {
-    add("confirm which DOT will actually haul");
+    add("confirm which DOT/MC will actually haul");
+  }
+  if (/(operating carrier|operating dot|broker\/parent|actually haul)/.test(txt)) {
+    add("confirm which DOT/MC will actually haul");
+  }
+  if (/(verify operating carrier dot|not authorized for interstate|interstate-local|operating area|hazmat)/.test(txt)) {
+    add("confirm the operating authority covers this lane");
   }
   if (/(sender|email|phone|domain|impersonat|mismatch)/.test(txt)) {
     add("verify the carrier's email & phone against FMCSA");
   }
-  if (/(lane|coverage)/.test(txt)) {
+  if (/(coverage)/.test(txt)) {
     add("confirm BIPD coverage fits this lane");
   }
   return out.slice(0, 3);

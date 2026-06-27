@@ -203,6 +203,17 @@ export interface VerdictCarrierSummary {
    *  carrier from one that was revoked then REINSTATED (active again): a recent
    *  involuntary-revocation date alone doesn't mean "currently revoked". */
   statusCode: string | null;
+  /** FMCSA operation classification, e.g. "AUTHORIZED FOR HIRE". */
+  operationClassification: string | null;
+  /** Docket authority mix on file. Helps separate operating carriers from
+   *  broker/parent authorities when a captured TMS page contains both. */
+  authorityTypes: string[];
+  hasPropertyAuthority: boolean;
+  hasBrokerAuthority: boolean;
+  hasPassengerAuthority: boolean;
+  hasHhgAuthority: boolean;
+  hasPrivateAuthority: boolean;
+  hasEnterpriseAuthority: boolean;
   /** Coarse operating area (interstate_otr / interstate_local / intrastate_*). */
   operatingArea: string | null;
   /** Up to 3 cargo types from the carrier's MCS-150 self-declaration —

@@ -1283,6 +1283,11 @@ export function buildReplyHtml(verdict: Verdict, extracted?: ExtractedEmail): st
       const authority = ageFromYear(c.dotIssued);
       if (authority) cells.push(labelValueCell("Authority", esc(authority)));
     }
+    if (c.authorityTypes.length > 0) {
+      cells.push(labelValueCell("Docket auth", esc(c.authorityTypes.join(" + "))));
+    } else if (c.operationClassification) {
+      cells.push(labelValueCell("Docket auth", esc(c.operationClassification)));
+    }
     if (c.powerUnits) {
       const driverPart = c.drivers ? ` · ${c.drivers} driver${c.drivers === 1 ? "" : "s"}` : "";
       cells.push(labelValueCell("Fleet", `${c.powerUnits} power unit${c.powerUnits === 1 ? "" : "s"}${driverPart}`));
