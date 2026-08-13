@@ -497,6 +497,23 @@ def merge_insurance() -> None:
 
     if fresh.height:
         ty = pl.col("OP_AUTH_TYPE").fill_null("")
+        # Authority-type matching must be EXACT, not substring. FMCSA's strings
+        # are adversarial for naive regexes:
+        #   "Broker of Property (Except Household Goods)"  matches /property/
+        #   "Motor Carrier of Property (Except Household Goods)" matches /household/
+        # The first turned broker-only dockets into property carriers (giving
+        # them a BIPD requirement they don't have, so NULL BIPD -> $0 -> a false
+        # Critical); the second put an HHG flag on 93,476 property carriers.
+        is_carrier = ty.str.contains("Motor Carrier")
+        # "of Household Goods" is present in the HHG types and absent from
+        # "(Except Household Goods)".
+        is_hhg = ty.str.contains("of Household Goods")
+        # Only ACTIVE authorities create obligations. A pending or withdrawn
+        # authority has no BIPD requirement, and MAX(MIN_COV_AMOUNT) downstream
+        # is status-blind — a withdrawn passenger authority was lifting a
+        # carrier's requirement from $750k to $5M and making its real $1M filing
+        # look sub-minimum.
+        fresh = fresh.filter(pl.col("OP_AUTH_STATUS") == "Active")
         built = (
             fresh.join(bipd, on="dot", how="left")
             .with_columns(
@@ -506,17 +523,15 @@ def merge_insurance() -> None:
                 BIPD_FILE=pl.col("bipd_k").round(0).cast(pl.Int64, strict=False).cast(pl.Utf8).str.zfill(5),
                 MIN_COV_AMOUNT=(pl.col("MIN_COV_AMOUNT").cast(pl.Float64, strict=False) / 1000.0)
                     .round(0).cast(pl.Int64, strict=False).cast(pl.Utf8).str.zfill(5),
-                PROPERTY_CHK=pl.when(ty.str.contains("(?i)property")).then(pl.lit("Y")).otherwise(pl.lit("N")),
-                PASSENGER_CHK=pl.when(ty.str.contains("(?i)passenger")).then(pl.lit("Y")).otherwise(pl.lit("N")),
-                HHG_CHK=pl.when(ty.str.contains("(?i)household")).then(pl.lit("Y")).otherwise(pl.lit("N")),
-                ENTERPRISE_CHK=pl.when(ty.str.contains("(?i)enterprise")).then(pl.lit("Y")).otherwise(pl.lit("N")),
-                _stat=pl.when(pl.col("OP_AUTH_STATUS") == "Active").then(pl.lit("A"))
-                       .when(pl.col("OP_AUTH_STATUS").is_in(["Inactive", "Withdrawn"])).then(pl.lit("I"))
-                       .otherwise(pl.lit("N")),
+                PROPERTY_CHK=pl.when(is_carrier & ty.str.contains("of Property")).then(pl.lit("Y")).otherwise(pl.lit("N")),
+                PASSENGER_CHK=pl.when(is_carrier & ty.str.contains("Passenger")).then(pl.lit("Y")).otherwise(pl.lit("N")),
+                HHG_CHK=pl.when(is_carrier & is_hhg).then(pl.lit("Y")).otherwise(pl.lit("N")),
+                ENTERPRISE_CHK=pl.when(ty.str.contains("Enterprise")).then(pl.lit("Y")).otherwise(pl.lit("N")),
+                _stat=pl.lit("A"),  # only Active rows survive the filter above
             )
             .with_columns(
-                COMMON_STAT=pl.when(ty.str.contains("(?i)broker")).then(pl.lit("N")).otherwise(pl.col("_stat")),
-                BROKER_STAT=pl.when(ty.str.contains("(?i)broker")).then(pl.col("_stat")).otherwise(pl.lit("N")),
+                COMMON_STAT=pl.when(ty.str.contains("Broker")).then(pl.lit("N")).otherwise(pl.col("_stat")),
+                BROKER_STAT=pl.when(ty.str.contains("Broker")).then(pl.col("_stat")).otherwise(pl.lit("N")),
             )
         )
         for c in cols:

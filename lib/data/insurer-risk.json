@@ -79,6 +79,54 @@
 "rate": 0.0609,
 "n": 805
 },
+"BULLDOG NATIONAL RRG GROUP INC": {
+"tier": "elevated",
+"lift": 2.1,
+"rate": 0.0694,
+"n": 1066
+},
+"STAR MUTUAL RRG": {
+"tier": "elevated",
+"lift": 1.7,
+"rate": 0.0571,
+"n": 1541
+},
+"AMGUARD INSURANCE COMPANY": {
+"tier": "elevated",
+"lift": 1.7,
+"rate": 0.056,
+"n": 1072
+},
+"SAFETY INSURANCE CO.": {
+"tier": "elevated",
+"lift": 1.9,
+"rate": 0.063,
+"n": 1222
+},
+"EVERSPAN INSURANCE COMPANY": {
+"tier": "high",
+"lift": 2.8,
+"rate": 0.092,
+"n": 761
+},
+"BERKSHIRE HATHAWAY DIRECT INSURANCE COMPANY": {
+"tier": "high",
+"lift": 3.3,
+"rate": 0.1107,
+"n": 1012
+},
+"INCLINE CASUALTY COMPANY": {
+"tier": "elevated",
+"lift": 1.5,
+"rate": 0.0506,
+"n": 1798
+},
+"SHELTER GENERAL INSURANCE COMPANY": {
+"tier": "elevated",
+"lift": 2.0,
+"rate": 0.0668,
+"n": 1183
+},
 "INTEGON INDEMNITY CORPORATION": {
 "tier": "high",
 "lift": 3.1,
@@ -132,54 +180,6 @@
 "lift": 2.6,
 "rate": 0.0853,
 "n": 774
-},
-"BULLDOG NATIONAL RRG GROUP INC": {
-"tier": "elevated",
-"lift": 2.1,
-"rate": 0.0694,
-"n": 1066
-},
-"STAR MUTUAL RRG": {
-"tier": "elevated",
-"lift": 1.7,
-"rate": 0.0571,
-"n": 1541
-},
-"AMGUARD INSURANCE COMPANY": {
-"tier": "elevated",
-"lift": 1.7,
-"rate": 0.056,
-"n": 1072
-},
-"SAFETY INSURANCE CO.": {
-"tier": "elevated",
-"lift": 1.9,
-"rate": 0.063,
-"n": 1222
-},
-"EVERSPAN INSURANCE COMPANY": {
-"tier": "high",
-"lift": 2.8,
-"rate": 0.092,
-"n": 761
-},
-"BERKSHIRE HATHAWAY DIRECT INSURANCE COMPANY": {
-"tier": "high",
-"lift": 3.3,
-"rate": 0.1107,
-"n": 1012
-},
-"INCLINE CASUALTY COMPANY": {
-"tier": "elevated",
-"lift": 1.5,
-"rate": 0.0506,
-"n": 1798
-},
-"SHELTER GENERAL INSURANCE COMPANY": {
-"tier": "elevated",
-"lift": 2.0,
-"rate": 0.0668,
-"n": 1183
 },
 "ACCREDITED SPECIALTY INSURANCE COMPANY": {
 "tier": "high",

@@ -1254,8 +1254,17 @@ function classifyRevocation(c: FmcsaCarrier): {
   // Revoked-then-reinstated requires currently active (status_code=A) AND
   // insurance restored — status A alone isn't enough (a carrier can read Active
   // with $0 BIPD, meaning the lapse that drove the revocation isn't cured).
+  // ...and NOT under an in-effect FMCSA suspension for lack of insurance. Both
+  // of the other tests are satisfied by a suspended carrier — census status
+  // lags at Active, and the BIPD amount on file predates the suspension — so
+  // without this the row rendered "Recent revocation, since reinstated" beside
+  // an authority cell reading "Suspended (no insurance)". Mirrors the same
+  // exclusion in computeRiskScore's revocationReinstated.
   const reinstated =
-    code === "A" && allowed !== "N" && c.bipdInsuranceOnFile > 0;
+    code === "A" &&
+    allowed !== "N" &&
+    c.bipdInsuranceOnFile > 0 &&
+    c.insuranceSuspensionStatus !== "effective";
   const sinceLastInvol = daysAgo(c.mostRecentInvoluntaryDate);
   const recentRevoke =
     sinceLastInvol !== null && sinceLastInvol <= RECENT_REVOCATION_WINDOW_DAYS;

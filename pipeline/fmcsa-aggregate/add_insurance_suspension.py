@@ -52,11 +52,18 @@ SOURCES = Path(os.environ.get("FMCSA_SOURCES_DIR", HERE.parent.parent / "data" /
 MERGED = Path(os.environ.get("FMCSA_MERGED_DIR", SOURCES / "merged"))
 PENDING = Path(os.environ.get("FMCSA_PENDING_SUSPENSION", MERGED / "motus_pending_suspension.csv"))
 AUTHHIST = Path(os.environ.get("FMCSA_MOTUS_AUTHHIST", SOURCES / "Motus_AuthHist_All_With_History.csv"))
+# Present-state authority feed. AuthHist is an event log and cannot tell us an
+# authority was never restored; this can.
+MOTUS_CARRIER = Path(os.environ.get("FMCSA_MOTUS_CARRIER", SOURCES / "Motus_Carrier_All_With_History.csv"))
 PARQUET = Path(os.environ.get("FMCSA_PARQUET", HERE / "carrier_aggregates.parquet"))
 SNAPSHOT = os.environ.get("FMCSA_SNAPSHOT_DATE", "20260812")
 
 # Reasons that mean "this authority is suspended because the insurance is gone".
+# BOTH tokens are required. Matching "Involuntary Suspension" alone also catches
+# BOC-3 (process-agent) suspensions, which have nothing to do with insurance —
+# that emitted 131 carriers as "no insurance" on an unrelated filing defect.
 INSURANCE_SUSPENSION = "Involuntary Suspension"
+INSURANCE_TOKEN = "insurance"
 # Reasons that mean the carrier fixed it.
 # Exact strings from AuthHist.REASON. "Discontinued Revocation" is a cure too —
 # FMCSA withdrawing the action — and the docstring above always claimed it was
@@ -83,6 +90,7 @@ def main() -> None:
     effective = (
         ah.filter(
             pl.col("reason").str.contains(INSURANCE_SUSPENSION)
+            & pl.col("reason").str.to_lowercase().str.contains(INSURANCE_TOKEN)
             & (pl.col("when") <= pl.lit(snap))
         )
         .group_by("DOT_NUMBER")
@@ -101,11 +109,30 @@ def main() -> None:
     )
     log(f"raw: {effective.height:,} effective, {pending.height:,} pending")
 
-    # --- cure: any reinstating action at/after the suspension ----------------
+    # --- cure: any action that restores the authority ------------------------
+    # Keyed on the resulting STATUS, not just the reason text. Enumerating cure
+    # reasons missed "Administrative Correction" restorations (128 carriers),
+    # and a carrier can be put back to Active under a reason we never listed.
+    # Any post-suspension AuthHist row landing on Active is a cure.
     cures = (
-        ah.filter(pl.col("reason").is_in(CURE))
+        ah.filter(
+            pl.col("reason").is_in(CURE)
+            | (pl.col("OP_AUTH_STATUS").fill_null("") == "Active")
+        )
         .group_by("DOT_NUMBER")
         .agg(cured_on=pl.col("when").max())
+    )
+
+    # A DOT that currently holds an Active authority in Motus_Carrier is not
+    # suspended, whatever AuthHist's history says — 928 emitted suspensions had
+    # the docket marked Active in the current snapshot. Motus_Carrier is the
+    # present-state feed; AuthHist is the event log, and the event log alone
+    # cannot tell us the authority was never restored.
+    active_now = (
+        pl.read_csv(MOTUS_CARRIER, infer_schema_length=0, ignore_errors=True)
+        .with_columns(DOT_NUMBER=pl.col("USDOT_NUMBER").cast(pl.Int64, strict=False))
+        .filter(pl.col("OP_AUTH_STATUS") == "Active")
+        .select("DOT_NUMBER").unique()
     )
 
     def drop_cured(df: pl.DataFrame, ref: str) -> pl.DataFrame:
@@ -115,7 +142,7 @@ def main() -> None:
         ).drop("cured_on")
 
     eff_n, pend_n = effective.height, pending.height
-    effective = drop_cured(effective, "susp_date")
+    effective = drop_cured(effective, "susp_date").join(active_now, on="DOT_NUMBER", how="anti")
     pending = drop_cured(pending, "served")
     log(f"after cure check: {effective.height:,} effective (-{eff_n - effective.height:,}), "
         f"{pending.height:,} pending (-{pend_n - pending.height:,})")

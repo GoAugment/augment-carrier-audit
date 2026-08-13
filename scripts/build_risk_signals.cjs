@@ -115,7 +115,14 @@ async function main() {
           -- TREASURE DEALS 30,012 PU / 0 VINs) must stay flagged, since the
           -- inflated claim is itself a fraud signal. Splits 1,045 flagged
           -- large carriers into 807 real (suppressed) and 238 claimed-only (kept).
-          (power_units >= 100 AND coalesce(pu_vins_inspected, 0) >= 50) AS corroborated_large
+          -- Thresholds raised from 100/50: that band suppressed 405 carriers of
+          -- only 100-249 power units, 103 of which carried another strong signal
+          -- (DOT 3114701: 100 PU, a Jul-2026 revocation and a shared-policy edge,
+          -- all corroboration removed). The megafleets this exists for are an
+          -- order of magnitude larger — FedEx 138k, UPS 112k, Amazon 15k,
+          -- Swift 13k, Werner 9.8k PU — so 250/100 suppresses them while leaving
+          -- the mid-size band flagged.
+          (power_units >= 250 AND coalesce(pu_vins_inspected, 0) >= 100) AS corroborated_large
         FROM read_parquet('data/carrier_aggregates.parquet')
       ),
       -- Empirical area-code -> home-state map: US area codes don't cross state

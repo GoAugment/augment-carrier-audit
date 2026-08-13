@@ -278,6 +278,16 @@ def download_one(c: httpx.Client, did: str, dest: Path, expected: int | None) ->
                 raise httpx.RemoteProtocolError(
                     f"short file: {got:,} rows < expected {expected:,}"
                 )
+            # Guard against promoting a non-CSV body. When the count lookup
+            # fails, `expected` is None and the row-count check above is skipped
+            # entirely — so without this an HTML error/challenge page served
+            # with HTTP 200 became the final .csv and the run exited 0.
+            with open(part, "rb") as _fh:
+                head = _fh.read(2048).lstrip()
+            if head[:1] == b"<" or b"<html" in head[:512].lower():
+                raise httpx.RemoteProtocolError("server returned HTML, not CSV")
+            if expected is None and b"," not in head.split(b"\n", 1)[0]:
+                raise httpx.RemoteProtocolError("first line is not a CSV header")
             part.replace(dest)
             mb = n / 1e6
             rows_tag = "" if expected is None else f" ({got:,} rows ✓)"
