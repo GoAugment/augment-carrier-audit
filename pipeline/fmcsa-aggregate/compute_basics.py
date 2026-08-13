@@ -72,15 +72,15 @@ def _src(refresh_name: str, fallback: str) -> Path:
 
 INSP_CSV = Path(os.environ.get(
     "FMCSA_INSPECTION_FILE",
-    _src("SMS_Input_-_Inspection.csv", "/Users/art/Downloads/SMS_Input_-_Inspection_20260518.csv"),
+    _src("SMS_Input_-_Inspection.csv", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Inspection_20260518.csv"),
 ))
 VIOL_CSV = Path(os.environ.get(
     "FMCSA_VIOLATION_FILE",
-    _src("SMS_Input_-_Violation.csv", "/Users/art/Downloads/SMS_Input_-_Violation_20260518.csv"),
+    _src("SMS_Input_-_Violation.csv", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Violation_20260518.csv"),
 ))
 CRASH_CSV = Path(os.environ.get(
     "FMCSA_CRASH_FILE",
-    _src("SMS_Input_-_Crash.csv", "/Users/art/Downloads/SMS_Input_-_Crash_20260518.csv"),
+    _src("SMS_Input_-_Crash.csv", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Crash_20260518.csv"),
 ))
 SCRAPE_DIR = Path(
     os.environ.get(
@@ -89,7 +89,11 @@ SCRAPE_DIR = Path(
     )
 )
 
-SNAPSHOT = datetime(2026, 5, 18)
+# Data vintage, NOT a constant. Hardcoding this pinned the 24-month crash and
+# violation windows to May regardless of how fresh the inputs were, so the
+# 2026-08 refresh computed Crash Indicator over a May window and excluded
+# 6,512 post-May crashes. build_all exports FMCSA_SNAPSHOT_DATE from DATA_TAG.
+SNAPSHOT = datetime.strptime(os.environ.get("FMCSA_SNAPSHOT_DATE", "20260812"), "%Y%m%d")
 CUTOFF_24MO = SNAPSHOT - timedelta(days=730)
 CUTOFF_12MO = SNAPSHOT - timedelta(days=365)
 

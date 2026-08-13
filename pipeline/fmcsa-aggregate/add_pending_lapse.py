@@ -53,7 +53,7 @@ PARQUET = Path(os.environ.get(
 ))
 ACTPEND = Path(os.environ.get(
     "FMCSA_ACTPEND",
-    "/Users/art/Downloads/ActPendInsur_All_With_History.csv",
+    "/__unset__run-via-build_all.py-or-set-the-env-var__/ActPendInsur_All_With_History.csv",
 ))
 _asof = os.environ.get("FMCSA_LAPSE_ASOF")
 SNAPSHOT = datetime.strptime(_asof, "%Y-%m-%d").date() if _asof else date.today()

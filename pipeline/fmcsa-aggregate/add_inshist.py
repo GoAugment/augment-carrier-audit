@@ -44,7 +44,7 @@ from pathlib import Path
 import polars as pl
 
 HERE = Path(__file__).parent
-INSHIST = Path(os.environ.get("FMCSA_INSHIST", "/Users/art/Downloads/inshist_allwithhistory.txt"))
+INSHIST = Path(os.environ.get("FMCSA_INSHIST", "/__unset__run-via-build_all.py-or-set-the-env-var__/inshist_allwithhistory.txt"))
 PARQUET = Path(os.environ.get("FMCSA_PARQUET", HERE / "carrier_aggregates.parquet"))
 
 # Match the convention used elsewhere in this pipeline.

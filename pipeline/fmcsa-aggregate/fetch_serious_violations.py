@@ -41,7 +41,7 @@ REPO = Path(__file__).resolve().parents[2]
 # wrote into — a different clone. Fine under build_all (which supplies the
 # env); wrong every other way.
 PARQUET = Path(os.environ.get("FMCSA_PARQUET", REPO / "data" / "carrier_aggregates.parquet"))
-CENSUS = Path(os.environ.get("FMCSA_COMPANY_CENSUS", "/Users/art/Downloads/Company_Census_File.csv"))
+CENSUS = Path(os.environ.get("FMCSA_COMPANY_CENSUS", "/__unset__run-via-build_all.py-or-set-the-env-var__/Company_Census_File.csv"))
 OUT_DIR = Path(os.environ.get("FMCSA_SCRAPE_DIR", REPO / "data" / "fmcsa_scrape"))
 # Vintage tag for the output filename. Was hardcoded, so an August scrape
 # wrote into a file named ...20260514 and the name silently lied about the

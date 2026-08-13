@@ -27,7 +27,7 @@ import polars as pl
 
 HERE = Path(__file__).parent
 T1_DIR = HERE.parent / "t1-fmcsa-2026-05-14"
-ENF_XLSX = Path(os.environ.get("FMCSA_ENFORCEMENT_XLSX", "/Users/art/Downloads/closed_enforcement_cases_20260515005306.xlsx"))
+ENF_XLSX = Path(os.environ.get("FMCSA_ENFORCEMENT_XLSX", "/__unset__run-via-build_all.py-or-set-the-env-var__/closed_enforcement_cases_20260515005306.xlsx"))
 PARQUET = Path(os.environ.get("FMCSA_PARQUET", HERE / "carrier_aggregates.parquet"))
 CARRIERS_JSON = T1_DIR / "carriers.json"
 T1_OUT_CSV = T1_DIR / "enforcement_t1.csv"

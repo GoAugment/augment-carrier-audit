@@ -340,7 +340,12 @@ def main() -> None:
     # Random 1% selection from insufficient-data carriers → ISS = 99
     n_random = int(insuff_iss.height * RANDOM_SELECTION_PCT)
     rng = random.Random(RANDOM_SEED)
-    random_dots = rng.sample(insuff_iss["DOT_NUMBER"].to_list(), n_random)
+    # SORT before sampling. The seed alone is not enough: rng.sample() draws by
+    # position, so if the input list arrives in a different order the selection
+    # differs even with a fixed seed. Row order here comes from upstream joins
+    # and is not stable, which made iss_score/iss_group differ for 38,196
+    # carriers between two builds of identical inputs.
+    random_dots = rng.sample(sorted(insuff_iss["DOT_NUMBER"].to_list()), n_random)
     insuff_iss = insuff_iss.with_columns(
         iss_score=pl.when(pl.col("DOT_NUMBER").is_in(random_dots)).then(99).otherwise(pl.col("iss_score")),
         iss_group=pl.when(pl.col("DOT_NUMBER").is_in(random_dots)).then(pl.lit("Random (insufficient data)")).otherwise(pl.col("iss_group")),

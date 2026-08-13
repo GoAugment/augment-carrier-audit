@@ -140,6 +140,12 @@ DEFAULT_ENV = {
     "SMS_DATA_TAG": DATA_TAG,
     # merge_motus: events effective after this are "pending", not revocations.
     "FMCSA_SNAPSHOT_DATE": DATA_TAG,
+    # scrape_pu_history derives the SMS vintage by regexing 8 digits out of
+    # the crash filename — but the downloader writes an UNDATED name, so that
+    # search fails and it fell back to a hardcoded 2026-05-18. Set it
+    # explicitly so the scrape universe and the crash window agree with the
+    # rest of the build.
+    "SMS_DATA_DATE": DATA_TAG,
     "FMCSA_COMPANY_CENSUS": SOURCES_DIR / "Company_Census_File.csv",
     "FMCSA_ZIP_RISK_OUT": LIB_DATA_DIR / "zip-risk.json",
     "FMCSA_INSURER_RISK_OUT": LIB_DATA_DIR / "insurer-risk.json",

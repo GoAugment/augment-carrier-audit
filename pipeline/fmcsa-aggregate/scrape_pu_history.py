@@ -76,16 +76,16 @@ import httpx
 import polars as pl
 from lxml import html as lxml_html
 from tenacity import (
-
-# Repo-relative default. These pointed at the san-antonio workspace, so a
-# standalone `uv run` silently read from (or wrote into) a different clone.
-# Harmless under build_all, which supplies the env; wrong every other way.
-REPO = Path(__file__).resolve().parents[2]
     retry,
     stop_after_attempt,
     wait_exponential,
     retry_if_exception_type,
 )
+
+# Repo-relative default. These pointed at the san-antonio workspace, so a
+# standalone `uv run` silently read from (or wrote into) a different clone.
+# Harmless under build_all, which supplies the env; wrong every other way.
+REPO = Path(__file__).resolve().parents[2]
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -123,7 +123,7 @@ def _sms_vintage_date():
     if override:
         return _dt.strptime(override, "%Y%m%d")
     crash_path = os.environ.get(
-        "FMCSA_CRASH_FILE", "/Users/art/Downloads/SMS_Input_-_Crash_20260518.csv"
+        "FMCSA_CRASH_FILE", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Crash_20260518.csv"
     )
     m = re.search(r"(\d{8})", os.path.basename(crash_path))
     return _dt.strptime(m.group(1), "%Y%m%d") if m else _dt(2026, 5, 18)
@@ -433,7 +433,7 @@ def select_universe(crash_sufficiency_only: bool = True) -> list[int]:
 
     crash = (
         pl.scan_csv(
-            os.environ.get("FMCSA_CRASH_FILE", "/Users/art/Downloads/SMS_Input_-_Crash_20260518.csv"),
+            os.environ.get("FMCSA_CRASH_FILE", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Crash_20260518.csv"),
             ignore_errors=True,
             schema_overrides={"DOT_Number": pl.Int64},
         )
