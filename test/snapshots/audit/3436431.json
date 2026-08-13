@@ -1,21 +1,18 @@
 {
-  "dot": 4170928,
-  "reasonNote": "CRITICAL: rapid replace + ≥3 cancellations",
-  "carrierName": "ELEVATE TRANSPORT INC",
-  "riskLevel": "Critical",
-  "riskScore": 29,
+  "dot": 3436431,
+  "reasonNote": "IDENTITY: email+phone shared with shut-down revoked DOTs",
+  "carrierName": "RAGGIO TEXAS TRUCKING LLC",
+  "riskLevel": "Medium",
+  "riskScore": 33,
   "riskTier": "Low",
   "riskContributions": [
-    "+16 [Authority / insurance] Insurance churn",
     "+8 [Safety / compliance] Elevated safety context",
+    "+20 [Identity / chameleon] Identity tied to shut-down revoked DOT",
     "+5 [Context] Personal contact/address corroborator"
   ],
-  "reasonLabels": [
-    "Rapid replace + cancellation history",
-    "Why the FMCSA SMS scores look clean"
-  ],
+  "reasonLabels": [],
   "axes": {
-    "crash": "clean",
+    "crash": "na",
     "unsafeDriving": "na",
     "hos": "na",
     "driverOos": "na",
@@ -24,6 +21,6 @@
     "hazmatOos": "na",
     "revocations": "clean",
     "authority": "clean",
-    "insurance": "critical"
+    "insurance": "na"
   }
 }

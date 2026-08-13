@@ -3,13 +3,16 @@
   "reasonNote": "ENFORCEMENT: closed enforcement case",
   "carrierName": "NADIA ALICIA GRIMALDO YANEZ",
   "riskLevel": "Critical",
-  "riskScore": 54,
-  "riskTier": "Medium",
+  "riskScore": 85,
+  "riskTier": "Critical",
   "riskContributions": [
     "+16 [Authority / insurance] Insurance churn",
     "+16 [Safety / compliance] FMCSA enforcement case",
     "+18 [Safety / compliance] Hard safety signal",
-    "+4 [Context] Insurer / ZIP risk context"
+    "+4 [Context] Insurer / ZIP risk context",
+    "+20 [Identity / chameleon] Identity tied to shut-down revoked DOT",
+    "+6 [Identity / chameleon] Operates mostly outside home state",
+    "+5 [Context] Personal contact/address corroborator"
   ],
   "reasonLabels": [
     "Acute/critical violations from FMCSA investigation",

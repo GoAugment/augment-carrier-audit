@@ -2,11 +2,12 @@
   "dot": 53467,
   "reasonNote": "CLEAN-BIG: Werner Enterprises",
   "carrierName": "WERNER ENTERPRISES INC",
-  "riskLevel": "Low",
-  "riskScore": 18,
-  "riskTier": "Low",
+  "riskLevel": "Medium",
+  "riskScore": 42,
+  "riskTier": "Medium",
   "riskContributions": [
-    "+18 [Safety / compliance] Hard safety signal"
+    "+18 [Safety / compliance] Hard safety signal",
+    "+24 [Identity / chameleon] Shares insurance policy with revoked carrier"
   ],
   "reasonLabels": [
     "ISS, Inspect (top inspection priority)"

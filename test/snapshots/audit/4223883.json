@@ -3,14 +3,15 @@
   "reasonNote": "HIGH: HOS alert",
   "carrierName": "LBLMX LOGISTICS LLC",
   "riskLevel": "Critical",
-  "riskScore": 82,
+  "riskScore": 87,
   "riskTier": "Critical",
   "riskContributions": [
     "+20 [Safety / compliance] Conditional safety rating",
     "+16 [Safety / compliance] FMCSA enforcement case",
     "+18 [Safety / compliance] Hard safety signal",
     "+4 [Context] Insurer / ZIP risk context",
-    "+24 [Identity / chameleon] Equipment spread across multiple active DOTs"
+    "+24 [Identity / chameleon] Equipment spread across multiple active DOTs",
+    "+5 [Context] Personal contact/address corroborator"
   ],
   "reasonLabels": [
     "ISS, Inspect (top inspection priority)",
