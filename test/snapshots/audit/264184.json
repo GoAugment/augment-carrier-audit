@@ -2,12 +2,11 @@
   "dot": 264184,
   "reasonNote": "CLEAN-BIG: Schneider National",
   "carrierName": "SCHNEIDER NATIONAL CARRIERS INC",
-  "riskLevel": "Medium",
-  "riskScore": 42,
-  "riskTier": "Medium",
+  "riskLevel": "Low",
+  "riskScore": 18,
+  "riskTier": "Low",
   "riskContributions": [
-    "+18 [Safety / compliance] Hard safety signal",
-    "+24 [Identity / chameleon] Shares insurance policy with revoked carrier"
+    "+18 [Safety / compliance] Hard safety signal"
   ],
   "reasonLabels": [],
   "axes": {

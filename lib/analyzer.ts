@@ -582,7 +582,14 @@ function computeRiskScore(
   // revocation isn't cured. Only when insurance is back (not sub-minimum) is
   // the revocation truly behind them (e.g. F2F DOT 239699: $1M on file).
   const currentlyActive = code === "A" && allowed !== "N";
-  const revocationReinstated = currentlyActive && !subMin;
+  // An in-effect FMCSA suspension for lack of insurance overrides both tests.
+  // status_code lags (census still reads Active) and the BIPD amount on file
+  // predates the suspension, so a suspended carrier looks "insured enough" and
+  // scored +10 "revoked, since reinstated" while simultaneously scoring +30
+  // "authority suspended" — contradictory, and the stale-coverage bug the
+  // suspension signal exists to catch (DOT 3008423).
+  const suspendedNow = c.insuranceSuspensionStatus === "effective";
+  const revocationReinstated = currentlyActive && !subMin && !suspendedNow;
   const involDaysAgo = daysAgo(c.mostRecentInvoluntaryDate);
   if (involDaysAgo != null && involDaysAgo <= 730 && !revocationReinstated) {
     add(
@@ -632,7 +639,9 @@ function computeRiskScore(
         ? `$0 BIPD on file vs ${fmtMoney(c.bipdRequiredAmount)} FMCSA-required.`
         : `${fmtMoney(c.bipdInsuranceOnFile)} BIPD on file vs ${fmtMoney(c.bipdRequiredAmount)} FMCSA-required.`
     );
-  } else if (c.bipdImminentLapse) {
+  } else if (c.bipdImminentLapse && !c.insuranceSuspensionStatus) {
+    // see the suppression note on lapseReason — the suspension signal supersedes
+    // this and firing both double-counts the same fact
     add(
       28,
       "Authority / insurance",
@@ -1334,7 +1343,14 @@ function classifyAuthority(c: FmcsaCarrier): {
   // --- Status code ---
   const code = (c.statusCode ?? "").toUpperCase();
   const allowed = (c.allowedToOperate ?? "").toUpperCase();
-  if (code === "A" || allowed === "Y") {
+  // An in-effect FMCSA suspension for lack of insurance beats the census status
+  // outright. status_code lags — a suspended carrier still reads Active — so
+  // without this the authority cell rendered "Active / clean" directly beside a
+  // reason saying FMCSA had suspended that very authority.
+  if (c.insuranceSuspensionStatus === "effective") {
+    parts.push("Suspended (no insurance)");
+    promote("critical");
+  } else if (code === "A" || allowed === "Y") {
     parts.push("Active");
   } else if (code) {
     parts.push(code);
@@ -2040,8 +2056,12 @@ function scoreCarrier(
   // bipdInsuranceOnFile >= 1 so it does NOT double-report with the standard
   // "$0 BIPD on file" insurance check (which already covers carriers that have
   // already lapsed to zero). This rule is the forward-looking early warning.
+  // Suppressed when a suspension is present: the suspension signal supersedes
+  // this rule (its ActPendInsur source froze 2026-05-14), and firing both
+  // double-counts (+28 lapse on top of +30/+18 suspension) and shows two
+  // reasons for one fact.
   const lapseReason: Reason | null =
-    c.bipdImminentLapse && c.bipdInsuranceOnFile >= 1
+    c.bipdImminentLapse && c.bipdInsuranceOnFile >= 1 && !c.insuranceSuspensionStatus
       ? {
           label: getRule("insurance-imminent-lapse").label,
           detail:

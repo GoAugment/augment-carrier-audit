@@ -58,7 +58,11 @@ SNAPSHOT = os.environ.get("FMCSA_SNAPSHOT_DATE", "20260812")
 # Reasons that mean "this authority is suspended because the insurance is gone".
 INSURANCE_SUSPENSION = "Involuntary Suspension"
 # Reasons that mean the carrier fixed it.
-CURE = ("REINSTATED", "Reinstated", "GRANTED", "Granted")
+# Exact strings from AuthHist.REASON. "Discontinued Revocation" is a cure too —
+# FMCSA withdrawing the action — and the docstring above always claimed it was
+# handled, but it was missing from this tuple.
+CURE = ("REINSTATED", "Reinstated", "GRANTED", "Granted",
+        "Discontinued Revocation", "DISCONTINUED REVOCATION")
 
 
 def log(m: str) -> None:

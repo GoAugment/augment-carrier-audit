@@ -304,7 +304,12 @@ def fetch_dataset(did: str, fname: str, out_dir: Path, auth, expected: int | Non
         if expected is not None and have >= expected:
             log(fname, f"already complete ({have:,} rows) — skip")
             return True
-        log(fname, f"on disk {have:,} < expected {expected:,} — re-download")
+        log(fname, f"on disk {have:,} < expected {expected:,} — re-download"
+            if expected is not None
+            # expected is None when the count lookup failed; the old f-string
+            # raised TypeError here, the worker was marked failed, and the file
+            # was never re-downloaded.
+            else f"on disk {have:,}, expected count unknown — re-download")
     log(fname, f"({did}) expected {expected:,} rows …" if expected is not None
         else f"({did}) starting (row count unknown) …")
     fetch = download_paginated if did in PAGINATED else download_one

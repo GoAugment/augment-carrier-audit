@@ -478,12 +478,61 @@ def merge_insurance() -> None:
         .otherwise(pl.col("BIPD_FILE"))
     ).select(cols)
 
+    # Authorities granted AFTER the cutover exist only in Motus, so upserting
+    # alone leaves them absent from the carrier-auth file entirely — 20,388 of
+    # 20,491 active post-cutover DOTs had a NULL bipd_insurance_on_file, which
+    # the analyzer reads as "BIPD not required". That is a false Clean on the
+    # newest authorities, i.e. exactly the population chameleons register into.
+    mc = pl.read_csv(MOTUS_CARRIER, infer_schema_length=0, ignore_errors=True).with_columns(
+        dot=pl.col("USDOT_NUMBER").cast(pl.Int64, strict=False),
+    ).filter(pl.col("dot").is_not_null())
+    known = set(
+        old.select(
+            pl.col("DOT_NUMBER").cast(pl.Int64, strict=False).cast(pl.Utf8) + "|" + pl.col("DOCKET_NUMBER")
+        ).to_series().to_list()
+    )
+    fresh = mc.with_columns(
+        _key=pl.col("dot").cast(pl.Utf8) + "|" + pl.col("DOCKET_NUMBER")
+    ).filter(~pl.col("_key").is_in(known))
+
+    if fresh.height:
+        ty = pl.col("OP_AUTH_TYPE").fill_null("")
+        built = (
+            fresh.join(bipd, on="dot", how="left")
+            .with_columns(
+                DOT_NUMBER=pl.col("dot").cast(pl.Utf8),
+                # BIPD comes from the Motus_Insur reconstruction, NOT from
+                # Motus_Carrier.BIPD_FILE (different field — see merge_carrier_auth).
+                BIPD_FILE=pl.col("bipd_k").round(0).cast(pl.Int64, strict=False).cast(pl.Utf8).str.zfill(5),
+                MIN_COV_AMOUNT=(pl.col("MIN_COV_AMOUNT").cast(pl.Float64, strict=False) / 1000.0)
+                    .round(0).cast(pl.Int64, strict=False).cast(pl.Utf8).str.zfill(5),
+                PROPERTY_CHK=pl.when(ty.str.contains("(?i)property")).then(pl.lit("Y")).otherwise(pl.lit("N")),
+                PASSENGER_CHK=pl.when(ty.str.contains("(?i)passenger")).then(pl.lit("Y")).otherwise(pl.lit("N")),
+                HHG_CHK=pl.when(ty.str.contains("(?i)household")).then(pl.lit("Y")).otherwise(pl.lit("N")),
+                ENTERPRISE_CHK=pl.when(ty.str.contains("(?i)enterprise")).then(pl.lit("Y")).otherwise(pl.lit("N")),
+                _stat=pl.when(pl.col("OP_AUTH_STATUS") == "Active").then(pl.lit("A"))
+                       .when(pl.col("OP_AUTH_STATUS").is_in(["Inactive", "Withdrawn"])).then(pl.lit("I"))
+                       .otherwise(pl.lit("N")),
+            )
+            .with_columns(
+                COMMON_STAT=pl.when(ty.str.contains("(?i)broker")).then(pl.lit("N")).otherwise(pl.col("_stat")),
+                BROKER_STAT=pl.when(ty.str.contains("(?i)broker")).then(pl.col("_stat")).otherwise(pl.lit("N")),
+            )
+        )
+        for c in cols:
+            if c not in built.columns:
+                built = built.with_columns(pl.lit(None, dtype=pl.Utf8).alias(c))
+        out_df = pl.concat([out_df, built.select(cols)], how="vertical_relaxed")
+        with_bipd = built.filter(pl.col("bipd_k").is_not_null()).height
+        log(f"  appended {fresh.height:,} post-cutover dockets ({with_bipd:,} with a BIPD filing)")
+
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUT_DIR / "Carrier_All_With_History.csv"
     out_df.write_csv(out)
-    if out_df.height != old.height:
-        raise SystemExit(f"row count changed: {out_df.height:,} != {old.height:,}")
-    log(f"merged carrier auth (BIPD from Motus_Insur): {out_df.height:,} rows → {out}")
+    if out_df.height < old.height:
+        raise SystemExit(f"merge lost rows: {out_df.height:,} < old {old.height:,}")
+    log(f"merged carrier auth (BIPD from Motus_Insur): {out_df.height:,} rows "
+        f"({out_df.height - old.height:+,}) → {out}")
 
 
 def main() -> None:

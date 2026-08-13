@@ -100,7 +100,22 @@ async function main() {
       -- Fleet size + home-region inspection share (gates the geo signals to the
       -- small carriers where they carry lift; megafleets operate nationally).
       sz AS (
-        SELECT DOT_NUMBER AS dot, power_units, home_state_insp_share
+        SELECT DOT_NUMBER AS dot, power_units, home_state_insp_share,
+          -- A CORROBORATED large fleet: claims >=100 power units AND has been
+          -- seen operating >=50 distinct inspected VINs. Contact/policy reuse is
+          -- an operator-level tell and is meaningless at this scale — a shared
+          -- switchboard or a corporate insurance programme is not a chameleon.
+          -- Without this, FedEx, UPS, Amazon, Swift and First Student were all
+          -- flagged (Werner scored +24 "shares insurance policy with revoked
+          -- carrier"), which is a locked-in false positive on the largest
+          -- carriers in the country.
+          --
+          -- Deliberately keyed on INSPECTED VINS, not claimed power units:
+          -- carriers that invent a fleet (SHUNDEL JOHNSON 80,000 PU / 0 VINs,
+          -- TREASURE DEALS 30,012 PU / 0 VINs) must stay flagged, since the
+          -- inflated claim is itself a fraud signal. Splits 1,045 flagged
+          -- large carriers into 807 real (suppressed) and 238 claimed-only (kept).
+          (power_units >= 100 AND coalesce(pu_vins_inspected, 0) >= 50) AS corroborated_large
         FROM read_parquet('data/carrier_aggregates.parquet')
       ),
       -- Empirical area-code -> home-state map: US area codes don't cross state
@@ -225,8 +240,10 @@ async function main() {
         i.dot AS DOT_NUMBER,
         CASE WHEN i.email_domain IN (${freeList}) THEN i.email_domain ELSE NULL END AS free_email_domain,
         NULLIF(regexp_extract(i.street_u, '${RES_RE}', 2), '') AS residential_marker,
-        la.shutdown_links AS shutdown_links,
-        pl.shared_policy_links AS shared_policy_links,
+        CASE WHEN coalesce(sz.corroborated_large, false) THEN NULL
+             ELSE la.shutdown_links END AS shutdown_links,
+        CASE WHEN coalesce(sz.corroborated_large, false) THEN NULL
+             ELSE pl.shared_policy_links END AS shared_policy_links,
         -- Geo coherence, small carriers only (<=6 PU). Phone area code's home
         -- state differs from the carrier's domicile (~1.9x revoke lift).
         CASE WHEN sz.power_units <= 6
@@ -245,8 +262,8 @@ async function main() {
       LEFT JOIN ac_map am ON am.ac = i.area_code
       WHERE (i.email_domain IN (${freeList}))
          OR (regexp_extract(i.street_u, '${RES_RE}', 2) <> '')
-         OR (la.shutdown_links IS NOT NULL)
-         OR (pl.shared_policy_links IS NOT NULL)
+         OR (la.shutdown_links IS NOT NULL AND NOT coalesce(sz.corroborated_large, false))
+         OR (pl.shared_policy_links IS NOT NULL AND NOT coalesce(sz.corroborated_large, false))
          OR (sz.power_units <= 6 AND am.home_state IS NOT NULL AND am.tot >= 50
              AND i.phy_state <> '' AND am.home_state <> i.phy_state)
          OR (sz.power_units <= 6 AND sz.home_state_insp_share IS NOT NULL
