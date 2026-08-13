@@ -820,9 +820,12 @@ function computeRiskScore(
   if (identitySignals?.shutdownIdentityLinks.length) {
     const links = identitySignals.shutdownIdentityLinks;
     // Email/phone shared with a shut-down revoked DOT is the real identity tell
-    // (2.5x revoke lift); an officer-name-only match is the weak majority of
-    // volume (2.1x) and prone to common-name collisions / disparate impact, so
-    // it gets a much lower weight. See officer-reuse-deadend + the 2026-05 lift test.
+    // (2.46x revoke lift, measured 2026-08 over the full shut-down universe).
+    // Officer-name-only matches are no longer emitted by
+    // scripts/build_risk_signals.cjs at all: on that same universe they flag
+    // 10.7% of the carrier base at 1.33x, and no cluster cap rescues them (see
+    // officer-reuse-deadend). The officer branch below is kept as a defensive
+    // fallback for older parquets that still carry those links.
     const hasContactLink = links.some(
       (l) => l.startsWith("email") || l.startsWith("phone")
     );
