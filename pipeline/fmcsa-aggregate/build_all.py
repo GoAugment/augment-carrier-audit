@@ -86,16 +86,18 @@ DEFAULT_ENV = {
     # serious_violations_<SMS_DATA_TAG>.parquet, so a pin silently keeps
     # reading the old one after a refresh. The "_2" prefix excludes the
     # sibling serious_violations_status_* files.
-    # Keyed on DATA_TAG, NOT newest-by-mtime: mtime lies the moment a file is
-    # restored or touched (a `git checkout` of the old vintage gave the May file
-    # a newer mtime than the August scrape, so "newest" silently selected the
-    # stale one). The tag is the vintage; use it.
-    "FMCSA_SERIOUS_VIOLATIONS": (
-        SCRAPE_DIR / f"serious_violations_{DATA_TAG}.parquet"
-        if (SCRAPE_DIR / f"serious_violations_{DATA_TAG}.parquet").exists()
-        else _latest_glob("serious_violations_2*.parquet",
-                          "serious_violations_20260514.parquet", base=SCRAPE_DIR)
-    ),
+    # ALWAYS the tagged path — no exists() check, no mtime fallback.
+    #
+    # DEFAULT_ENV is evaluated at IMPORT. In a one-shot `build_all.py` the
+    # fetch_serious_violations step writes serious_violations_<DATA_TAG>.parquet
+    # DURING the run, so an exists() check here runs before that file is created
+    # and silently binds the env to the previous vintage — the exact
+    # silent-stale-read this was written to prevent. An mtime fallback is worse
+    # still: restoring an old vintage via git gives it the newest mtime.
+    #
+    # If the tagged file is missing, add_serious_violations must fail loudly
+    # rather than quietly score against months-old investigation data.
+    "FMCSA_SERIOUS_VIOLATIONS": SCRAPE_DIR / f"serious_violations_{DATA_TAG}.parquet",
     # Revocations come from merge_motus.py, NOT the raw download: FMCSA retired
     # the L&I Revocation feed on 2026-05-14 and everything since lives in the
     # Motus datasets. The merged file is the old schema with the Motus events
@@ -266,7 +268,7 @@ STEPS: list[Step] = [
     Step(
         name="recompute_thresholds",
         script="recompute_thresholds.py",
-        description="Peer-group P85/P95/P99 cutoffs for analyzer.ts",
+        description="Threshold SENSITIVITY study (min_insp 3/10/20, crash-per-truck by fleet size) -> national_thresholds_v2.json. NOT consumed by the app: the live cutoffs are national_thresholds.json, written by build_aggregates.",
         runtime_estimate_min=0.2,
     ),
     # --- Risk-axis derived data (previously run by hand; now part of the refresh) ---

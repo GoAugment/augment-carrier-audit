@@ -35,9 +35,14 @@ import openpyxl
 import polars as pl
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-PARQUET = Path(os.environ.get("FMCSA_PARQUET", "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/carrier_aggregates.parquet"))
+REPO = Path(__file__).resolve().parents[2]
+# Repo-relative, not a hardcoded checkout. These defaults pointed at the
+# san-antonio workspace, so a standalone `uv run` silently read from — or
+# wrote into — a different clone. Fine under build_all (which supplies the
+# env); wrong every other way.
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", REPO / "data" / "carrier_aggregates.parquet"))
 CENSUS = Path(os.environ.get("FMCSA_COMPANY_CENSUS", "/Users/art/Downloads/Company_Census_File.csv"))
-OUT_DIR = Path(os.environ.get("FMCSA_SCRAPE_DIR", "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/fmcsa_scrape"))
+OUT_DIR = Path(os.environ.get("FMCSA_SCRAPE_DIR", REPO / "data" / "fmcsa_scrape"))
 # Vintage tag for the output filename. Was hardcoded, so an August scrape
 # wrote into a file named ...20260514 and the name silently lied about the
 # data. Reads SMS_DATA_TAG like the rest of the pipeline. NOTE: changing

@@ -30,7 +30,12 @@ import os
 from pathlib import Path
 import polars as pl
 
-PARQUET = Path(os.environ.get("FMCSA_PARQUET", "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/carrier_aggregates.parquet"))
+# Repo-relative default. These pointed at the san-antonio workspace, so a
+# standalone `uv run` silently read from (or wrote into) a different clone.
+# Harmless under build_all, which supplies the env; wrong every other way.
+REPO = Path(__file__).resolve().parents[2]
+
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", REPO / "data" / "carrier_aggregates.parquet"))
 _RD = os.environ.get("FMCSA_REFRESH_DIR")
 INSP = (
     Path(os.environ["FMCSA_INSPECTION_FILE"]) if os.environ.get("FMCSA_INSPECTION_FILE")

@@ -596,7 +596,15 @@ function computeRiskScore(
       30,
       "Authority / insurance",
       getRule("recent-revocation").label,
-      `Own authority was involuntarily revoked within 24 months (${c.mostRecentInvoluntaryDate})${currentlyActive ? " and insurance is still not on file" : `; FMCSA status_code=${code || "?"} (not currently active)`}.`
+      `Own authority was involuntarily revoked within 24 months (${c.mostRecentInvoluntaryDate})${
+        suspendedNow
+          ? ` and FMCSA has since suspended the authority for lack of insurance${
+              c.insuranceSuspensionDate ? ` (${c.insuranceSuspensionDate})` : ""
+            }`
+          : currentlyActive
+            ? " and insurance is still not on file"
+            : `; FMCSA status_code=${code || "?"} (not currently active)`
+      }.`
     );
   } else if (involDaysAgo != null && involDaysAgo <= 730 && revocationReinstated) {
     const repeated = c.involuntaryRevocations >= 3;

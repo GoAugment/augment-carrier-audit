@@ -76,6 +76,11 @@ import httpx
 import polars as pl
 from lxml import html as lxml_html
 from tenacity import (
+
+# Repo-relative default. These pointed at the san-antonio workspace, so a
+# standalone `uv run` silently read from (or wrote into) a different clone.
+# Harmless under build_all, which supplies the env; wrong every other way.
+REPO = Path(__file__).resolve().parents[2]
     retry,
     stop_after_attempt,
     wait_exponential,
@@ -89,15 +94,13 @@ from tenacity import (
 PARQUET_AGG = Path(
     os.environ.get(
         "FMCSA_PARQUET",
-        "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
-        "data/carrier_aggregates.parquet",
+        REPO / "data" / "carrier_aggregates.parquet",
     )
 )
 OUTPUT_DIR = Path(
     os.environ.get(
         "FMCSA_SCRAPE_DIR",
-        "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
-        "data/fmcsa_scrape",
+        REPO / "data" / "fmcsa_scrape",
     )
 )
 # Output parquet is tagged by SMS data vintage (not "today") so a scrape that

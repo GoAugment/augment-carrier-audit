@@ -274,8 +274,7 @@ analyzer.ts. Run when the parquet is refreshed.
 
 ## TypeScript-side companion
 
-The web app at `/Users/art/conductor/workspaces/augment-carrier-audit-v1/
-san-antonio/` consumes the parquet via DuckDB:
+The Next.js app in this repo consumes the parquet via DuckDB:
 
 - `lib/fmcsa.ts`: `FmcsaCarrier` type definition — add new columns here
 - `lib/fmcsa-parquet.ts`: SQL SELECT + row-to-Carrier mapping

@@ -47,13 +47,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import polars as pl
 
+# Repo-relative default. These pointed at the san-antonio workspace, so a
+# standalone `uv run` silently read from (or wrote into) a different clone.
+# Harmless under build_all, which supplies the env; wrong every other way.
+REPO = Path(__file__).resolve().parents[2]
+
 # Candidate builds override the parquet target (FMCSA_PARQUET) so they never
 # clobber the committed data/carrier_aggregates.parquet, and source the 3
 # SMS_Input feeds from a refresh dir (FMCSA_REFRESH_DIR, un-dated names).
 PARQUET = Path(os.environ.get(
     "FMCSA_PARQUET",
-    "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
-    "data/carrier_aggregates.parquet",
+    REPO / "data" / "carrier_aggregates.parquet",
 ))
 _REFRESH_DIR = os.environ.get("FMCSA_REFRESH_DIR")
 
@@ -81,8 +85,7 @@ CRASH_CSV = Path(os.environ.get(
 SCRAPE_DIR = Path(
     os.environ.get(
         "FMCSA_SCRAPE_DIR",
-        "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
-        "data/fmcsa_scrape",
+        REPO / "data" / "fmcsa_scrape",
     )
 )
 

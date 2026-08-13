@@ -29,8 +29,15 @@ import os
 from pathlib import Path
 import polars as pl
 
-PARQUET = Path(os.environ.get("FMCSA_PARQUET", "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/carrier_aggregates.parquet"))
-SV = Path(os.environ.get("FMCSA_SERIOUS_VIOLATIONS", "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/fmcsa_scrape/serious_violations_20260514.parquet"))
+REPO = Path(__file__).resolve().parents[2]
+# Repo-relative, not a hardcoded checkout. These defaults pointed at the
+# san-antonio workspace, so a standalone `uv run` silently read from — or
+# wrote into — a different clone. Fine under build_all (which supplies the
+# env); wrong every other way.
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", REPO / "data" / "carrier_aggregates.parquet"))
+# No dated default: a missing/miswired path must fail loudly rather than
+# silently score against a stale vintage. build_all always supplies this.
+SV = Path(os.environ.get("FMCSA_SERIOUS_VIOLATIONS", REPO / "data" / "fmcsa_scrape" / "serious_violations.parquet"))
 
 # Map the XLSX BASIC label → our column prefix + a short code.
 BASIC_MAP = {
