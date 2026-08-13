@@ -28,7 +28,6 @@ import io
 import os
 import time
 from datetime import datetime
-import os
 from pathlib import Path
 
 import httpx
@@ -39,10 +38,19 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 PARQUET = Path(os.environ.get("FMCSA_PARQUET", "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/carrier_aggregates.parquet"))
 CENSUS = Path(os.environ.get("FMCSA_COMPANY_CENSUS", "/Users/art/Downloads/Company_Census_File.csv"))
 OUT_DIR = Path(os.environ.get("FMCSA_SCRAPE_DIR", "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/fmcsa_scrape"))
-TAG = "20260514"
+# Vintage tag for the output filename. Was hardcoded, so an August scrape
+# wrote into a file named ...20260514 and the name silently lied about the
+# data. Reads SMS_DATA_TAG like the rest of the pipeline. NOTE: changing
+# the tag resets the resume set, since progress is keyed on the status
+# file of the same tag.
+TAG = os.environ.get("SMS_DATA_TAG", "20260514")
 URL = "https://ai.fmcsa.dot.gov/SMS/Carrier/{dot}/Download.aspx?BASIC=0&FileType=XLSX"
 UA = "augment-carrier-audit-research/0.1 (+research@goaugment.com; polite scraper)"
-CONCURRENCY = 8
+# Env-tunable: the default of 8 is ~5x slower than the ZenRows proxy sustains.
+# The PU-history scrape measured 1.0 rps at 8 workers vs 5.1 rps at 48, with
+# the error rate FALLING (0.4% -> 0.1%), so 8 is leaving throughput on the
+# table rather than protecting us from the WAF.
+CONCURRENCY = int(os.environ.get("SCRAPE_CONCURRENCY", "8"))
 CHECKPOINT_EVERY = 300
 
 

@@ -39,6 +39,9 @@ DATA_DIR = ROOT / "data"
 SOURCES_DIR = DATA_DIR / "sources"
 SCRAPE_DIR = DATA_DIR / "fmcsa_scrape"
 MERGED_DIR = SOURCES_DIR / "merged"  # merge_motus.py output (L&I + Motus splice)
+# Vintage of this refresh. Drives the scrape output filenames AND which scrape
+# vintage the pipeline reads back, so the two can never drift apart.
+DATA_TAG = "20260812"
 LIB_DATA_DIR = ROOT / "lib" / "data"
 
 
@@ -54,11 +57,14 @@ def _first_existing(*names: str) -> Path:
     return SOURCES_DIR / names[0]
 
 
-def _latest_glob(pattern: str, fallback: str) -> Path:
-    """Newest source file matching a glob (handles undated downloader output
-    and dated legacy files, e.g. Revocation_-_All_With_History*.csv)."""
-    matches = sorted(SOURCES_DIR.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
-    return matches[0] if matches else SOURCES_DIR / fallback
+def _latest_glob(pattern: str, fallback: str, base: Path | None = None) -> Path:
+    """Newest file matching a glob (handles undated downloader output and dated
+    legacy files, e.g. Revocation_-_All_With_History*.csv). Defaults to
+    SOURCES_DIR; pass `base` for artifacts that live elsewhere, e.g. the scrape
+    outputs in SCRAPE_DIR."""
+    root = base or SOURCES_DIR
+    matches = sorted(root.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+    return matches[0] if matches else root / fallback
 
 
 DEFAULT_ENV = {
@@ -76,7 +82,20 @@ DEFAULT_ENV = {
     "FMCSA_THRESHOLDS_OUT": DATA_DIR / "national_thresholds.json",
     "FMCSA_THRESHOLDS_V2_OUT": DATA_DIR / "national_thresholds_v2.json",
     "FMCSA_SCRAPE_DIR": SCRAPE_DIR,
-    "FMCSA_SERIOUS_VIOLATIONS": SCRAPE_DIR / "serious_violations_20260514.parquet",
+    # Newest vintage, not a pinned filename — the scrape writes
+    # serious_violations_<SMS_DATA_TAG>.parquet, so a pin silently keeps
+    # reading the old one after a refresh. The "_2" prefix excludes the
+    # sibling serious_violations_status_* files.
+    # Keyed on DATA_TAG, NOT newest-by-mtime: mtime lies the moment a file is
+    # restored or touched (a `git checkout` of the old vintage gave the May file
+    # a newer mtime than the August scrape, so "newest" silently selected the
+    # stale one). The tag is the vintage; use it.
+    "FMCSA_SERIOUS_VIOLATIONS": (
+        SCRAPE_DIR / f"serious_violations_{DATA_TAG}.parquet"
+        if (SCRAPE_DIR / f"serious_violations_{DATA_TAG}.parquet").exists()
+        else _latest_glob("serious_violations_2*.parquet",
+                          "serious_violations_20260514.parquet", base=SCRAPE_DIR)
+    ),
     # Revocations come from merge_motus.py, NOT the raw download: FMCSA retired
     # the L&I Revocation feed on 2026-05-14 and everything since lives in the
     # Motus datasets. The merged file is the old schema with the Motus events
@@ -116,9 +135,9 @@ DEFAULT_ENV = {
     # (compute_basics globs the newest). The scraper recomputes Crash-Indicator
     # eligibility from FMCSA_CRASH_FILE's date automatically, so only this tag +
     # the dated filenames above need updating each month.
-    "SMS_DATA_TAG": "20260812",
+    "SMS_DATA_TAG": DATA_TAG,
     # merge_motus: events effective after this are "pending", not revocations.
-    "FMCSA_SNAPSHOT_DATE": "20260812",
+    "FMCSA_SNAPSHOT_DATE": DATA_TAG,
     "FMCSA_COMPANY_CENSUS": SOURCES_DIR / "Company_Census_File.csv",
     "FMCSA_ZIP_RISK_OUT": LIB_DATA_DIR / "zip-risk.json",
     "FMCSA_INSURER_RISK_OUT": LIB_DATA_DIR / "insurer-risk.json",
