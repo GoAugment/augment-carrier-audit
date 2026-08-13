@@ -329,6 +329,19 @@ def main() -> None:
         if a.startswith("--jobs="):
             jobs = max(1, int(a.split("=", 1)[1]))
             args.remove(a)
+        elif a == "--jobs":  # space form; without this it fell through to
+            i = args.index(a)  # `only` and silently downloaded NOTHING, exit 0
+            if i + 1 < len(args) and args[i + 1].isdigit():
+                jobs = max(1, int(args[i + 1]))
+                del args[i:i + 2]
+            else:
+                sys.exit("[refresh] --jobs needs a number, e.g. --jobs 4")
+    # Anything left must be a known filename; a typo used to mean "download
+    # nothing" and still exit 0.
+    known = set(DATASETS.values())
+    for a in args:
+        if a.startswith("-") or a not in known:
+            sys.exit(f"[refresh] unrecognised argument {a!r} (expected a dataset filename)")
     only = set(args)  # optional: restrict to specific filenames
 
     auth = load_auth()
@@ -363,9 +376,16 @@ def main() -> None:
                 ok = False
     print(f"[refresh] all downloads finished in {(time.monotonic()-t0)/60:.1f}m", flush=True)
 
+    # Record what this run actually produced, not the full catalogue — the old
+    # version listed every dataset even when one file was selected or a download
+    # failed, so the manifest asserted a completeness that wasn't there.
     (out_dir / "MANIFEST.txt").write_text(
         f"refreshed_at={time.strftime('%Y-%m-%dT%H:%M:%S')}\n"
-        + "\n".join(f"{did}\t{fname}" for did, fname in DATASETS.items()) + "\n"
+        f"status={'complete' if ok else 'INCOMPLETE'}\n"
+        + "\n".join(
+            f"{did}\t{fname}\t{'ok' if (out_dir / fname).exists() else 'MISSING'}"
+            for did, fname in todo
+        ) + "\n"
     )
     print(f"[refresh] {'DONE' if ok else 'INCOMPLETE'} → {out_dir}", flush=True)
     sys.exit(0 if ok else 1)

@@ -77,6 +77,12 @@ const REFERENCE_CARRIERS = [
   { dot: 53467, name: "Werner", bipd: 5000 },   // 4M excess + 1M self-insured
   { dot: 80806, name: "JB Hunt", bipd: 3500 },  // 2.5M excess + 1M self-insured
   { dot: 264184, name: "Schneider", bipd: 1000 }, // no BMC-91 in Motus; keeps L&I value
+  // Regression guard for the primary/excess collapse: $2M primary + $2M excess
+  // + $1M excess. De-duping on amount alone (without INS_CLASS_CODE) merged the
+  // two $2M layers and computed $3M against a $5M requirement — a false
+  // Critical on a compliant carrier. If this carrier's real coverage changes at
+  // a future refresh, update the value; don't delete the case.
+  { dot: 2961868, name: "C Three Logistics", bipd: 5000 },
 ];
 
 const refRows = await new Promise((resolve, reject) => {

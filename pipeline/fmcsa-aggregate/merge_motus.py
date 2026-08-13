@@ -111,8 +111,14 @@ def merge_revocations() -> None:
         # pending sets, so they silently vanished — 152 of them involuntary
         # suspension notices, 83 with no other Motus enforcement evidence at all.
         eff_raw=pl.coalesce(
-            pl.col("ORDER1_EFFECTIVE_DATE").cast(pl.Utf8).replace("", None),
-            pl.col("ORDER1_SERVE_DATE").cast(pl.Utf8).replace("", None),
+            pl.col("ORDER1_EFFECTIVE_DATE").cast(pl.Utf8).str.strip_chars().replace("", None),
+            # Inferred, not assumed-immediate: FMCSA serves ~30 days before the
+            # suspension bites (8,426 populated rows use exactly a 30-day lag).
+            # Using the serve date directly made 31 involuntary notices effective
+            # early, i.e. a revocation we cannot yet evidence.
+            pl.col("ORDER1_SERVE_DATE").cast(pl.Utf8).str.strip_chars().replace("", None)
+              .str.strptime(pl.Date, format="%Y%m%d", strict=False)
+              .dt.offset_by("30d").dt.strftime("%Y%m%d"),
         ),
         kind=pl.when(pl.col("ORDER1_TYPE_DESC").str.contains("(?i)involuntary"))
               .then(pl.lit("INVOLUNTARY REVOCATION"))
@@ -133,7 +139,10 @@ def merge_revocations() -> None:
         eff_raw=pl.col("STATUS_CHANGE_DATE").cast(pl.Utf8),
     ).filter(
         pl.col("DOT_NUMBER").is_not_null()
-        & (pl.col("eff_raw") > CUTOVER)          # pre-cutover history is the old file's job
+        # >= not >: L&I's last event is 2026-05-13, so events dated exactly
+        # 20260514 exist in neither file under a strict > (dropped DOTs 4304130
+        # and 4501388, both real Revoked events).
+        & (pl.col("eff_raw") >= CUTOVER)
         & (pl.col("eff_raw") <= SNAPSHOT)
         & (
             (pl.col("REASON").str.strip_chars() == "Revoked")
@@ -154,9 +163,8 @@ def merge_revocations() -> None:
         # group by OP_AUTH_TYPE as well: a carrier losing two authority types on
         # one day is two real events, and collapsing on (DOT, date) alone drops
         # one of them.
-        .group_by(["DOT_NUMBER", "eff_raw", "OP_AUTH_TYPE"])
-        .agg(min_gap=pl.col("gap").min(), REASON=pl.col("REASON").first(),
-             DOCKET_NUMBER=pl.col("DOCKET_NUMBER").first())
+        .group_by(["DOT_NUMBER", "eff_raw", "OP_AUTH_TYPE", "DOCKET_NUMBER"])
+        .agg(min_gap=pl.col("gap").min(), REASON=pl.col("REASON").first())
         .filter(pl.col("min_gap").is_null() | (pl.col("min_gap") > DEDUP_WINDOW_DAYS))
     )
     log(f"  after de-dup against RevokeSuspend (±{DEDUP_WINDOW_DAYS}d): {ah_dedup.height:,} kept")
@@ -188,7 +196,7 @@ def merge_revocations() -> None:
         # single row — the same multi-authority collapse this block's comment
         # warns about, just reintroduced inside the Motus additions (530 of
         # 6,755 in-effect rows).
-        subset=["DOT_NUMBER", "_auth_type", "ORDER2_TYPE_DESC", "order2_effective_Date"],
+        subset=["DOT_NUMBER", "DOCKET_NUMBER", "_auth_type", "ORDER2_TYPE_DESC", "order2_effective_Date"],
         keep="first",
     ).drop("_auth_type")
     merged = pl.concat([
@@ -415,14 +423,38 @@ def merge_insurance() -> None:
     # minimum), and its amount equals L&I's BIPD_FILE x 1000 for 4,578 of 4,664
     # carriers. 561 carriers have BMC-35 as their ONLY BIPD form.
     # Cargo is type 2 (BMC-34), broker surety type 3 (BMC-84), bond type 4.
+    type1 = ins.filter(pl.col("INS_TYPE_CODE").cast(pl.Utf8).str.strip_chars() == "1")
+
+    # Only policies already IN EFFECT at the snapshot. Without this, a policy
+    # that starts next week is counted as coverage held today: DOT 3917695 has
+    # $0 on file but a single policy effective 20260815, and was reported $1M /
+    # Clean at a 20260812 snapshot. 942 future-effective rows across 171 DOTs.
+    in_effect = type1.filter(pl.col("EFFECTIVE_DATE").cast(pl.Utf8) <= SNAPSHOT)
+
+    # De-dup per (dot, CLASS, amount). INS_CLASS_CODE distinguishes Primary from
+    # Excess, and collapsing on amount alone merges genuinely concurrent layers
+    # that happen to be equal: DOT 2961868 carries $2M primary + $2M excess +
+    # $1M excess = $5M against a $5M requirement, and de-duping without the
+    # class computed $3M — a false Critical on a compliant carrier. Keeping the
+    # latest TRANS_DATE within a layer still drops superseded policies (Werner's
+    # 1998 Palisades row vs the Self-Insured filing that replaced it).
     bipd = (
-        ins.filter(pl.col("INS_TYPE_CODE").cast(pl.Utf8).str.strip_chars() == "1")
-        .sort("TRANS_DATE", descending=True)
-        .unique(subset=["dot", "cov"], keep="first")
+        in_effect.sort("TRANS_DATE", descending=True)
+        .unique(subset=["dot", "INS_CLASS_CODE", "cov"], keep="first")
         .group_by("dot")
         .agg(bipd_k=(pl.col("cov").sum() / 1000.0))
     )
-    log(f"Motus insurance: {bipd.height:,} DOTs with a BIPD (type-1) filing")
+
+    # Only override the frozen L&I value where Motus actually has NEWER evidence.
+    # Motus rows predating the cutover are already reflected in the 2026-05-14
+    # L&I snapshot, and where Motus's pre-cutover view is less complete than
+    # L&I's, overriding loses coverage: DOT 2915384 has a single zero-valued
+    # BMC-35 transacted 20260414, which overwrote L&I's $750k and produced a
+    # false Critical.
+    has_new = type1.filter(pl.col("TRANS_DATE").cast(pl.Utf8) >= CUTOVER).select("dot").unique()
+    bipd = bipd.join(has_new, on="dot", how="inner")
+    log(f"Motus insurance: {bipd.height:,} DOTs with post-cutover BIPD evidence "
+        f"(of {type1['dot'].n_unique():,} with any type-1 filing)")
 
     merged = (
         old.with_columns(_dot=pl.col("DOT_NUMBER").cast(pl.Int64, strict=False))
