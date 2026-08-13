@@ -1,12 +1,6 @@
 {
 "base_rate": 0.0334,
 "insurers": {
-"NATIONAL LIABILITY & FIRE INS CO.": {
-"tier": "elevated",
-"lift": 2.3,
-"rate": 0.0777,
-"n": 708
-},
 "AGENCY INSURANCE COMPANY OF MARYLAND, INC": {
 "tier": "elevated",
 "lift": 1.8,
@@ -43,6 +37,12 @@
 "rate": 0.1327,
 "n": 882
 },
+"NATIONAL LIABILITY & FIRE INS CO.": {
+"tier": "elevated",
+"lift": 2.3,
+"rate": 0.0777,
+"n": 708
+},
 "MOTOR TRANSPORT MUTUAL RRG INC": {
 "tier": "high",
 "lift": 4.1,
@@ -54,84 +54,6 @@
 "lift": 2.6,
 "rate": 0.0853,
 "n": 774
-},
-"UNIVERSAL CASUALTY RISK RETENTION GROUP, INC": {
-"tier": "high",
-"lift": 3.3,
-"rate": 0.1098,
-"n": 2724
-},
-"ASCOT SPECIALTY INSURANCE COMPANY": {
-"tier": "high",
-"lift": 3.1,
-"rate": 0.1051,
-"n": 809
-},
-"NATIONAL TRANSPORTATION INSURANCE CO RRG, LLC": {
-"tier": "high",
-"lift": 2.8,
-"rate": 0.0932,
-"n": 976
-},
-"GEICO MARINE INSURANCE COMPANY": {
-"tier": "elevated",
-"lift": 1.5,
-"rate": 0.0507,
-"n": 19652
-},
-"BERKSHIRE HATHAWAY HOMESTATE INSURANCE COMPAN": {
-"tier": "high",
-"lift": 2.6,
-"rate": 0.0866,
-"n": 1525
-},
-"STATE NATIONALSPECIALTY INSCO/NATIONAL SPECIA": {
-"tier": "high",
-"lift": 5.4,
-"rate": 0.1791,
-"n": 1195
-},
-"CIMARRON INSURANCE COMPANY": {
-"tier": "high",
-"lift": 2.6,
-"rate": 0.0881,
-"n": 874
-},
-"NATIONAL INDEMNITY COMPANY": {
-"tier": "high",
-"lift": 3.0,
-"rate": 0.1007,
-"n": 963
-},
-"COUNTY HALL INSURANCE COMPANY, INC A RR GROUP": {
-"tier": "high",
-"lift": 3.3,
-"rate": 0.1091,
-"n": 788
-},
-"SOUTHLAKE SPECIALTY INSURANCE COMPANY": {
-"tier": "elevated",
-"lift": 2.4,
-"rate": 0.0791,
-"n": 3020
-},
-"A-ONE COMMERCIAL INSURANCE RRG, INC": {
-"tier": "high",
-"lift": 4.2,
-"rate": 0.1409,
-"n": 866
-},
-"NEW HORIZON INSURANCE COMPANY": {
-"tier": "elevated",
-"lift": 1.8,
-"rate": 0.0609,
-"n": 805
-},
-"KNIGHT SPECIALTY INSURANCE COMPANY": {
-"tier": "elevated",
-"lift": 2.5,
-"rate": 0.0828,
-"n": 858
 },
 "BERKSHIRE HATHAWAY DIRECT INSURANCE COMPANY": {
 "tier": "high",
@@ -157,11 +79,11 @@
 "rate": 0.063,
 "n": 1222
 },
-"BULLDOG NATIONAL RRG GROUP INC": {
+"SHELTER GENERAL INSURANCE COMPANY": {
 "tier": "elevated",
-"lift": 2.1,
-"rate": 0.0694,
-"n": 1066
+"lift": 2.0,
+"rate": 0.0668,
+"n": 1183
 },
 "STAR MUTUAL RRG": {
 "tier": "elevated",
@@ -169,17 +91,17 @@
 "rate": 0.0571,
 "n": 1541
 },
+"BULLDOG NATIONAL RRG GROUP INC": {
+"tier": "elevated",
+"lift": 2.1,
+"rate": 0.0694,
+"n": 1066
+},
 "AMGUARD INSURANCE COMPANY": {
 "tier": "elevated",
 "lift": 1.7,
 "rate": 0.056,
 "n": 1072
-},
-"SHELTER GENERAL INSURANCE COMPANY": {
-"tier": "elevated",
-"lift": 2.0,
-"rate": 0.0668,
-"n": 1183
 },
 "ACCREDITED SPECIALTY INSURANCE COMPANY": {
 "tier": "high",
@@ -222,6 +144,84 @@
 "lift": 3.7,
 "rate": 0.1241,
 "n": 532
+},
+"CIMARRON INSURANCE COMPANY": {
+"tier": "high",
+"lift": 2.6,
+"rate": 0.0881,
+"n": 874
+},
+"NATIONAL INDEMNITY COMPANY": {
+"tier": "high",
+"lift": 3.0,
+"rate": 0.1007,
+"n": 963
+},
+"STATE NATIONALSPECIALTY INSCO/NATIONAL SPECIA": {
+"tier": "high",
+"lift": 5.4,
+"rate": 0.1791,
+"n": 1195
+},
+"UNIVERSAL CASUALTY RISK RETENTION GROUP, INC": {
+"tier": "high",
+"lift": 3.3,
+"rate": 0.1098,
+"n": 2724
+},
+"COUNTY HALL INSURANCE COMPANY, INC A RR GROUP": {
+"tier": "high",
+"lift": 3.3,
+"rate": 0.1091,
+"n": 788
+},
+"SOUTHLAKE SPECIALTY INSURANCE COMPANY": {
+"tier": "elevated",
+"lift": 2.4,
+"rate": 0.0791,
+"n": 3020
+},
+"GEICO MARINE INSURANCE COMPANY": {
+"tier": "elevated",
+"lift": 1.5,
+"rate": 0.0507,
+"n": 19652
+},
+"NATIONAL TRANSPORTATION INSURANCE CO RRG, LLC": {
+"tier": "high",
+"lift": 2.8,
+"rate": 0.0932,
+"n": 976
+},
+"BERKSHIRE HATHAWAY HOMESTATE INSURANCE COMPAN": {
+"tier": "high",
+"lift": 2.6,
+"rate": 0.0866,
+"n": 1525
+},
+"ASCOT SPECIALTY INSURANCE COMPANY": {
+"tier": "high",
+"lift": 3.1,
+"rate": 0.1051,
+"n": 809
+},
+"A-ONE COMMERCIAL INSURANCE RRG, INC": {
+"tier": "high",
+"lift": 4.2,
+"rate": 0.1409,
+"n": 866
+},
+"NEW HORIZON INSURANCE COMPANY": {
+"tier": "elevated",
+"lift": 1.8,
+"rate": 0.0609,
+"n": 805
+},
+"KNIGHT SPECIALTY INSURANCE COMPANY": {
+"tier": "elevated",
+"lift": 2.5,
+"rate": 0.0828,
+"n": 858
 }
 }
 }

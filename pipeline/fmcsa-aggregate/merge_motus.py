@@ -106,7 +106,14 @@ def merge_revocations() -> None:
 
     rs = pl.read_csv(MOTUS_REVSUSP, infer_schema_length=0, ignore_errors=True).with_columns(
         DOT_NUMBER=pl.col("USDOT_NUMBER").cast(pl.Int64, strict=False),
-        eff_raw=pl.col("ORDER1_EFFECTIVE_DATE").cast(pl.Utf8),
+        # 939 rows carry a null/blank effective date but a populated serve date.
+        # Comparing null with < and > excludes them from BOTH the in-effect and
+        # pending sets, so they silently vanished — 152 of them involuntary
+        # suspension notices, 83 with no other Motus enforcement evidence at all.
+        eff_raw=pl.coalesce(
+            pl.col("ORDER1_EFFECTIVE_DATE").cast(pl.Utf8).replace("", None),
+            pl.col("ORDER1_SERVE_DATE").cast(pl.Utf8).replace("", None),
+        ),
         kind=pl.when(pl.col("ORDER1_TYPE_DESC").str.contains("(?i)involuntary"))
               .then(pl.lit("INVOLUNTARY REVOCATION"))
               .when(pl.col("ORDER1_TYPE_DESC").str.contains("(?i)voluntary"))
@@ -144,9 +151,12 @@ def merge_revocations() -> None:
         ah.with_columns(ah_eff=pl.col("eff_raw").str.strptime(pl.Date, format="%Y%m%d", strict=False))
         .join(rs_keys, on="DOT_NUMBER", how="left")
         .with_columns(gap=(pl.col("ah_eff") - pl.col("rs_eff")).dt.total_days().abs())
-        .group_by(["DOT_NUMBER", "eff_raw"])
+        # group by OP_AUTH_TYPE as well: a carrier losing two authority types on
+        # one day is two real events, and collapsing on (DOT, date) alone drops
+        # one of them.
+        .group_by(["DOT_NUMBER", "eff_raw", "OP_AUTH_TYPE"])
         .agg(min_gap=pl.col("gap").min(), REASON=pl.col("REASON").first(),
-             OP_AUTH_TYPE=pl.col("OP_AUTH_TYPE").first(), DOCKET_NUMBER=pl.col("DOCKET_NUMBER").first())
+             DOCKET_NUMBER=pl.col("DOCKET_NUMBER").first())
         .filter(pl.col("min_gap").is_null() | (pl.col("min_gap") > DEDUP_WINDOW_DAYS))
     )
     log(f"  after de-dup against RevokeSuspend (±{DEDUP_WINDOW_DAYS}d): {ah_dedup.height:,} kept")
@@ -159,6 +169,8 @@ def merge_revocations() -> None:
             ORDER1_SERVE_DATE=(_mdY(serve_col) if serve_col else _mdY("eff_raw")),
             ORDER2_TYPE_DESC=pl.col("kind") if "kind" in df.columns else pl.lit("INVOLUNTARY REVOCATION"),
             order2_effective_Date=_mdY("eff_raw"),
+            # carried only for the de-dup key below, dropped before output
+            _auth_type=pl.col("OP_AUTH_TYPE").fill_null(""),
         )
 
     # De-duplicate ONLY within the Motus additions. A global unique() would
@@ -170,9 +182,15 @@ def merge_revocations() -> None:
         shape(rs_done, "ORDER1_SERVE_DATE"),
         shape(ah_dedup.with_columns(kind=pl.lit("INVOLUNTARY REVOCATION")), None),
     ], how="vertical_relaxed").unique(
-        subset=["DOT_NUMBER", "TYPE_LICENSE", "ORDER2_TYPE_DESC", "order2_effective_Date"],
+        # Key on OP_AUTH_TYPE, not TYPE_LICENSE: the latter buckets Property /
+        # HHG / Passenger / Enterprise all into COMMON, so de-duping on it
+        # collapses a carrier that lost several authorities on one day into a
+        # single row — the same multi-authority collapse this block's comment
+        # warns about, just reintroduced inside the Motus additions (530 of
+        # 6,755 in-effect rows).
+        subset=["DOT_NUMBER", "_auth_type", "ORDER2_TYPE_DESC", "order2_effective_Date"],
         keep="first",
-    )
+    ).drop("_auth_type")
     merged = pl.concat([
         old.select("DOCKET_NUMBER", "DOT_NUMBER", "TYPE_LICENSE",
                    "ORDER1_SERVE_DATE", "ORDER2_TYPE_DESC", "order2_effective_Date"),
@@ -364,7 +382,19 @@ def merge_insurance() -> None:
     $3.5M — both match the values already in the parquet.
 
     Do NOT use Motus_Carrier.BIPD_FILE for this (see merge_carrier_auth).
-    Cargo is BMC-34, broker surety BMC-84/85, bond BMC-82 — excluded here.
+
+    WE NEVER ZERO A CARRIER FROM ABSENCE. Motus_Insur is not a complete BIPD
+    register — a carrier whose BIPD has not changed since the cutover often has
+    no BIPD row in it at all. An earlier version zeroed any carrier that had
+    *any* post-cutover transaction but no BIPD filing; because a cargo, bond or
+    surety renewal satisfies "post-cutover transaction", that reported 38 active
+    and genuinely-insured carriers as $0 BIPD — Cheney Brothers, Millis
+    Transfer, Oak Harbor Freight Lines among them — which is a false Critical
+    verdict on a real company. Absence of evidence is not evidence of absence.
+    Insurance LOSS is detected from the positive signal instead: FMCSA's own
+    involuntary-suspension notices ("insurance cancellation effective; no active
+    insurance meeting minimum coverage on file"), which merge_revocations
+    already handles.
     """
     old = pl.read_csv(OLD_CARRIER, infer_schema_length=0, ignore_errors=True)
     cols = old.columns
@@ -379,34 +409,26 @@ def merge_insurance() -> None:
     # summing every distinct policy double-counts the layer and reports $6M
     # against a true $5M. Collapsing on (dot, amount) and keeping the latest
     # trans_date drops the superseded row and reproduces L&I exactly.
+    # BIPD is INS_TYPE_CODE '1' — that is BMC-91X *and* BMC-91 *and* BMC-35.
+    # Filtering on the form code 'BMC-91%' silently drops BMC-35, which is a
+    # full BIPD filing: same type code, median coverage $750,000 (the federal
+    # minimum), and its amount equals L&I's BIPD_FILE x 1000 for 4,578 of 4,664
+    # carriers. 561 carriers have BMC-35 as their ONLY BIPD form.
+    # Cargo is type 2 (BMC-34), broker surety type 3 (BMC-84), bond type 4.
     bipd = (
-        ins.filter(pl.col("INS_FORM_CODE").str.starts_with("BMC-91"))
+        ins.filter(pl.col("INS_TYPE_CODE").cast(pl.Utf8).str.strip_chars() == "1")
         .sort("TRANS_DATE", descending=True)
         .unique(subset=["dot", "cov"], keep="first")
         .group_by("dot")
         .agg(bipd_k=(pl.col("cov").sum() / 1000.0))
     )
-    # A carrier that transacted after the cutover but has no BMC-91 filing left
-    # has lost its BIPD. Restricted to post-cutover activity so we never zero a
-    # carrier just because Motus happens not to list an unchanged old policy.
-    gone = (
-        ins.group_by("dot")
-        .agg(
-            post=(pl.col("TRANS_DATE") > CUTOVER).any(),
-            has_bipd=pl.col("INS_FORM_CODE").str.starts_with("BMC-91").any(),
-        )
-        .filter(pl.col("post") & ~pl.col("has_bipd"))
-        .select("dot", zeroed=pl.lit(0.0))
-    )
-    log(f"Motus insurance: {bipd.height:,} DOTs with a BIPD filing, "
-        f"{gone.height:,} whose BIPD is gone since the cutover")
+    log(f"Motus insurance: {bipd.height:,} DOTs with a BIPD (type-1) filing")
 
     merged = (
         old.with_columns(_dot=pl.col("DOT_NUMBER").cast(pl.Int64, strict=False))
         .join(bipd, left_on="_dot", right_on="dot", how="left")
-        .join(gone, left_on="_dot", right_on="dot", how="left")
         .with_columns(
-            _new=pl.coalesce("bipd_k", "zeroed"),
+            _new=pl.col("bipd_k"),
             _old=pl.col("BIPD_FILE").cast(pl.Float64, strict=False),
         )
     )
