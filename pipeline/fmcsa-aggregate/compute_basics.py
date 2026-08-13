@@ -72,15 +72,15 @@ def _src(refresh_name: str, fallback: str) -> Path:
 
 INSP_CSV = Path(os.environ.get(
     "FMCSA_INSPECTION_FILE",
-    _src("SMS_Input_-_Inspection.csv", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Inspection_20260518.csv"),
+    _src("SMS_Input_-_Inspection.csv", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Inspection.csv"),
 ))
 VIOL_CSV = Path(os.environ.get(
     "FMCSA_VIOLATION_FILE",
-    _src("SMS_Input_-_Violation.csv", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Violation_20260518.csv"),
+    _src("SMS_Input_-_Violation.csv", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Violation.csv"),
 ))
 CRASH_CSV = Path(os.environ.get(
     "FMCSA_CRASH_FILE",
-    _src("SMS_Input_-_Crash.csv", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Crash_20260518.csv"),
+    _src("SMS_Input_-_Crash.csv", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Crash.csv"),
 ))
 SCRAPE_DIR = Path(
     os.environ.get(

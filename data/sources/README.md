@@ -176,8 +176,7 @@ SMS_AB PassProperty (newest matching glob) automatically.
 ### 2. Bump the date pins, then build
 
 `build_all.py`'s `DEFAULT_ENV` pins **hard-coded dated filenames**
-(`..._20260514.csv`, `..._20260518.csv`) and `add_inshist.py` has a
-`SNAPSHOT_DATE = "2026-05-14"` constant. Before building:
+(`..._20260514.csv`, `..._20260518.csv`) and the vintage constants. Before building:
 ```bash
 grep -rn "20260514\|20260518\|2026-05-14\|SNAPSHOT_DATE" pipeline/fmcsa-aggregate/
 ```

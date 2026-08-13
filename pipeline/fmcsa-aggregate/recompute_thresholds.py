@@ -21,8 +21,12 @@ from pathlib import Path
 
 import polars as pl
 
+# Repo-relative: HERE is pipeline/fmcsa-aggregate/, so this used to read and
+# write a parquet INSIDE the pipeline dir rather than data/.
+REPO = Path(__file__).resolve().parents[2]
+
 HERE = Path(__file__).parent
-PARQUET = Path(os.environ.get("FMCSA_PARQUET", HERE / "carrier_aggregates.parquet"))
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", REPO / "data" / "carrier_aggregates.parquet"))
 OUT = Path(os.environ.get("FMCSA_THRESHOLDS_V2_OUT", HERE / "national_thresholds_v2.json"))
 
 # YYYYMMDD vintage of the data this was computed from, and the 24-month window

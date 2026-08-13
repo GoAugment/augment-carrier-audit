@@ -1,52 +1,57 @@
 {
-  "_meta": {
-    "source": "SMS_Input_-_Crash_20260518.csv",
-    "national_injury_pct": 36,
-    "note": "Injury share of truck crashes by crash-location state. tier: high>=45%, elevated>=38%. Only states with >=1000 crashes + above-elevated kept.",
-    "generated": "2026-06-01"
-  },
-  "TX": {
-    "injury_pct": 43.1,
+  "FL": {
+    "injury_pct": 38.5,
     "tier": "elevated"
   },
-  "NV": {
-    "injury_pct": 42.5,
+  "ID": {
+    "injury_pct": 42.8,
+    "tier": "elevated"
+  },
+  "MA": {
+    "injury_pct": 38.3,
+    "tier": "elevated"
+  },
+  "ME": {
+    "injury_pct": 41.9,
+    "tier": "elevated"
+  },
+  "MS": {
+    "injury_pct": 41.1,
     "tier": "elevated"
   },
   "NC": {
     "injury_pct": 44.4,
     "tier": "elevated"
   },
-  "NY": {
-    "injury_pct": 71.7,
+  "NJ": {
+    "injury_pct": 45.7,
     "tier": "high"
   },
-  "ID": {
-    "injury_pct": 42.3,
-    "tier": "elevated"
-  },
   "NM": {
-    "injury_pct": 38.8,
+    "injury_pct": 39.0,
     "tier": "elevated"
   },
-  "NJ": {
-    "injury_pct": 46.4,
+  "NV": {
+    "injury_pct": 44.4,
+    "tier": "elevated"
+  },
+  "NY": {
+    "injury_pct": 70.5,
     "tier": "high"
   },
   "SC": {
-    "injury_pct": 40.8,
+    "injury_pct": 40.3,
     "tier": "elevated"
   },
-  "ME": {
-    "injury_pct": 42.7,
+  "TX": {
+    "injury_pct": 43.3,
     "tier": "elevated"
   },
-  "FL": {
-    "injury_pct": 38.7,
-    "tier": "elevated"
-  },
-  "MS": {
-    "injury_pct": 41.2,
-    "tier": "elevated"
+  "_meta": {
+    "source": "SMS_Input_-_Crash.csv",
+    "national_injury_pct": 36.0,
+    "note": "Injury share of truck crashes by crash-location state. tier: high>=45%, elevated>=38%. Only states with >=1000 crashes + above-elevated kept.",
+    "generated": "20260812",
+    "total_crashes": 258069
   }
 }

@@ -24,9 +24,13 @@ from pathlib import Path
 import os
 import polars as pl
 
+# Repo-relative: HERE is pipeline/fmcsa-aggregate/, so this used to read and
+# write a parquet INSIDE the pipeline dir rather than data/.
+REPO = Path(__file__).resolve().parents[2]
+
 HERE = Path(__file__).parent
-PARQUET = Path(os.environ.get("FMCSA_PARQUET", HERE / "carrier_aggregates.parquet"))
-INSP = Path(os.environ.get("FMCSA_INSPECTION_FILE", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Inspection_20260518.csv"))
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", REPO / "data" / "carrier_aggregates.parquet"))
+INSP = Path(os.environ.get("FMCSA_INSPECTION_FILE", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Inspection.csv"))
 
 def log(msg): print(f"[add_fleet_sharing] {msg}", flush=True)
 

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import time
@@ -65,6 +66,31 @@ def _latest_glob(pattern: str, fallback: str, base: Path | None = None) -> Path:
     root = base or SOURCES_DIR
     matches = sorted(root.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
     return matches[0] if matches else root / fallback
+
+
+def _undated_or_newest_dated(stem: str) -> Path:
+    """`<stem>.csv` if the downloader wrote it, else the newest `<stem>_YYYYMMDD.csv`
+    by the date IN THE NAME.
+
+    Deliberately not _latest_glob: that ranks by mtime, and mtime lies. A `git
+    checkout` of a stale dated file gives it a fresh mtime and it wins, which is
+    exactly how a May extract got selected over an August one during this refresh.
+    The date in the filename is the only trustworthy vintage.
+
+    Also not a hardcoded dated fallback (the previous shape here): pinning
+    `SMS_Input_-_Crash_20260518.csv` as the fallback means that if the undated
+    download is ever missing, the build silently reads May data forever instead
+    of failing. Missing everything returns the undated path, which then fails
+    loudly downstream on a not-found."""
+    exact = SOURCES_DIR / f"{stem}.csv"
+    if exact.exists():
+        return exact
+    dated = sorted(
+        (p for p in SOURCES_DIR.glob(f"{stem}_*.csv") if re.fullmatch(r"\d{8}", p.stem[len(stem) + 1 :])),
+        key=lambda p: p.stem[len(stem) + 1 :],
+        reverse=True,
+    )
+    return dated[0] if dated else exact
 
 
 DEFAULT_ENV = {
@@ -137,10 +163,10 @@ DEFAULT_ENV = {
     "FMCSA_CARRIER_AUTH_RAW": SOURCES_DIR / "Carrier_All_With_History.csv",
     "FMCSA_MOTUS_CARRIER": SOURCES_DIR / "Motus_Carrier_All_With_History.csv",
     "FMCSA_MOTUS_INSUR": SOURCES_DIR / "Motus_Insur_All_With_History.csv",
-    # Downloader writes undated names; prefer those, fall back to dated legacy.
-    "FMCSA_INSPECTION_FILE": _first_existing("SMS_Input_-_Inspection.csv", "SMS_Input_-_Inspection_20260518.csv"),
-    "FMCSA_VIOLATION_FILE": _first_existing("SMS_Input_-_Violation.csv", "SMS_Input_-_Violation_20260518.csv"),
-    "FMCSA_CRASH_FILE": _first_existing("SMS_Input_-_Crash.csv", "SMS_Input_-_Crash_20260518.csv"),
+    # Downloader writes undated names; prefer those, else newest dated legacy.
+    "FMCSA_INSPECTION_FILE": _undated_or_newest_dated("SMS_Input_-_Inspection"),
+    "FMCSA_VIOLATION_FILE": _undated_or_newest_dated("SMS_Input_-_Violation"),
+    "FMCSA_CRASH_FILE": _undated_or_newest_dated("SMS_Input_-_Crash"),
     # Output tag for the per-DOT crash-scrape parquet (crash_indicator_<TAG>.parquet).
     # Bump this with the monthly drop so the scrape writes a fresh vintage file
     # (compute_basics globs the newest). The scraper recomputes Crash-Indicator
@@ -323,6 +349,14 @@ STEPS: list[Step] = [
         name="build_zip_risk",
         script="build_zip_risk.py",
         description="Per-ZIP shutdown-lift table -> lib/data/zip-risk.json",
+        runtime_estimate_min=0.2,
+    ),
+    # Was hand-built once (2026-06-01) with no generator in the repo, so it kept
+    # describing the May crash window through every later refresh. Now a step.
+    Step(
+        name="build_lane_liability",
+        script="build_lane_liability.py",
+        description="Per-state crash injury-share table -> lib/data/lane-liability.json",
         runtime_estimate_min=0.2,
     ),
     # MUST stay ahead of prune_app_parquet: it reads home_state_insp_share,

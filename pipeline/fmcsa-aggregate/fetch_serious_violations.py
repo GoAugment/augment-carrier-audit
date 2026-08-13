@@ -15,7 +15,7 @@ Scope (likely-investigated carriers; investigations are rare so this is a tight
 superset of carriers that could have a Serious Violation):
     FAST Act high-risk  ∪  compliance-reviewed in last 12mo  ∪  has enforcement case
 
-Output: data/fmcsa_scrape/serious_violations_20260514.parquet
+Output: data/fmcsa_scrape/serious_violations_<SMS_DATA_TAG>.parquet
     one row per (DOT, violation): dot_number, investigation_type,
     investigation_date, violation_code, description, basic, scraped_at
 Plus per-DOT status in serious_violations_status_*.parquet (ok/no_data/error)

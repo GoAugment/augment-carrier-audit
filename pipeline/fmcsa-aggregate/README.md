@@ -119,7 +119,7 @@ joining the FMCSA bulk files. Pulls 5 publicly-available BASIC measures + alert
 codes, MCS-150 census fields (PU, drivers, mileage, address), SMS inspection /
 violation aggregates, crash totals, peer-group classification.
 
-- **Inputs:** all FMCSA bulk CSVs in `/Users/art/Downloads/`
+- **Inputs:** all FMCSA bulk CSVs in `data/sources/`
 - **Output:** `carrier_aggregates.parquet` (overwrites)
 - **Frequency:** every monthly SMS refresh
 - **Runtime:** ~3 min
@@ -266,7 +266,7 @@ analyzer.ts. Run when the parquet is refreshed.
 - **Schema-stable parquet:** new columns are added via `.join` or
   `.with_columns`; existing columns are dropped + re-added rather than
   renamed in place (DuckDB doesn't tolerate type changes well).
-- **Snapshot vintage** in filenames: `crash_indicator_20260514.parquet`
+- **Snapshot vintage** in filenames: `crash_indicator_<SMS_DATA_TAG>.parquet`
   ties output to the SMS data vintage, not the calendar date the script
   ran. Lets resumable scrapes span multiple days.
 - **Compute scripts are idempotent:** running them twice in a row should

@@ -37,7 +37,7 @@ _REFRESH = os.environ.get("FMCSA_REFRESH_DIR")
 INSP = (
     Path(os.environ["FMCSA_INSPECTION_FILE"]) if os.environ.get("FMCSA_INSPECTION_FILE")
     else Path(_REFRESH) / "SMS_Input_-_Inspection.csv" if _REFRESH
-    else Path("/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Inspection_20260518.csv")
+    else Path("/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Inspection.csv")
 )
 POWER_UNIT_TYPES = [
     "TRUCK TRACTOR", "STRAIGHT TRUCK", "SCHOOL BUS", "BUS",

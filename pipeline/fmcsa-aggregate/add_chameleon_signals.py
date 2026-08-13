@@ -40,10 +40,13 @@ _RD = os.environ.get("FMCSA_REFRESH_DIR")
 INSP = (
     Path(os.environ["FMCSA_INSPECTION_FILE"]) if os.environ.get("FMCSA_INSPECTION_FILE")
     else Path(_RD) / "SMS_Input_-_Inspection.csv" if _RD
-    else Path("/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Inspection_20260518.csv")
+    else Path("/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Inspection.csv")
 )
 INSHIST = Path(os.environ.get("FMCSA_INSHIST", "/__unset__run-via-build_all.py-or-set-the-env-var__/inshist_allwithhistory.txt"))
-SNAPSHOT_DATE = "2026-08-12"
+# Derived from the same env var as the rest of the pipeline; this was a
+# literal that had to be remembered every refresh.
+_sd = os.environ.get("FMCSA_SNAPSHOT_DATE", "20260812")
+SNAPSHOT_DATE = f"{_sd[:4]}-{_sd[4:6]}-{_sd[6:]}"
 
 def log(m): print(f"[add_new_signals] {m}", flush=True)
 

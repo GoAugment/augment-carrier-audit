@@ -74,7 +74,12 @@ PARQUET = Path(
 # Random selection percentage for Insufficient Data Algorithm.
 # Per methodology: ~1% of carriers without ISS Safety value get random=99.
 RANDOM_SELECTION_PCT = 0.01
-RANDOM_SEED = 20260514  # match SMS data vintage for reproducibility
+# FIXED FOREVER — deliberately NOT the data vintage, despite the value looking
+# like one. FMCSA's methodology assigns ISS=99 to a random ~1% of
+# insufficient-data carriers; re-seeding per refresh would reshuffle which
+# carriers get it every month, churning verdicts for no reason. Do not 'update'
+# this with the snapshot date.
+RANDOM_SEED = 20260514
 
 # Insufficient Data Algorithm Case 2 buckets — ISS by max(PU, drivers).
 # Table from the ISS doc (December 2012, page 17).

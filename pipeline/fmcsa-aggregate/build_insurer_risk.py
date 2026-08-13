@@ -11,15 +11,27 @@ more — a leading signal known at booking time. Output → lib/data/insurer-ris
 Regenerate on each refresh. Tiers: high (lift>=2.5), elevated (lift>=1.5),
 among insurers with >=500 carriers; everyone else is omitted (treated normal).
 """
-import json, os
+import json, os, sys
+from datetime import datetime
 from pathlib import Path
 import duckdb
 
-REFRESH = os.environ.get("FMCSA_REFRESH_DIR", "data/sources/refresh_20260529")
+REFRESH = os.environ.get("FMCSA_REFRESH_DIR", "data/sources")
 A = os.environ.get("FMCSA_ACTPEND", f"{REFRESH}/ActPendInsur_All_With_History.csv")
-R = os.environ.get("FMCSA_REVOCATION", "/__unset__run-via-build_all.py-or-set-the-env-var__/Revocation_-_All_With_History_20260514.csv")
+R = os.environ.get("FMCSA_REVOCATION", "/__unset__run-via-build_all.py-or-set-the-env-var__/Revocation_-_All_With_History.csv")
 OUT = Path(os.environ.get("FMCSA_INSURER_RISK_OUT", "lib/data/insurer-risk.json"))
-OW0, OW1 = "2025-04-01", "2026-04-30"
+# Trailing 12 months ending AT the snapshot, derived — not a hardcoded pair.
+# These were pinned to 2025-04-01..2026-04-30, so the insurer-lift table
+# shipped today ignored every revocation from May onward, including the
+# 6,594 the Motus migration had just recovered.
+# No default: a hardcoded fallback here is what caused the stale window in the
+# first place. Run via build_all.py (which exports it) or set it explicitly.
+_snap_raw = os.environ.get("FMCSA_SNAPSHOT_DATE")
+if not _snap_raw:
+    sys.exit("build_insurer_risk: FMCSA_SNAPSHOT_DATE is unset — run via build_all.py or set it (YYYYMMDD).")
+_SNAP = datetime.strptime(_snap_raw, "%Y%m%d").date()
+OW1 = _SNAP.isoformat()
+OW0 = _SNAP.replace(year=_SNAP.year - 1).isoformat()
 
 con = duckdb.connect(); con.execute("PRAGMA threads=4")
 con.execute(f"""create temp table owrev as select distinct DOT_NUMBER dot from read_csv_auto('{R}',ignore_errors=true)

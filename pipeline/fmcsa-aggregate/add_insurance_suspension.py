@@ -47,6 +47,10 @@ from pathlib import Path
 
 import polars as pl
 
+# Repo-relative: HERE is pipeline/fmcsa-aggregate/, so this used to read and
+# write a parquet INSIDE the pipeline dir rather than data/.
+REPO = Path(__file__).resolve().parents[2]
+
 HERE = Path(__file__).resolve().parent
 SOURCES = Path(os.environ.get("FMCSA_SOURCES_DIR", HERE.parent.parent / "data" / "sources"))
 MERGED = Path(os.environ.get("FMCSA_MERGED_DIR", SOURCES / "merged"))
@@ -55,7 +59,7 @@ AUTHHIST = Path(os.environ.get("FMCSA_MOTUS_AUTHHIST", SOURCES / "Motus_AuthHist
 # Present-state authority feed. AuthHist is an event log and cannot tell us an
 # authority was never restored; this can.
 MOTUS_CARRIER = Path(os.environ.get("FMCSA_MOTUS_CARRIER", SOURCES / "Motus_Carrier_All_With_History.csv"))
-PARQUET = Path(os.environ.get("FMCSA_PARQUET", HERE / "carrier_aggregates.parquet"))
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", REPO / "data" / "carrier_aggregates.parquet"))
 SNAPSHOT = os.environ.get("FMCSA_SNAPSHOT_DATE", "20260812")
 
 # Reasons that mean "this authority is suspended because the insurance is gone".

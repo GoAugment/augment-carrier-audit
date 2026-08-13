@@ -43,12 +43,19 @@ from pathlib import Path
 
 import polars as pl
 
+# Repo-relative: HERE is pipeline/fmcsa-aggregate/, so this used to read and
+# write a parquet INSIDE the pipeline dir rather than data/.
+REPO = Path(__file__).resolve().parents[2]
+
 HERE = Path(__file__).parent
 INSHIST = Path(os.environ.get("FMCSA_INSHIST", "/__unset__run-via-build_all.py-or-set-the-env-var__/inshist_allwithhistory.txt"))
-PARQUET = Path(os.environ.get("FMCSA_PARQUET", HERE / "carrier_aggregates.parquet"))
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", REPO / "data" / "carrier_aggregates.parquet"))
 
 # Match the convention used elsewhere in this pipeline.
-SNAPSHOT_DATE = "2026-08-12"
+# Derived from the same env var as the rest of the pipeline; this was a
+# literal that had to be remembered every refresh.
+_sd = os.environ.get("FMCSA_SNAPSHOT_DATE", "20260812")
+SNAPSHOT_DATE = f"{_sd[:4]}-{_sd[4:6]}-{_sd[6:]}"
 
 
 def main() -> None:
