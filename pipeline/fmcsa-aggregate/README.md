@@ -49,8 +49,8 @@ thresholds and sidecar risk tables have been generated.
 
 **One-command rebuild:**
 ```
-uv run build_all.py                # full pipeline including scrape (~2h)
-uv run build_all.py --no-scrape    # skip scrape, use existing PU history (~15m)
+uv run build_all.py                # full pipeline including scrape (~2.4h)
+uv run build_all.py --no-scrape    # skip scrape, use existing PU history (~4m)
 uv run build_all.py --list         # show all steps + runtime estimates
 uv run build_all.py --from compute_basics   # resume from a specific step
 uv run build_all.py --only add_inshist      # run a single step
@@ -91,8 +91,13 @@ uv run build_all.py --only add_inshist      # run a single step
 Each script reads the canonical parquet, mutates a subset of columns, writes
 back. The scripts are idempotent — re-running produces identical results.
 
-Typical full-refresh runtime: ~2-3 hours, dominated by the per-DOT scrape
-(step 8). With `--no-scrape`: ~15 minutes.
+Typical full-refresh runtime: ~2.4 hours, almost entirely the two ZenRows
+scrapes. With `--no-scrape`: **~4 minutes** for all 19 data steps (measured
+2026-08-12; the old "~15 minutes" estimate was off by ~4x). The slowest single
+step is now `build_risk_signals` at ~1.6m, which parses the 2 GB Company Census.
+
+The expensive part of a refresh is the DOWNLOAD, not the build — see
+`refresh_sms_data.py` (~20 min with the default 4 concurrent jobs).
 
 ## Scripts (alphabetical)
 

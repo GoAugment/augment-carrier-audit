@@ -41,9 +41,56 @@ most-recent file matching each glob.
 ## Refresh runbook (monthly + daily insurance)
 
 FMCSA publishes new SMS snapshots around the 13th–18th of each month; the L&I
-insurance feeds update **daily**. The canonical builder is the Polars pipeline
+insurance feeds are *supposed* to update **daily** (but see the ActPendInsur
+warning below). The canonical builder is the Polars pipeline
 in `pipeline/fmcsa-aggregate/` (orchestrated by `build_all.py`). Everything
 below runs in THIS repo — there is no longer a sibling-workspace dependency.
+
+> 🚨 **FMCSA retired the L&I feeds on 2026-05-14 — see `merge_motus.py`.**
+> FMCSA replaced Licensing & Insurance with a new system ("Motus") that day and
+> stopped updating the four L&I bulk datasets. Their Socrata descriptions say it
+> outright: *"This dataset was last refreshed on 05/14/2026 and will no longer
+> be updated."* Affected: `ActPendInsur` (`qh9u-swkp`), `Carrier - All With
+> History` (`6eyk-hxee`), `Revocation` (`sa6p-acbp`), `InsHist` (`6sqe-dvqs`).
+> Company Census and every SMS dataset are unaffected.
+>
+> The live replacements are small (~100k rows, a few MB — so they're in the
+> `--daily` set) and only accumulate from the cutover, so every signal must
+> UNION old (≤2026-05-14) + Motus (>2026-05-14):
+>
+> | Retired | Motus replacement |
+> |---|---|
+> | Revocation `sa6p-acbp` | RevokeSuspend AWH `wb4f-neki` |
+> | ActPendInsur `qh9u-swkp` | Insur AWH `c5y8-a4uz` |
+> | Carrier AWH `6eyk-hxee` | Carrier AWH `inys-ebih` |
+> | — | AuthHist AWH `yu5v-wbh6` |
+>
+> `merge_motus.py` (pipeline step 1) does the splice and re-emits the OLD schema
+> into `data/sources/merged/`, so no downstream step knows any of this happened —
+> `build_all.py` just points `FMCSA_REVOCATION` at the merged file.
+>
+> **The vocabulary changed, not just the ids.** Motus issues a *suspension
+> notice* with a future effective date instead of revoking outright, and the
+> resulting status change lands in AuthHist — so one old `INVOLUNTARY
+> REVOCATION` can appear as two rows across two datasets. merge_motus unions
+> both and de-dups within ±45 days. Future-dated notices are NOT counted as
+> revocations; they go to `merged/motus_pending_suspension.csv`, which is the
+> replacement for the dead imminent-lapse signal (and a better one — it's
+> FMCSA's own enforcement action, not our inference from a cancel date).
+
+> ⚠️ **`rowsUpdatedAt` lies — verify vintage from file content, not metadata.**
+> Every Socrata mirror we pull reported `rowsUpdatedAt` = the current day on
+> 2026-08-12, but `ActPendInsur` (`qh9u-swkp`) came back **byte-identical to the
+> Jun 26 pull once sorted** (same 467,983 rows, max `trans_date` = 2026-05-14 in
+> both). FMCSA re-uploads the same snapshot daily, which advances the metadata
+> timestamp without changing the data. Carrier auth, Revocation and InsHist *did*
+> genuinely change. The duplicate catalog entry `y77m-3nfx` is not an alternative
+> — it's an `assetType: file` attachment with 0 columns.
+>
+> Practical consequence: the imminent-BIPD-lapse signal is pinned to the FMCSA
+> **2026-05-14** pending-cancellation vintage and does not improve with a refresh
+> until FMCSA unfreezes the feed. To re-check after a pull:
+> `sort <new>.csv | md5` vs the previous vintage, or histogram `trans_date`.
 
 > ⚠️ Insurance is NOT a standalone refresh. BIPD-on-file comes from
 > `build_aggregates` (reads `Carrier_All_With_History`); lapse/cancellation/
@@ -59,6 +106,16 @@ below runs in THIS repo — there is no longer a sibling-workspace dependency.
 uv run pipeline/fmcsa-aggregate/refresh_sms_data.py --monthly   # SMS Inspection/Violation/Crash + Census + InsHist + Carrier auth + Revocation + SMS_AB PassProperty
 uv run pipeline/fmcsa-aggregate/refresh_sms_data.py --daily     # ActPendInsur (insurance pending-cancel dates)
 ```
+Paths are resolved from the repo root (`Path(__file__).parents[2]`), so this runs
+in any workspace/checkout; override with `FMCSA_ENV_FILE` / `FMCSA_SOURCES_DIR`.
+
+**The download is the expensive part of a refresh — not the build.** Socrata
+throttles each connection to ~1.5 MB/s no matter the file, so the 10 monthly
+datasets take ~81 min of pure streaming if fetched one at a time. They now run
+**4 at a time** (`--jobs=N` to change), dispatched biggest-first, which puts the
+floor at the single slowest file — Company Census, ~20 min. Per-file progress
+lines are prefixed with the filename since they interleave.
+
 Both stream to `data/sources/refresh_<YYYYMMDD>/` as `.part` → atomic rename;
 re-runs skip files whose row count already matches Socrata (large files like
 Census + InsHist page via SODA chunks — see `PAGINATED`). The working Socrata
@@ -92,11 +149,12 @@ grep -rn "20260514\|20260518\|2026-05-14\|SNAPSHOT_DATE" pipeline/fmcsa-aggregat
 Update those to the new snapshot date (or rename the downloaded files to match
 the existing pins). Then:
 ```bash
-# ~30 min: reuses the existing PU-history + serious-violation scrape parquets.
+# ~4 min: reuses the existing PU-history + serious-violation scrape parquets.
 # Insurance/authority/BIPD/BASIC do NOT need fresh scrapes.
 uv run pipeline/fmcsa-aggregate/build_all.py --no-scrape
 
-# ~2.8 h: full rebuild INCLUDING the two ZenRows scrapes (needs SCRAPE_PROXY_URL).
+# ~2.4 h: full rebuild INCLUDING the two ZenRows scrapes (needs SCRAPE_PROXY_URL).
+# Essentially all of that is the two scrapes; the 19 data steps are ~4 min total.
 # Only when you want fresh Crash-Indicator + PU-history + serious-violations.
 uv run pipeline/fmcsa-aggregate/build_all.py
 ```
