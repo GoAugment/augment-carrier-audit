@@ -100,7 +100,13 @@ DEFAULT_ENV = {
         "SMS_AB_PassProperty*.csv",  # undated download or dated legacy
         "SMS_AB_PassProperty.csv",
     ),
-    "FMCSA_CARRIER_AUTH": SOURCES_DIR / "Carrier_All_With_History.csv",
+    # Carrier auth comes from merge_motus.merge_insurance: the L&I feed is frozen
+    # at 2026-05-14 and BIPD-on-file is rebuilt from Motus_Insur's BMC-91 filings.
+    # (NOT from Motus_Carrier.BIPD_FILE — different field, see merge_motus.)
+    "FMCSA_CARRIER_AUTH": MERGED_DIR / "Carrier_All_With_History.csv",
+    "FMCSA_CARRIER_AUTH_RAW": SOURCES_DIR / "Carrier_All_With_History.csv",
+    "FMCSA_MOTUS_CARRIER": SOURCES_DIR / "Motus_Carrier_All_With_History.csv",
+    "FMCSA_MOTUS_INSUR": SOURCES_DIR / "Motus_Insur_All_With_History.csv",
     # Downloader writes undated names; prefer those, fall back to dated legacy.
     "FMCSA_INSPECTION_FILE": _first_existing("SMS_Input_-_Inspection.csv", "SMS_Input_-_Inspection_20260518.csv"),
     "FMCSA_VIOLATION_FILE": _first_existing("SMS_Input_-_Violation.csv", "SMS_Input_-_Violation_20260518.csv"),

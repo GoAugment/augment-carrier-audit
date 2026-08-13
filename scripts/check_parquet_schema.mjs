@@ -65,3 +65,45 @@ const suffix = extra.length
   ? `; ${extra.length} build-only columns present`
   : "";
 console.log(`✓ carrier_aggregates.parquet contains all app projection columns (${expected.length} required, ${actual.length} total${suffix})`);
+
+// --- reference carriers -----------------------------------------------------
+// Known-good values on large, stable carriers. These catch the class of bug that
+// aggregate statistics hide: during the 2026-08 Motus insurance migration, two
+// separate wrong results looked fine on every distribution check and were caught
+// only here. bipd_insurance_on_file is $-THOUSANDS (Werner 5000 = $5M) —
+// the Motus feed is in whole dollars, so a missed unit conversion inflates it
+// 1000x, and summing superseded policy layers over-counts (Werner read 6000).
+const REFERENCE_CARRIERS = [
+  { dot: 53467, name: "Werner", bipd: 5000 },   // 4M excess + 1M self-insured
+  { dot: 80806, name: "JB Hunt", bipd: 3500 },  // 2.5M excess + 1M self-insured
+  { dot: 264184, name: "Schneider", bipd: 1000 }, // no BMC-91 in Motus; keeps L&I value
+];
+
+const refRows = await new Promise((resolve, reject) => {
+  const refDb = new duckdb.Database(":memory:");
+  const dots = REFERENCE_CARRIERS.map((c) => c.dot).join(",");
+  refDb.all(
+    `SELECT DOT_NUMBER, bipd_insurance_on_file FROM read_parquet('${parquetPath.replaceAll("'", "''")}')
+     WHERE DOT_NUMBER IN (${dots})`,
+    (err, rows) => (err ? reject(err) : resolve(rows)),
+  );
+});
+
+const refBad = [];
+for (const c of REFERENCE_CARRIERS) {
+  const row = refRows.find((r) => Number(r.DOT_NUMBER) === c.dot);
+  if (!row) {
+    refBad.push(`${c.name} (DOT ${c.dot}) missing from parquet`);
+  } else if (Number(row.bipd_insurance_on_file) !== c.bipd) {
+    refBad.push(
+      `${c.name} (DOT ${c.dot}) bipd_insurance_on_file = ${row.bipd_insurance_on_file}, expected ${c.bipd} ($-thousands)`,
+    );
+  }
+}
+if (refBad.length) {
+  console.error("\n✗ reference-carrier check FAILED — the insurance data is wrong:");
+  for (const m of refBad) console.error(`   ${m}`);
+  console.error("See merge_motus.merge_insurance (units + superseded-layer de-dup).");
+  process.exit(1);
+}
+console.log(`✓ reference carriers correct (${REFERENCE_CARRIERS.map((c) => c.name).join(", ")})`);

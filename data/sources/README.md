@@ -67,7 +67,42 @@ below runs in THIS repo — there is no longer a sibling-workspace dependency.
 >
 > `merge_motus.py` (pipeline step 1) does the splice and re-emits the OLD schema
 > into `data/sources/merged/`, so no downstream step knows any of this happened —
-> `build_all.py` just points `FMCSA_REVOCATION` at the merged file.
+> `build_all.py` just points `FMCSA_REVOCATION` and `FMCSA_CARRIER_AUTH` at the
+> merged files (the raw feeds stay available as `*_RAW`).
+>
+> **Revocations are migrated** (UNION: old events + Motus events).
+> **Insurance is migrated** (`merge_insurance`): BIPD-on-file is rebuilt from
+> **Motus_Insur** (`c5y8-a4uz`) — the BMC-91/91X filings, summed primary +
+> excess, de-duped on (policy_no, insurer, amount).
+>
+> Validated against the frozen L&I file as ground truth, split on whether the
+> carrier had any post-cutover insurance transaction:
+>
+> | cohort | agreement with L&I |
+> |---|---|
+> | no post-cutover activity (n=51,738) | **99.3%** — the correctness check |
+> | post-cutover activity (n=17,780) | 54.4% — i.e. the new information |
+>
+> Reference points: Werner 4M + 1M self-insured = $5M; JB Hunt 2.5M + 1M = $3.5M.
+>
+> ⚠️ **Do NOT use Motus Carrier's `BIPD_FILE` — it is a different field.**
+> Schneider National has one L&I docket row with BIPD_FILE `"01000"` ($1M), but
+> FOUR Motus_Carrier rows for the same docket (one per authority type) with
+> BIPD_FILE `"0"` on every one. Upserting that flips Schneider to "Insurance
+> lapsed" and would do the same to ~1,399 carriers. The failed attempt is kept,
+> disabled, in `merge_motus.merge_carrier_auth` as a warning.
+>
+> Cargo is BMC-34, broker surety BMC-84/85, bond BMC-82 — those are NOT BIPD and
+> are excluded from the sum. Carriers are only zeroed when they have
+> post-cutover activity AND no remaining BMC-91 filing, so an unchanged old
+> policy that Motus simply doesn't relist can never zero a carrier.
+>
+> ⚠️ **The two files use different UNITS and nothing warns you.** L&I stores
+> BIPD/min-coverage as zero-padded $-**thousands** (`"00750"` = $750k); Motus
+> stores whole **dollars** (`"750000"`). Copying Motus across verbatim inflates
+> every carrier's coverage 1000× and makes the `$0 BIPD` Critical gate
+> meaningless. `merge_motus` divides by 1,000 back into the old convention —
+> `build_aggregates` parses these as $-thousands (Werner = 5000.0 = $5M).
 >
 > **The vocabulary changed, not just the ids.** Motus issues a *suspension
 > notice* with a future effective date instead of revoking outright, and the
