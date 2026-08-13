@@ -38,6 +38,7 @@ ROOT = HERE.parent.parent
 DATA_DIR = ROOT / "data"
 SOURCES_DIR = DATA_DIR / "sources"
 SCRAPE_DIR = DATA_DIR / "fmcsa_scrape"
+MERGED_DIR = SOURCES_DIR / "merged"  # merge_motus.py output (L&I + Motus splice)
 LIB_DATA_DIR = ROOT / "lib" / "data"
 
 
@@ -76,10 +77,19 @@ DEFAULT_ENV = {
     "FMCSA_THRESHOLDS_V2_OUT": DATA_DIR / "national_thresholds_v2.json",
     "FMCSA_SCRAPE_DIR": SCRAPE_DIR,
     "FMCSA_SERIOUS_VIOLATIONS": SCRAPE_DIR / "serious_violations_20260514.parquet",
-    "FMCSA_REVOCATION": _latest_glob(
+    # Revocations come from merge_motus.py, NOT the raw download: FMCSA retired
+    # the L&I Revocation feed on 2026-05-14 and everything since lives in the
+    # Motus datasets. The merged file is the old schema with the Motus events
+    # spliced on, so downstream steps are unchanged. _RAW is what merge reads.
+    "FMCSA_REVOCATION": MERGED_DIR / "Revocation_-_All_With_History.csv",
+    "FMCSA_REVOCATION_RAW": _latest_glob(
         "Revocation_-_All_With_History*.csv",  # undated download or dated legacy
         "Revocation_-_All_With_History.csv",
     ),
+    "FMCSA_MERGED_DIR": MERGED_DIR,
+    "FMCSA_MOTUS_REVSUSP": SOURCES_DIR / "Motus_RevokeSuspend_All_With_History.csv",
+    "FMCSA_MOTUS_AUTHHIST": SOURCES_DIR / "Motus_AuthHist_All_With_History.csv",
+    "FMCSA_PENDING_SUSPENSION": MERGED_DIR / "motus_pending_suspension.csv",
     "FMCSA_INSHIST": _first_existing(
         "inshist_allwithhistory.csv",  # Socrata mirror (auto-downloaded), preferred
         "inshist_allwithhistory.txt",  # FMCSA native dump (legacy/manual)
@@ -100,7 +110,9 @@ DEFAULT_ENV = {
     # (compute_basics globs the newest). The scraper recomputes Crash-Indicator
     # eligibility from FMCSA_CRASH_FILE's date automatically, so only this tag +
     # the dated filenames above need updating each month.
-    "SMS_DATA_TAG": "20260626",
+    "SMS_DATA_TAG": "20260812",
+    # merge_motus: events effective after this are "pending", not revocations.
+    "FMCSA_SNAPSHOT_DATE": "20260812",
     "FMCSA_COMPANY_CENSUS": SOURCES_DIR / "Company_Census_File.csv",
     "FMCSA_ZIP_RISK_OUT": LIB_DATA_DIR / "zip-risk.json",
     "FMCSA_INSURER_RISK_OUT": LIB_DATA_DIR / "insurer-risk.json",
@@ -115,60 +127,74 @@ class Step:
     runtime_estimate_min: float
     optional: bool = False  # can be skipped via --no-scrape
     extra_args: tuple[str, ...] = ()
+    # Most steps are Polars scripts in this directory run under `uv run`. A few
+    # live at the repo root and run under a different interpreter (the DuckDB
+    # risk-signals builder is Node) — these two fields cover that.
+    runner: tuple[str, ...] = ("uv", "run")
+    repo_root_script: bool = False  # resolve `script` against ROOT, not HERE
 
 
 STEPS: list[Step] = [
+    # MUST be first: everything downstream that reads revocations (add_revocations,
+    # build_insurer_risk, build_risk_signals' shut-down universe) consumes the
+    # merged output, not the frozen raw feed.
+    Step(
+        name="merge_motus",
+        script="merge_motus.py",
+        description="Splice live Motus authority/insurance events onto the retired L&I feeds (frozen 2026-05-14)",
+        runtime_estimate_min=0.5,
+    ),
     Step(
         name="build_aggregates",
         script="build_aggregates.py",
         description="Core schema + 5 public BASIC measures from bulk SMS file",
-        runtime_estimate_min=3.0,
+        runtime_estimate_min=0.5,
     ),
     Step(
         name="add_revocations",
         script="add_revocations.py",
         description="Revocation history + prior-revoke flag",
-        runtime_estimate_min=0.5,
+        runtime_estimate_min=0.2,
     ),
     Step(
         name="add_inshist",
         script="add_inshist.py",
         description="Insurance cancellation history (distinct policies, "
                     "rapid-replace flag)",
-        runtime_estimate_min=1.0,
+        runtime_estimate_min=0.2,
     ),
     Step(
         name="add_enforcement",
         script="add_enforcement.py",
         description="Enforcement case counts + settlement totals",
-        runtime_estimate_min=0.5,
+        runtime_estimate_min=0.2,
     ),
     Step(
         name="add_pending_lapse",
         script="add_pending_lapse.py",
         description="Imminent BIPD insurance lapse (terminal cancellation, no "
                     "replacement, no other active coverage)",
-        runtime_estimate_min=1.0,
+        runtime_estimate_min=0.2,
     ),
     Step(
         name="add_fleet_sharing",
         script="add_fleet_sharing.py",
         description="Cross-DOT VIN overlap (largest sibling for "
                     "chameleon-shared-fleet rule)",
-        runtime_estimate_min=3.0,
+        runtime_estimate_min=0.5,
     ),
     Step(
         name="add_plausibility",
         script="add_plausibility.py",
         description="Fleet-size plausibility heuristic (inflated PU detection)",
-        runtime_estimate_min=0.5,
+        runtime_estimate_min=0.2,
     ),
     Step(
         name="add_chameleon_signals",
         script="add_chameleon_signals.py",
         description="Diffuse VIN share + insurance distinct-policy / "
                     "replace counts",
-        runtime_estimate_min=2.0,
+        runtime_estimate_min=0.5,
     ),
     Step(
         name="scrape_pu_history",
@@ -182,14 +208,14 @@ STEPS: list[Step] = [
         name="compute_basics",
         script="compute_basics.py",
         description="All 7 BASIC measures + percentiles + alerts",
-        runtime_estimate_min=5.0,
+        runtime_estimate_min=0.2,
     ),
     Step(
         name="add_high_risk",
         script="add_high_risk.py",
         description="FAST Act §5305 High-Risk flag (2+ of UD/CI/HOS/VM "
                     "at >=90th percentile)",
-        runtime_estimate_min=0.5,
+        runtime_estimate_min=0.2,
     ),
     Step(
         name="fetch_serious_violations",
@@ -204,56 +230,69 @@ STEPS: list[Step] = [
         script="add_serious_violations.py",
         description="Apply Serious Violations: affected BASIC percentile→100 + "
                     "alert (after add_high_risk so FAST uses roadside percentiles)",
-        runtime_estimate_min=0.5,
+        runtime_estimate_min=0.2,
     ),
     Step(
         name="compute_iss",
         script="compute_iss.py",
         description="ISS-CSA score (1-100, three tiers)",
-        runtime_estimate_min=3.0,
+        runtime_estimate_min=0.5,
     ),
     Step(
         name="recompute_thresholds",
         script="recompute_thresholds.py",
         description="Peer-group P85/P95/P99 cutoffs for analyzer.ts",
-        runtime_estimate_min=0.5,
+        runtime_estimate_min=0.2,
     ),
     # --- Risk-axis derived data (previously run by hand; now part of the refresh) ---
     Step(
         name="add_phantom_fleet",
         script="add_phantom_fleet.py",
         description="Phantom-fleet signal: distinct inspected VINs vs reported PU",
-        runtime_estimate_min=2.0,
+        runtime_estimate_min=0.2,
     ),
     Step(
         name="add_phy_zip",
         script="add_phy_zip.py",
         description="Physical-address ZIP (from carrier_identity) for the ZIP-risk marker",
-        runtime_estimate_min=0.5,
+        runtime_estimate_min=0.2,
     ),
     Step(
         name="add_geo_mismatch",
         script="add_geo_mismatch.py",
         description="Home-state inspection share (registration vs where cited)",
-        runtime_estimate_min=2.0,
+        runtime_estimate_min=0.2,
     ),
     Step(
         name="build_insurer_risk",
         script="build_insurer_risk.py",
         description="Insurer-reputation lift table -> lib/data/insurer-risk.json",
-        runtime_estimate_min=0.5,
+        runtime_estimate_min=0.2,
     ),
     Step(
         name="build_zip_risk",
         script="build_zip_risk.py",
         description="Per-ZIP shutdown-lift table -> lib/data/zip-risk.json",
-        runtime_estimate_min=0.5,
+        runtime_estimate_min=0.2,
+    ),
+    # MUST stay ahead of prune_app_parquet: it reads home_state_insp_share,
+    # which is a build-only column the prune step drops. Running it after the
+    # prune (or standalone against the checked-in parquet) fails with a DuckDB
+    # Binder error — which is why data/carrier_risk_signals.parquet silently
+    # went stale once add_geo_mismatch introduced that dependency.
+    Step(
+        name="build_risk_signals",
+        script="scripts/build_risk_signals.cjs",
+        description="Identity risk-signal sidecar (free-email / residential / shutdown links) -> data/carrier_risk_signals.parquet",
+        runtime_estimate_min=2.0,
+        runner=("node",),
+        repo_root_script=True,
     ),
     Step(
         name="prune_app_parquet",
         script="prune_app_parquet.py",
         description="Drop build-only columns; keep the checked-in aggregate at the app contract",
-        runtime_estimate_min=0.5,
+        runtime_estimate_min=0.2,
     ),
 ]
 
@@ -270,11 +309,11 @@ def list_steps() -> None:
 
 
 def run_step(step: Step) -> int:
-    script_path = HERE / step.script
+    script_path = (ROOT if step.repo_root_script else HERE) / step.script
     if not script_path.exists():
         print(f"  ✗ {step.name}: script not found at {script_path}")
         return 1
-    cmd = ["uv", "run", str(script_path), *step.extra_args]
+    cmd = [*step.runner, str(script_path), *step.extra_args]
     env = os.environ.copy()
     for key, value in DEFAULT_ENV.items():
         env.setdefault(key, str(value))

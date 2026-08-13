@@ -48,7 +48,7 @@ INSHIST = Path(os.environ.get("FMCSA_INSHIST", "/Users/art/Downloads/inshist_all
 PARQUET = Path(os.environ.get("FMCSA_PARQUET", HERE / "carrier_aggregates.parquet"))
 
 # Match the convention used elsewhere in this pipeline.
-SNAPSHOT_DATE = "2026-06-26"
+SNAPSHOT_DATE = "2026-08-12"
 
 
 def main() -> None:
