@@ -527,6 +527,9 @@ def merge_insurance() -> None:
                 PASSENGER_CHK=pl.when(is_carrier & ty.str.contains("Passenger")).then(pl.lit("Y")).otherwise(pl.lit("N")),
                 HHG_CHK=pl.when(is_carrier & is_hhg).then(pl.lit("Y")).otherwise(pl.lit("N")),
                 ENTERPRISE_CHK=pl.when(ty.str.contains("Enterprise")).then(pl.lit("Y")).otherwise(pl.lit("N")),
+                # "Mexico Domiciled Private Motor Carrier of Property" was
+                # mapped as property but never set the private flag.
+                PRIVATE_AUTH_CHK=pl.when(ty.str.contains("Private")).then(pl.lit("Y")).otherwise(pl.lit("N")),
                 _stat=pl.lit("A"),  # only Active rows survive the filter above
             )
             .with_columns(

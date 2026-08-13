@@ -26,6 +26,7 @@ compute_iss.py (which reads them).
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta
 from pathlib import Path
 import polars as pl
 
@@ -38,6 +39,9 @@ PARQUET = Path(os.environ.get("FMCSA_PARQUET", REPO / "data" / "carrier_aggregat
 # No dated default: a missing/miswired path must fail loudly rather than
 # silently score against a stale vintage. build_all always supplies this.
 SV = Path(os.environ.get("FMCSA_SERIOUS_VIOLATIONS", REPO / "data" / "fmcsa_scrape" / "serious_violations.parquet"))
+# Vintage this parquet was built for; the 12-month acute/critical window is
+# measured from it, not from wall-clock "now".
+SNAPSHOT_DATE = os.environ.get("FMCSA_SNAPSHOT_DATE", "20260812")
 
 # Map the XLSX BASIC label → our column prefix + a short code.
 BASIC_MAP = {
@@ -62,9 +66,21 @@ def main() -> None:
         log(f"no SV file at {SV} — skipping (Group 6 stays empty)")
         return
     sv = pl.read_parquet(SV)
-    # The per-carrier XLSX only lists acute/critical violations from the last
-    # 12 months, so every scraped row already qualifies; no date filter needed.
-    log(f"SV rows: {sv.height:,}  distinct DOTs: {sv['dot_number'].n_unique():,}")
+    # The comment that used to sit here claimed the per-carrier XLSX only lists
+    # acute/critical violations from the last 12 months, so no date filter was
+    # needed. That is NOT true: the 2026-08 scrape spans 2025-05-15 to
+    # 2026-07-27 — 15 months. 219 rows were older than 12 months, and all 125
+    # carriers carrying them had NO in-window violation at all, so each was
+    # flagged purely on an expired finding. A serious violation forces the
+    # affected BASIC to percentile 100, i.e. these were 125 false Criticals.
+    _n0, _d0 = sv.height, sv["dot_number"].n_unique()
+    _cut = (datetime.strptime(SNAPSHOT_DATE, "%Y%m%d") - timedelta(days=365)).date()
+    sv = sv.with_columns(
+        _inv=pl.col("investigation_date").cast(pl.Utf8).str.slice(0, 10)
+              .str.strptime(pl.Date, "%Y-%m-%d", strict=False)
+    ).filter(pl.col("_inv").is_not_null() & (pl.col("_inv") >= pl.lit(_cut))).drop("_inv")
+    log(f"SV rows: {sv.height:,} (dropped {_n0 - sv.height:,} older than {_cut}) "
+        f"distinct DOTs: {sv['dot_number'].n_unique():,} (was {_d0:,})")
 
     # Idempotent re-run support.
     for c in ("serious_violation_count", "serious_violation_basics",

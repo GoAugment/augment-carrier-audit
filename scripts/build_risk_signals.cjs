@@ -122,7 +122,17 @@ async function main() {
           -- order of magnitude larger — FedEx 138k, UPS 112k, Amazon 15k,
           -- Swift 13k, Werner 9.8k PU — so 250/100 suppresses them while leaving
           -- the mid-size band flagged.
-          (power_units >= 250 AND coalesce(pu_vins_inspected, 0) >= 100) AS corroborated_large
+          -- ...AND carrying no independent fraud evidence of its own. A blanket
+          -- size threshold still stripped corroboration from 346 flagged
+          -- carriers, 31 of them with a recent involuntary revocation
+          -- (DOT 976560: 409 PU, a Mar-2026 revocation, sharing policy
+          -- CT00018715 with revoked DOT 1441919). Size explains a shared
+          -- switchboard or a corporate insurance programme; it does not explain
+          -- a revoked authority, so a corroborated carrier stays flagged
+          -- regardless of fleet size.
+          (power_units >= 250 AND coalesce(pu_vins_inspected, 0) >= 100
+           AND coalesce(involuntary_revocations, 0) = 0
+           AND NOT coalesce(prior_revoke_flag, false)) AS corroborated_large
         FROM read_parquet('data/carrier_aggregates.parquet')
       ),
       -- Empirical area-code -> home-state map: US area codes don't cross state

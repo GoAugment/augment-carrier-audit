@@ -252,6 +252,17 @@ def download_paginated(c: httpx.Client, did: str, dest: Path, expected: int | No
     if expected is not None and got < expected:
         log(tag, f"✗ short after paging: {got:,} < expected {expected:,}")
         return False
+    # Same body check as the single-shot path. The paginated branch promoted
+    # whatever it accumulated with no validation, so when the count lookup had
+    # failed (expected=None) an HTML error page could still become the final CSV.
+    with open(part, "rb") as _fh:
+        head = _fh.read(2048).lstrip()
+    if head[:1] == b"<" or b"<html" in head[:512].lower():
+        log(tag, "✗ server returned HTML, not CSV")
+        return False
+    if expected is None and b"," not in head.split(b"\n", 1)[0]:
+        log(tag, "✗ first line is not a CSV header")
+        return False
     part.replace(dest)
     log(tag, f"✓ {got:,} rows in {(time.monotonic()-t0)/60:.1f}m (paged)")
     return True
