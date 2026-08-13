@@ -87,13 +87,21 @@ def main() -> None:
     ).filter(pl.col("DOT_NUMBER").is_not_null() & pl.col("when").is_not_null())
 
     # --- effective: suspended for insurance, on or before the snapshot --------
+    # Scoped to (DOT, docket, authority type). A carrier holds several
+    # authorities and they are suspended independently: DOT 3212267 had its
+    # PROPERTY authority suspended for no insurance on 2026-08-01 while its
+    # BROKER authority stayed Active. Keying any of this on DOT alone let the
+    # broker authority cancel the property suspension, so a carrier that cannot
+    # legally haul rendered Medium/"Active"/"since reinstated" — a false Clean,
+    # the dangerous direction.
+    scope = ["DOT_NUMBER", "DOCKET_NUMBER", "OP_AUTH_TYPE"]
     effective = (
         ah.filter(
             pl.col("reason").str.contains(INSURANCE_SUSPENSION)
             & pl.col("reason").str.to_lowercase().str.contains(INSURANCE_TOKEN)
             & (pl.col("when") <= pl.lit(snap))
         )
-        .group_by("DOT_NUMBER")
+        .group_by(scope)
         .agg(susp_date=pl.col("when").max())
     )
 
@@ -119,8 +127,8 @@ def main() -> None:
             pl.col("reason").is_in(CURE)
             | (pl.col("OP_AUTH_STATUS").fill_null("") == "Active")
         )
-        .group_by("DOT_NUMBER")
-        .agg(cured_on=pl.col("when").max())
+        .group_by(scope)          # same scope: a broker-authority grant does
+        .agg(cured_on=pl.col("when").max())   # not cure a property suspension
     )
 
     # A DOT that currently holds an Active authority in Motus_Carrier is not
@@ -132,20 +140,35 @@ def main() -> None:
         pl.read_csv(MOTUS_CARRIER, infer_schema_length=0, ignore_errors=True)
         .with_columns(DOT_NUMBER=pl.col("USDOT_NUMBER").cast(pl.Int64, strict=False))
         .filter(pl.col("OP_AUTH_STATUS") == "Active")
-        .select("DOT_NUMBER").unique()
+        .select(scope).unique()   # scoped: only THIS authority being active clears it
     )
 
     def drop_cured(df: pl.DataFrame, ref: str) -> pl.DataFrame:
-        joined = df.join(cures, on="DOT_NUMBER", how="left")
+        # Join on whatever scope columns BOTH sides carry — the pending sidecar
+        # has no OP_AUTH_TYPE — and re-aggregate `cures` to exactly those keys
+        # first. Without that the join fans out (cures is one row per authority
+        # type, so a docket with several types multiplies the pending rows) and
+        # a filter step silently made its input LARGER: 1,723 -> 1,748.
+        keys = [k for k in scope if k in df.columns and k in cures.columns]
+        c = cures.group_by(keys).agg(cured_on=pl.col("cured_on").max())
+        before = df.height
+        joined = df.join(c, on=keys, how="left")
+        assert joined.height == before, (
+            f"cure join fanned out: {before:,} -> {joined.height:,} on {keys}"
+        )
         return joined.filter(
             pl.col("cured_on").is_null() | (pl.col("cured_on") < pl.col(ref))
         ).drop("cured_on")
 
     eff_n, pend_n = effective.height, pending.height
-    effective = drop_cured(effective, "susp_date").join(active_now, on="DOT_NUMBER", how="anti")
+    effective = drop_cured(effective, "susp_date").join(active_now, on=scope, how="anti")
     pending = drop_cured(pending, "served")
     log(f"after cure check: {effective.height:,} effective (-{eff_n - effective.height:,}), "
         f"{pending.height:,} pending (-{pend_n - pending.height:,})")
+
+    # Roll the scoped rows up to one per DOT only now that cures have been
+    # applied per authority. Earliest suspension wins (most conservative).
+    effective = effective.group_by("DOT_NUMBER").agg(susp_date=pl.col("susp_date").min())
 
     # effective wins over pending — the authority is already gone
     pending = pending.join(effective.select("DOT_NUMBER"), on="DOT_NUMBER", how="anti")

@@ -24,7 +24,7 @@
     "vehicleOos": "na",
     "hazmatOos": "na",
     "revocations": "na",
-    "authority": "clean",
+    "authority": "elevated",
     "insurance": "critical"
   }
 }

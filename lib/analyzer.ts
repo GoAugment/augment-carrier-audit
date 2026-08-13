@@ -1368,7 +1368,21 @@ function classifyAuthority(c: FmcsaCarrier): {
     parts.push("Suspended (no insurance)");
     promote("critical");
   } else if (code === "A" || allowed === "Y") {
-    parts.push("Active");
+    // Census-active. But census status is NOT operating authority: FMCSA's own
+    // snapshot shows "USDOT Status: ACTIVE" alongside "Operating Status: NOT
+    // AUTHORIZED" for the same carrier. Surface the distinction, without
+    // over-flagging — 1,516,450 census-active carriers (73%) have no authority
+    // record at all, which is simply how intrastate and private operations look
+    // and is not a risk signal. Only the "held it, none active now" state is,
+    // and 217,833 of those 217,840 carry an MC docket.
+    if (c.hasActiveAuthority === false) {
+      parts.push("Active, no interstate authority");
+      promote("elevated");
+    } else if (c.hasActiveAuthority === null && !c.mcNumber) {
+      parts.push("Active (intrastate/private — no interstate authority)");
+    } else {
+      parts.push("Active");
+    }
   } else if (code) {
     parts.push(code);
     promote("critical");

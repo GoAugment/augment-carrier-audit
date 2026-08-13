@@ -154,6 +154,7 @@ interface ParquetRow {
   bipd_imminent_lapse: boolean | null;
   bipd_days_to_lapse: number | bigint | null;
   bipd_pending_cancel_date: string | null;
+  has_active_authority: boolean | null;
   insurance_suspension_status: string | null;
   insurance_suspension_date: string | null;
   insurance_suspension_days: number | bigint | null;
@@ -291,6 +292,15 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
     // authority already suspended and not cured; 'pending' = a served notice
     // with a future effective date. Replaces the ActPendInsur-derived
     // imminent-lapse signal, which died when FMCSA froze that feed 2026-05-14.
+    // FMCSA interstate for-hire operating authority. NULL means the carrier has
+    // no authority record at all — the normal state for intrastate/private
+    // operations (73% of census-active carriers), NOT a red flag. FALSE means it
+    // HELD authority and none is active now, which is meaningful: 217,833 of the
+    // 217,840 in that state carry an MC docket.
+    hasActiveAuthority:
+      r.has_active_authority === null || r.has_active_authority === undefined
+        ? null
+        : r.has_active_authority === true,
     insuranceSuspensionStatus:
       r.insurance_suspension_status === "effective" || r.insurance_suspension_status === "pending"
         ? r.insurance_suspension_status
@@ -433,6 +443,7 @@ const CARRIER_SELECT_COLUMNS = `
   iss_score, iss_tier, iss_group,
   has_serious_violation, serious_violation_count, serious_violation_basics,
   bipd_imminent_lapse, bipd_days_to_lapse, bipd_pending_cancel_date,
+  has_active_authority,
   insurance_suspension_status, insurance_suspension_date, insurance_suspension_days,
   crash_indicator_percentile, crash_indicator_alert,
   hm_compliance_percentile, hm_compliance_alert,

@@ -256,6 +256,10 @@ export interface FmcsaCarrier {
    *  already suspended, uncured; 'pending' = served notice, future effective
    *  date. Null when neither. Supersedes bipdImminentLapse, whose ActPendInsur
    *  source FMCSA froze on 2026-05-14. */
+  /** Interstate for-hire operating authority is active. null = no authority
+   *  record at all (intrastate/private — normal, not a flag); false = held
+   *  authority, none currently active. */
+  hasActiveAuthority: boolean | null;
   insuranceSuspensionStatus: "effective" | "pending" | null;
   insuranceSuspensionDate: string | null;
   /** Days from the data snapshot to the suspension date; negative = in effect. */
