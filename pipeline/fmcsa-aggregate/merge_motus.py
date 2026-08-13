@@ -70,6 +70,9 @@ MOTUS_AUTHHIST = Path(os.environ.get("FMCSA_MOTUS_AUTHHIST", SOURCES / "Motus_Au
 OLD_CARRIER = Path(os.environ.get("FMCSA_CARRIER_AUTH_RAW", SOURCES / "Carrier_All_With_History.csv"))
 MOTUS_CARRIER = Path(os.environ.get("FMCSA_MOTUS_CARRIER", SOURCES / "Motus_Carrier_All_With_History.csv"))
 MOTUS_INSUR = Path(os.environ.get("FMCSA_MOTUS_INSUR", SOURCES / "Motus_Insur_All_With_History.csv"))
+# The only live source of cancl_effective_date (pending-cancellation dates).
+MOTUS_INSHIST = Path(os.environ.get("FMCSA_MOTUS_INSHIST", SOURCES / "Motus_InsHist_All_With_History.csv"))
+OLD_ACTPEND = Path(os.environ.get("FMCSA_ACTPEND_RAW", SOURCES / "ActPendInsur_All_With_History.csv"))
 
 # As-of date: events effective after this are "pending", not yet revocations.
 SNAPSHOT = os.environ.get("FMCSA_SNAPSHOT_DATE", "20260812")
@@ -553,10 +556,67 @@ def merge_insurance() -> None:
         f"({out_df.height - old.height:+,}) → {out}")
 
 
+def merge_pending_cancellations() -> None:
+    """Revive the imminent-lapse signal: old ActPendInsur + Motus InsHist.
+
+    ActPendInsur froze on 2026-05-14, taking `cancl_effective_date` with it, so
+    add_pending_lapse has been reading pending-cancellation dates that are months
+    stale — it fires for ~500 carriers and none of them are current. Motus
+    InsHist (3uet-3z4i) is the only live feed carrying that column.
+
+    ONLY the forward-looking use is wired here. The same feed's cancellation
+    COUNTS are deliberately NOT adopted: 14,779 of its cancellations land on a
+    single day, 2026-08-05, across 13,230 carriers — and 98.2% of those carriers
+    still hold a live BIPD filing, so it is a bulk re-filing event, not a wave of
+    lapses. Feeding that into insurance_cancellations_24mo would stamp a phantom
+    cancellation on 12,138 carriers and light up the all-cancel chameleon rule.
+    Those counts stay on the frozen InsHist until the event is understood.
+
+    The bulk event is harmless HERE because add_pending_lapse takes the MAX
+    coverage-end across every in-effect BIPD policy: a carrier whose 08-05 policy
+    was replaced has a later coverage_end and is not flagged. The rule only fires
+    when EVERY policy ends in the window with nothing replacing it.
+    """
+    old = pl.read_csv(OLD_ACTPEND, infer_schema_length=0, ignore_errors=True)
+    cols = old.columns
+    ins = pl.read_csv(MOTUS_INSHIST, infer_schema_length=0, ignore_errors=True).with_columns(
+        dot=pl.col("USDOT_NUMBER").cast(pl.Int64, strict=False)
+    ).filter(pl.col("dot").is_not_null())
+
+    # Post-cutover filings only; pre-cutover ones are already in the frozen file.
+    fresh = ins.filter(pl.col("EFFECTIVE_DATE").cast(pl.Utf8) > CUTOVER)
+    shaped = fresh.select(
+        DOCKET_NUMBER=pl.col("DOCKET_NUMBER").cast(pl.Utf8),
+        DOT_NUMBER=pl.col("dot").cast(pl.Utf8),
+        ins_form_code=pl.col("INS_FORM_CODE").cast(pl.Utf8),
+        ins_type_desc=pl.col("INS_TYPE_DESC").cast(pl.Utf8),
+        name_company=pl.col("INSURANCE_COMPANY_NAME").cast(pl.Utf8),
+        policy_no=pl.col("POLICY_NO").cast(pl.Utf8),
+        # Motus carries no transaction date; the filing's effective date is the
+        # closest honest stand-in and add_pending_lapse does not read it.
+        trans_date=_mdY("EFFECTIVE_DATE"),
+        underl_lim_amount=pl.col("UNDERL_LIM_AMOUNT").cast(pl.Utf8),
+        max_cov_amount=pl.col("MAX_COV_AMOUNT").cast(pl.Utf8),
+        effective_date=_mdY("EFFECTIVE_DATE"),
+        cancl_effective_date=_mdY("CANCL_EFFECTIVE_DATE"),
+    )
+    merged = pl.concat([old.select(cols), shaped.select(cols)], how="vertical_relaxed")
+    if merged.height < old.height:
+        raise SystemExit(f"merge lost rows: {merged.height:,} < {old.height:,}")
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out = OUT_DIR / "ActPendInsur_All_With_History.csv"
+    merged.write_csv(out)
+    bipd = shaped.filter(pl.col("ins_type_desc").str.starts_with("BIPD"))
+    log(f"merged pending-cancellations: {merged.height:,} rows (+{merged.height - old.height:,} "
+        f"post-cutover, {bipd.height:,} BIPD) → {out}")
+
+
 def main() -> None:
     log(f"snapshot={SNAPSHOT}  cutover={CUTOVER}  sources={SOURCES}")
     merge_revocations()
     merge_insurance()
+    merge_pending_cancellations()
     # merge_carrier_auth() is DISABLED — see its docstring. It is kept because
     # the unit conversion and upsert skeleton are correct and will be needed,
     # but the field it upserts is the wrong one.

@@ -118,6 +118,10 @@ MOTUS = {
     "c5y8-a4uz": "Motus_Insur_All_With_History.csv",
     "inys-ebih": "Motus_Carrier_All_With_History.csv",
     "yu5v-wbh6": "Motus_AuthHist_All_With_History.csv",
+    # Motus InsHist — the ONLY live source of cancl_effective_date, i.e. the
+    # pending-cancellation date the imminent-lapse rule needs. The retired
+    # ActPendInsur carried it up to 2026-05-14 and nothing else does.
+    "3uet-3z4i": "Motus_InsHist_All_With_History.csv",
 }
 DAILY = {
     # ActPendInsur — RETIRED 2026-05-14, frozen. Kept because it still carries

@@ -116,7 +116,16 @@ DEFAULT_ENV = {
         "inshist_allwithhistory.txt",  # FMCSA native dump (legacy/manual)
     ),
     "FMCSA_ENFORCEMENT_XLSX": SOURCES_DIR / "closed_enforcement_cases_20260515005306.xlsx",
-    "FMCSA_ACTPEND": SOURCES_DIR / "ActPendInsur_All_With_History.csv",
+    # Pending-cancellation dates come from merge_motus: ActPendInsur froze on
+    # 2026-05-14 and Motus InsHist is the only live source of
+    # cancl_effective_date. _RAW is what the merge reads.
+    "FMCSA_ACTPEND": MERGED_DIR / "ActPendInsur_All_With_History.csv",
+    "FMCSA_ACTPEND_RAW": SOURCES_DIR / "ActPendInsur_All_With_History.csv",
+    "FMCSA_MOTUS_INSHIST": SOURCES_DIR / "Motus_InsHist_All_With_History.csv",
+    # Pin the lapse as-of date to the data vintage. It defaults to wall-clock
+    # today, so the same inputs produced a different lapse set on each day the
+    # build ran — the signal drifted without the data changing.
+    "FMCSA_LAPSE_ASOF": f"{DATA_TAG[:4]}-{DATA_TAG[4:6]}-{DATA_TAG[6:]}",
     "FMCSA_PASSPROP": _latest_glob(
         "SMS_AB_PassProperty*.csv",  # undated download or dated legacy
         "SMS_AB_PassProperty.csv",

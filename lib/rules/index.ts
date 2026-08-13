@@ -707,7 +707,7 @@ export const RULES: Rule[] = [
       high: "Cancellation effective within ~45 days, no replacement on file.",
     },
     fixtures: {
-      high: { dot: 3293950, reason: "LUMY MOVING INC: last BIPD policy cancelling in ~15 days, no replacement on file." },
+      high: { dot: 784547, reason: "DEOL BROS EXPRESS INC: last BIPD policy cancels 2026-09-10 (~29 days out), $1.5M on file, no replacement, and no FMCSA suspension — so the lapse rule itself fires rather than being superseded by the suspension signal." },
       none: { dot: 53467, reason: "Werner: active BIPD insurance, no pending lapse." },
     },
   },
