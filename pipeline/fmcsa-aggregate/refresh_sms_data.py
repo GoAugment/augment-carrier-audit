@@ -29,6 +29,7 @@ raises rate limits / avoids throttling on large exports).
 """
 from __future__ import annotations
 
+import concurrent.futures as cf
 import os
 import re
 import sys
@@ -37,8 +38,9 @@ from pathlib import Path
 
 import httpx
 
-ENV = Path("/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/.env.local")
-OUT_ROOT = Path("/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/sources")
+REPO = Path(__file__).resolve().parents[2]
+ENV = Path(os.environ.get("FMCSA_ENV_FILE", REPO / ".env.local"))
+OUT_ROOT = Path(os.environ.get("FMCSA_SOURCES_DIR", REPO / "data" / "sources"))
 EXPORT = "https://data.transportation.gov/api/views/{id}/rows.csv"
 COUNT = "https://data.transportation.gov/resource/{id}.json"
 RESOURCE = "https://data.transportation.gov/resource/{id}.csv"
@@ -97,12 +99,32 @@ MONTHLY = {
     # ~/Downloads file before; the README's "do not use" note is wrong.)
     "aayw-vxb3": "Crash_File.csv",
 }
+# MOTUS — the live replacement for the retired L&I feeds.
+#
+# FMCSA cut over from Licensing & Insurance to "Motus" on 2026-05-14 and RETIRED
+# the four L&I datasets above that day. Their Socrata descriptions say it
+# outright: "This dataset was last refreshed on 05/14/2026 and will no longer be
+# updated." Socrata's rowsUpdatedAt keeps advancing because FMCSA re-uploads the
+# frozen file daily, which is why it went unnoticed — verified 2026-08-12 by
+# diffing Carrier-All-With-History across 47 days: 0 authority-status changes in
+# 1,860,604 rows.
+#
+# Motus only accumulates from the cutover, so these are SMALL (~100k rows each,
+# a few MB) and every signal must UNION old (<=2026-05-14) + Motus (>2026-05-14).
+# merge_motus.py does that and re-emits the old schemas so downstream steps are
+# untouched. Because they're tiny, these can be pulled daily for pennies.
+MOTUS = {
+    "wb4f-neki": "Motus_RevokeSuspend_All_With_History.csv",
+    "c5y8-a4uz": "Motus_Insur_All_With_History.csv",
+    "inys-ebih": "Motus_Carrier_All_With_History.csv",
+    "yu5v-wbh6": "Motus_AuthHist_All_With_History.csv",
+}
 DAILY = {
-    # ActPendInsur — Active & Pending Insurance, All With History. Exact schema
-    # match to the manual L&I file (DOT_NUMBER … effective_date,
-    # cancl_effective_date), ~468k rows / ~50 MB. Carries the cancellation dates
-    # the imminent-lapse rule needs.
+    # ActPendInsur — RETIRED 2026-05-14, frozen. Kept because it still carries
+    # every pending cancellation up to the cutover; Motus_Insur supplies
+    # everything after. See MOTUS above.
     "qh9u-swkp": "ActPendInsur_All_With_History.csv",
+    **MOTUS,
 }
 DATASETS = {**MONTHLY, **DAILY}
 # NOTE: the full insurance *event* history now comes from the Socrata InsHist
@@ -111,6 +133,20 @@ DATASETS = {**MONTHLY, **DAILY}
 # inshist only feeds the slower-moving chameleon cancel/replace-history signals.
 
 MAX_ATTEMPTS = 6
+
+# Socrata throttles each connection to roughly 1.5 MB/s regardless of file size,
+# so the 2026-08 sequential run spent 81 min of its 85 min total just streaming
+# (Company Census 19.5m, Crash 15.6m, Inspection 11.9m, Violation 11.6m, MC
+# Census 11.6m, inshist 6.8m, rest ~4m). Downloading concurrently puts the floor
+# at the single slowest file (~20m). 4 workers is deliberately modest: the win is
+# already bounded by that slowest file, and piling on more parallel streams of a
+# multi-GB export is how you get throttled into the retry path.
+DEFAULT_JOBS = 4
+
+
+def log(tag: str, msg: str) -> None:
+    """Per-file prefix — downloads interleave once they run concurrently."""
+    print(f"[refresh] {tag}: {msg}", flush=True)
 
 
 def load_auth():
@@ -122,14 +158,14 @@ def load_auth():
     return (env.get("SOCRATA_API_KEY"), env.get("SOCRATA_API_SECRET"))
 
 
-def expected_count(c: httpx.Client, did: str) -> int | None:
+def expected_count(c: httpx.Client, did: str, tag: str = "?") -> int | None:
     """Authoritative row count straight from Socrata's SODA count endpoint."""
     try:
         r = c.get(COUNT.format(id=did), params={"$select": "count(*)"}, timeout=60)
         r.raise_for_status()
         return int(list(r.json()[0].values())[0])
     except Exception as e:  # noqa: BLE001
-        print(f"[refresh]   ! count lookup failed ({e}) — skipping completeness check", flush=True)
+        log(tag, f"! count lookup failed ({e}) — skipping completeness check")
         return None
 
 
@@ -143,7 +179,7 @@ def data_lines(path: Path) -> int:
     return max(0, n - 1)
 
 
-def export_header(c: httpx.Client, did: str) -> str:
+def export_header(c: httpx.Client, did: str, tag: str = "?") -> str:
     """Grab just the first line of the bulk export — its original Title_Case
     (incl. quirks like `HM_Ind`). Only needs the first few KB, so it's reliable
     even when the full stream drops. Falls back to an existing file's header."""
@@ -158,22 +194,23 @@ def export_header(c: httpx.Client, did: str) -> str:
                         return buf.split(b"\n", 1)[0].decode("utf-8-sig").rstrip("\r")
                 return buf.decode("utf-8-sig").rstrip("\r")
         except (httpx.HTTPError, httpx.StreamError) as e:
-            print(f"[refresh]   … header attempt {attempt} failed ({type(e).__name__}); retry", flush=True)
+            log(tag, f"… header attempt {attempt} failed ({type(e).__name__}); retry")
             time.sleep(min(30, 2 ** attempt))
     raise RuntimeError(f"could not fetch export header for {did}")
 
 
 def download_paginated(c: httpx.Client, did: str, dest: Path, expected: int | None) -> bool:
+    tag = dest.name
     """Fetch a large dataset in PAGE_SIZE chunks via the SODA resource endpoint,
     ordered by :id for stable paging. Writes the export header verbatim, then the
     data rows from each chunk (skipping each chunk's own header). Per-chunk retry."""
     part = dest.with_suffix(dest.suffix + ".part")
     try:
-        header = export_header(c, did)
+        header = export_header(c, did, tag)
     except RuntimeError:
         if dest.exists():
             header = dest.read_text().split("\n", 1)[0]
-            print(f"[refresh]   (reusing existing header for {dest.name})", flush=True)
+            log(tag, "(reusing existing header)")
         else:
             return False
     t0 = time.monotonic()
@@ -199,28 +236,29 @@ def download_paginated(c: httpx.Client, did: str, dest: Path, expected: int | No
                     n = len(body)
                     total += n
                     chunk_ok = True
-                    print(f"[refresh]   … offset {offset:,} (+{n:,} rows, {total:,} total)", flush=True)
+                    log(tag, f"… offset {offset:,} (+{n:,} rows, {total:,} total)")
                     break
                 except (httpx.HTTPError, httpx.StreamError) as e:
                     wait = min(60, 2 ** attempt)
-                    print(f"[refresh]   … chunk @ {offset:,} attempt {attempt} failed ({type(e).__name__}); retry in {wait}s", flush=True)
+                    log(tag, f"… chunk @ {offset:,} attempt {attempt} failed ({type(e).__name__}); retry in {wait}s")
                     time.sleep(wait)
             if not chunk_ok:
-                print(f"[refresh]   ✗ GAVE UP on chunk @ {offset:,}", flush=True)
+                log(tag, f"✗ GAVE UP on chunk @ {offset:,}")
                 return False
             if n < PAGE_SIZE:
                 break
             offset += PAGE_SIZE
     got = data_lines(part)
     if expected is not None and got < expected:
-        print(f"[refresh]   ✗ short after paging: {got:,} < expected {expected:,}", flush=True)
+        log(tag, f"✗ short after paging: {got:,} < expected {expected:,}")
         return False
     part.replace(dest)
-    print(f"[refresh]   ✓ {got:,} rows in {(time.monotonic()-t0)/60:.1f}m (paged) → {dest.name}", flush=True)
+    log(tag, f"✓ {got:,} rows in {(time.monotonic()-t0)/60:.1f}m (paged)")
     return True
 
 
 def download_one(c: httpx.Client, did: str, dest: Path, expected: int | None) -> bool:
+    tag = dest.name
     part = dest.with_suffix(dest.suffix + ".part")
     for attempt in range(1, MAX_ATTEMPTS + 1):
         t0 = time.monotonic()
@@ -228,7 +266,7 @@ def download_one(c: httpx.Client, did: str, dest: Path, expected: int | None) ->
         try:
             with c.stream("GET", EXPORT.format(id=did), params={"accessType": "DOWNLOAD"}) as r:
                 if r.status_code != 200:
-                    print(f"[refresh]   ✗ HTTP {r.status_code} (attempt {attempt})", flush=True)
+                    log(tag, f"✗ HTTP {r.status_code} (attempt {attempt})")
                     raise httpx.HTTPError(f"status {r.status_code}")
                 with open(part, "wb") as f:
                     for chunk in r.iter_bytes(chunk_size=1 << 20):
@@ -242,19 +280,36 @@ def download_one(c: httpx.Client, did: str, dest: Path, expected: int | None) ->
                 )
             part.replace(dest)
             mb = n / 1e6
-            tag = "" if expected is None else f" ({got:,} rows ✓)"
-            print(f"[refresh]   ✓ {mb:,.0f} MB in {(time.monotonic()-t0)/60:.1f}m{tag} → {dest.name}", flush=True)
+            rows_tag = "" if expected is None else f" ({got:,} rows ✓)"
+            log(tag, f"✓ {mb:,.0f} MB in {(time.monotonic()-t0)/60:.1f}m{rows_tag}")
             return True
         except (httpx.HTTPError, httpx.StreamError, OSError) as e:
             wait = min(60, 2 ** attempt)
-            print(
-                f"[refresh]   … attempt {attempt}/{MAX_ATTEMPTS} failed after "
-                f"{n/1e6:,.0f} MB ({type(e).__name__}: {e}); retrying in {wait}s",
-                flush=True,
-            )
+            log(tag, f"… attempt {attempt}/{MAX_ATTEMPTS} failed after {n/1e6:,.0f} MB ({type(e).__name__}: {e}); retrying in {wait}s")
             time.sleep(wait)
-    print(f"[refresh]   ✗ GAVE UP on {dest.name} after {MAX_ATTEMPTS} attempts", flush=True)
+    log(tag, f"✗ GAVE UP after {MAX_ATTEMPTS} attempts")
     return False
+
+
+def _client(auth) -> httpx.Client:
+    """One client per worker. Long read timeout; the retry loops handle drops."""
+    return httpx.Client(follow_redirects=True, timeout=httpx.Timeout(60.0, read=600.0), auth=auth)
+
+
+def fetch_dataset(did: str, fname: str, out_dir: Path, auth, expected: int | None) -> bool:
+    """Resume-check then download one dataset. Runs on a worker thread."""
+    dest = out_dir / fname
+    if dest.exists():
+        have = data_lines(dest)
+        if expected is not None and have >= expected:
+            log(fname, f"already complete ({have:,} rows) — skip")
+            return True
+        log(fname, f"on disk {have:,} < expected {expected:,} — re-download")
+    log(fname, f"({did}) expected {expected:,} rows …" if expected is not None
+        else f"({did}) starting (row count unknown) …")
+    fetch = download_paginated if did in PAGINATED else download_one
+    with _client(auth) as c:
+        return fetch(c, did, dest, expected)
 
 
 def main() -> None:
@@ -269,31 +324,44 @@ def main() -> None:
         args = [a for a in args if a != "--monthly"]
     else:
         selected = DATASETS
+    jobs = DEFAULT_JOBS
+    for a in list(args):
+        if a.startswith("--jobs="):
+            jobs = max(1, int(a.split("=", 1)[1]))
+            args.remove(a)
     only = set(args)  # optional: restrict to specific filenames
 
     auth = load_auth()
-    tag = time.strftime("%Y%m%d")
-    out_dir = OUT_ROOT / f"refresh_{tag}"
+    stamp = time.strftime("%Y%m%d")
+    out_dir = OUT_ROOT / f"refresh_{stamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
-    print(f"[refresh] target {out_dir} ({len(selected)} dataset(s); only={sorted(only) or 'ALL'})", flush=True)
+    todo = [(did, f) for did, f in selected.items() if not only or f in only]
+    print(f"[refresh] target {out_dir} ({len(todo)} dataset(s); only={sorted(only) or 'ALL'}; jobs={jobs})", flush=True)
+
+    t0 = time.monotonic()
+    # Row counts up front, on one shared client: they're ~10 cheap requests and
+    # they let us dispatch biggest-first, which is what keeps the tail short.
+    # (Rows are only a proxy for bytes — inshist has the most rows but is far
+    # from the slowest — but with the makespan floored by the largest file
+    # anyway, a rough ordering is enough.)
+    with _client(auth) as c:
+        counts = {did: expected_count(c, did, fname) for did, fname in todo}
+    todo.sort(key=lambda t: counts.get(t[0]) or 0, reverse=True)
 
     ok = True
-    # Long timeout for the read; the retry loop handles drops.
-    with httpx.Client(follow_redirects=True, timeout=httpx.Timeout(60.0, read=600.0), auth=auth) as c:
-        for did, fname in selected.items():
-            if only and fname not in only:
-                continue
-            dest = out_dir / fname
-            exp = expected_count(c, did)
-            if dest.exists():
-                have = data_lines(dest)
-                if exp is not None and have >= exp:
-                    print(f"[refresh] {fname}: already complete ({have:,} rows) — skip", flush=True)
-                    continue
-                print(f"[refresh] {fname}: on disk {have:,} < expected {exp:,} — re-download", flush=True)
-            print(f"[refresh] {fname} ({did}) expected {exp:,} rows …", flush=True)
-            fetch = download_paginated if did in PAGINATED else download_one
-            ok = fetch(c, did, dest, exp) and ok
+    with cf.ThreadPoolExecutor(max_workers=jobs) as ex:
+        futures = {
+            ex.submit(fetch_dataset, did, fname, out_dir, auth, counts.get(did)): fname
+            for did, fname in todo
+        }
+        for fut in cf.as_completed(futures):
+            fname = futures[fut]
+            try:
+                ok = fut.result() and ok
+            except Exception as e:  # noqa: BLE001 — one bad file shouldn't kill the run
+                log(fname, f"✗ FAILED with {type(e).__name__}: {e}")
+                ok = False
+    print(f"[refresh] all downloads finished in {(time.monotonic()-t0)/60:.1f}m", flush=True)
 
     (out_dir / "MANIFEST.txt").write_text(
         f"refreshed_at={time.strftime('%Y-%m-%dT%H:%M:%S')}\n"
