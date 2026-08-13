@@ -817,6 +817,21 @@ function computeRiskScore(
     );
   }
 
+  // FMCSA's own suspension of authority for lack of insurance. Weighted above
+  // the identity signals: this is a regulator action, not an inference.
+  if (c.insuranceSuspensionStatus) {
+    const eff = c.insuranceSuspensionStatus === "effective";
+    const soon = c.insuranceSuspensionDays != null && c.insuranceSuspensionDays <= 10;
+    add(
+      eff || soon ? 30 : 18,
+      "Authority / insurance",
+      eff ? "Authority suspended for no insurance" : "FMCSA suspension notice served",
+      c.insuranceSuspensionDate
+        ? eff ? `Suspended ${c.insuranceSuspensionDate}` : `Effective ${c.insuranceSuspensionDate}`
+        : eff ? "Suspended" : "Notice served"
+    );
+  }
+
   if (identitySignals?.shutdownIdentityLinks.length) {
     const links = identitySignals.shutdownIdentityLinks;
     // Email/phone shared with a shut-down revoked DOT is the real identity tell
@@ -2058,6 +2073,49 @@ function scoreCarrier(
       : d === 0 ? "lapses today"
       : `lapses in ${d}d`;
   }
+  // FMCSA involuntary suspension for lack of insurance. This supersedes the
+  // imminent-lapse rule above: rather than inferring "about to lose authority"
+  // from a cancellation date in a feed FMCSA froze on 2026-05-14, this is
+  // FMCSA's own enforcement action, and the reason text states the cause
+  // ("no active insurance meeting minimum coverage on file").
+  //
+  // Gating (measured 2026-08 over 3,768 carriers, 0.18% of the base — versus
+  // 0.66% for the imminent-lapse rule it replaces, so this is the tighter
+  // signal, not a broader one):
+  //   effective        -> Critical. The authority is already suspended; the
+  //                       carrier's displayed coverage is pre-suspension and
+  //                       stale, which is exactly how 1,957 suspended carriers
+  //                       were reading as "meets required".
+  //   pending <=10d    -> Critical. You cannot tender a load delivering after
+  //                       the suspension date.
+  //   pending 11-30d   -> High/elevated.
+  // Carriers with a later REINSTATED/GRANTED action are filtered out upstream
+  // in add_insurance_suspension.py (~1.5% of notices), so a carrier that fixed
+  // its insurance never reaches this branch.
+  let suspensionReason: Reason | null = null;
+  if (c.insuranceSuspensionStatus) {
+    const effective = c.insuranceSuspensionStatus === "effective";
+    const d = c.insuranceSuspensionDays;
+    const soon = d != null && d <= 10;
+    const when = c.insuranceSuspensionDate ?? "an unstated date";
+    suspensionReason = {
+      label: getRule("insurance-authority-suspension").label,
+      detail: effective
+        ? `FMCSA involuntarily suspended this carrier's operating authority on ${when} for lack of insurance meeting the minimum required coverage, and no reinstatement has been filed since. Any coverage amount shown predates the suspension. Do not tender.`
+        : `FMCSA has served an involuntary suspension notice: this carrier's operating authority is suspended on ${when}${
+            d != null ? `, ${plural(d, "day")} out` : ""
+          }, for insurance below the required minimum. It can still haul today, but not a load delivering after that date, and no reinstatement has been filed.`,
+    };
+    const newStatus: AxisStatus = effective || soon ? "critical" : "elevated";
+    if (statusRank(insurance.cell.status) < statusRank(newStatus)) {
+      insurance.cell.status = newStatus;
+    }
+    insurance.cell.sub = effective
+      ? "authority suspended"
+      : d == null ? "suspension pending"
+      : `suspended in ${d}d`;
+  }
+
   // Show the BIPD cancellation count under the amount, churn is a leading
   // instability/fraud signal even when the carrier is currently insured.
   if (c.insuranceCancellations24mo > 0) {
@@ -2085,6 +2143,7 @@ function scoreCarrier(
   if (issReason) reasons.push(issReason);
   if (insurance.reason) reasons.push(insurance.reason);
   reasons.push(...extraInsuranceReasons);
+  if (suspensionReason) reasons.push(suspensionReason);
   if (lapseReason) reasons.push(lapseReason);
   // Insurer reputation, surface high-risk-specialist insurers in the issue list.
   {

@@ -257,6 +257,14 @@ STEPS: list[Step] = [
         description="Phantom-fleet signal: distinct inspected VINs vs reported PU",
         runtime_estimate_min=0.2,
     ),
+    # Must precede prune_app_parquet (it adds app-facing columns) and follow
+    # merge_motus (it reads the pending-suspension sidecar).
+    Step(
+        name="add_insurance_suspension",
+        script="add_insurance_suspension.py",
+        description="FMCSA involuntary suspension for lack of insurance (pending + effective)",
+        runtime_estimate_min=0.3,
+    ),
     Step(
         name="add_phy_zip",
         script="add_phy_zip.py",

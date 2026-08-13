@@ -252,6 +252,14 @@ export interface FmcsaCarrier {
   bipdDaysToLapse: number | null;
   /** Effective date of the terminal BIPD cancellation (YYYY-MM-DD). */
   bipdPendingCancelDate: string | null;
+  /** FMCSA involuntary suspension for lack of insurance. 'effective' = authority
+   *  already suspended, uncured; 'pending' = served notice, future effective
+   *  date. Null when neither. Supersedes bipdImminentLapse, whose ActPendInsur
+   *  source FMCSA froze on 2026-05-14. */
+  insuranceSuspensionStatus: "effective" | "pending" | null;
+  insuranceSuspensionDate: string | null;
+  /** Days from the data snapshot to the suspension date; negative = in effect. */
+  insuranceSuspensionDays: number | null;
 }
 
 export async function fetchCarriers(

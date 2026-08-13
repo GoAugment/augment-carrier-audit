@@ -105,6 +105,12 @@ const SNAPSHOT_DOTS: SnapshotDot[] = [
   // (build_risk_signals.cjs), so they guard that regression specifically.
   { dot: 3436431,  reason: "IDENTITY: email+phone shared with shut-down revoked DOTs" },
   { dot: 3770548,  reason: "IDENTITY: email+phone shared with shut-down revoked DOTs" },
+
+  // FMCSA involuntary suspension for lack of insurance — replaces the dead
+  // imminent-lapse rule. This carrier rendered Medium with "$750k meets
+  // required" before the signal existed, because the coverage on file predates
+  // the suspension.
+  { dot: 3008423,  reason: "CRITICAL: authority suspended for no insurance" },
 ];
 
 interface AuditSnapshot {

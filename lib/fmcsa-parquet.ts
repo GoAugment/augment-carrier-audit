@@ -154,6 +154,9 @@ interface ParquetRow {
   bipd_imminent_lapse: boolean | null;
   bipd_days_to_lapse: number | bigint | null;
   bipd_pending_cancel_date: string | null;
+  insurance_suspension_status: string | null;
+  insurance_suspension_date: string | null;
+  insurance_suspension_days: number | bigint | null;
 }
 
 function asInt(v: number | bigint | null | undefined): number {
@@ -284,6 +287,17 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
     bipdDaysToLapse: r.bipd_days_to_lapse == null ? null : asInt(r.bipd_days_to_lapse),
     // DuckDB returns DATE as a JS Date; normalize to a plain YYYY-MM-DD string.
     bipdPendingCancelDate: asDateStr(r.bipd_pending_cancel_date),
+    // FMCSA's own involuntary suspension for lack of insurance. 'effective' =
+    // authority already suspended and not cured; 'pending' = a served notice
+    // with a future effective date. Replaces the ActPendInsur-derived
+    // imminent-lapse signal, which died when FMCSA froze that feed 2026-05-14.
+    insuranceSuspensionStatus:
+      r.insurance_suspension_status === "effective" || r.insurance_suspension_status === "pending"
+        ? r.insurance_suspension_status
+        : null,
+    insuranceSuspensionDate: asDateStr(r.insurance_suspension_date),
+    insuranceSuspensionDays:
+      r.insurance_suspension_days == null ? null : asInt(r.insurance_suspension_days),
     // Estimated Crash Indicator BASIC. FMCSA does not publish CI percentiles;
     // these are our reproduction (severity/time-weighted crashes ÷ Avg-PU×UF),
     // populated only for the ~21k crash-sufficient carriers we have the scraped
@@ -419,6 +433,7 @@ const CARRIER_SELECT_COLUMNS = `
   iss_score, iss_tier, iss_group,
   has_serious_violation, serious_violation_count, serious_violation_basics,
   bipd_imminent_lapse, bipd_days_to_lapse, bipd_pending_cancel_date,
+  insurance_suspension_status, insurance_suspension_date, insurance_suspension_days,
   crash_indicator_percentile, crash_indicator_alert,
   hm_compliance_percentile, hm_compliance_alert,
   pu_vins_inspected

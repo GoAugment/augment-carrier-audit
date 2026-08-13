@@ -682,6 +682,21 @@ export const RULES: Rule[] = [
     },
   },
   {
+    id: "insurance-authority-suspension",
+    category: "insurance",
+    label: "FMCSA suspended authority for lack of insurance",
+    definition:
+      "FMCSA has involuntarily suspended this carrier's operating authority because it has no active insurance meeting the minimum required coverage, or has served notice that it will on a stated date. This is FMCSA's own enforcement action, not our inference from a cancellation date. A carrier whose authority is suspended is not legally able to haul, and any BIPD amount shown alongside it predates the suspension. Carriers with a later reinstatement are excluded upstream.",
+    thresholds: {
+      critical: "Suspension already in effect, or effective within ~10 days.",
+      high: "Suspension effective 11-30 days out.",
+    },
+    fixtures: {
+      critical: { dot: 3008423, reason: "JESTEVA TRANSPORT INC: authority suspended 2026-08-07 for no insurance meeting minimum, no reinstatement filed." },
+      none: { dot: 53467, reason: "Werner: no suspension." },
+    },
+  },
+  {
     id: "insurance-imminent-lapse",
     category: "insurance",
     label: "BIPD insurance about to lapse, no replacement on file",
