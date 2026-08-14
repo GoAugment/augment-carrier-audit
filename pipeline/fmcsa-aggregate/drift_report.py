@@ -78,6 +78,17 @@ SPEC: dict[str, dict] = {
     "zip_count":                  {"tol": 0.35},
     "lane_national_injury_pct":   {"tol": 0.15},
     "lane_state_count":           {"tol": 0.50},
+    # --- scrape coverage ---
+    # Added after the Aug 2026 refresh shipped with the serious-violations scrape
+    # failing 714/5,006 DOTs (14.3%) because it ran unproxied into FMCSA's WAF.
+    # Nothing noticed: the artifacts were present and plausible, so every check
+    # above passed. Error COUNTS get a tight tolerance and a hard zero-tolerance
+    # ceiling, because a scrape that silently stops working is indistinguishable
+    # from one that found nothing.
+    "scrape_sv_ok":               {"tol": 0.25},
+    "scrape_sv_error":            {"tol": 0.50, "ceiling": 150},
+    "scrape_ci_ok":               {"tol": 0.20},
+    "scrape_ci_error":            {"tol": 0.50, "ceiling": 400},
     # --- vintage: not a measurement, a tripwire ---
     "snapshot_date":              {"exact_must_move": True},
 }
@@ -146,6 +157,21 @@ def collect() -> dict:
         m["lane_national_injury_pct"] = (j.get("_meta") or {}).get("national_injury_pct")
         m["lane_state_count"] = len([k for k in j if k != "_meta"])
 
+    # Scrape coverage, read from the per-vintage status parquets. Counted here
+    # (rather than trusted) because a scrape can fail wholesale and still leave a
+    # complete-looking artifact behind.
+    scrape_dir = REPO / "data" / "fmcsa_scrape"
+    for pattern, prefix, status_col in (
+        (f"serious_violations_status_{SNAPSHOT}.parquet", "scrape_sv", "scrape_status"),
+        (f"crash_indicator_{SNAPSHOT}.parquet", "scrape_ci", "scrape_status"),
+    ):
+        p = scrape_dir / pattern
+        if not (SNAPSHOT and p.exists()):
+            continue
+        s = pl.read_parquet(p, columns=[status_col])
+        m[f"{prefix}_ok"] = int((s[status_col] == "ok").sum())
+        m[f"{prefix}_error"] = int(s[status_col].str.starts_with("error").sum())
+
     if SNAPSHOT:
         m["snapshot_date"] = SNAPSHOT
     return m
@@ -191,6 +217,14 @@ def compare(new: dict, old: dict) -> list[tuple[str, str, str]]:
 
         if b == 0 and a != 0:
             issues.append(("ERROR", key, f"{a:,} -> 0 — collapsed to zero"))
+            continue
+
+        # Absolute ceiling, independent of the relative move. An error count can
+        # creep up within tolerance every month and still end up somewhere it
+        # should never be.
+        ceiling = spec.get("ceiling")
+        if ceiling is not None and b > ceiling:
+            issues.append(("ERROR", key, f"{b:,} exceeds the absolute ceiling of {ceiling:,}"))
             continue
 
         if spec.get("must_move") and a == b:
