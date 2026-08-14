@@ -51,6 +51,20 @@ SNAPSHOT = os.environ.get("FMCSA_SNAPSHOT_DATE")
 
 # tolerance = max relative change before we complain; None = must not change sign/zero only.
 # must_move  = this value is expected to differ from last refresh; identical means stale.
+#
+# CALIBRATION (not guesswork). Replayed the committed June 2026 parquet against
+# August to get real two-month movement:
+#     rows +1.9%   bipd_on_file +2.5%   crashes -5.8%   fatal -4.7%
+#     driver insp +1.5%   vehicle insp +1.5%   prior_revoke -5.7%
+# So genuine movement is 1.5-6% over two months and the tolerances below sit at
+# 10-25%, i.e. 3-4x headroom. Verified against that baseline: a healthy new
+# vintage raises ZERO errors, while the two real Aug 2026 defects both trip —
+# frozen insurer/zip tables on a vintage change, and the scrape error ceiling.
+# A check that cries wolf gets switched off, so no-false-alarms was the
+# requirement; detection headroom is the deliberate trade.
+#
+# Note crashes fall while inspections rise: the 24-month window sheds old
+# crashes faster than new ones land. Expected, not a bug.
 SPEC: dict[str, dict] = {
     # --- universe ---
     "rows":                       {"tol": 0.10},
