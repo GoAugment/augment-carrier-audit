@@ -388,6 +388,18 @@ STEPS: list[Step] = [
         description="Compare artifacts vs data/refresh_metrics.json; fail on implausible or absent drift",
         runtime_estimate_min=0.2,
     ),
+    # Complements drift_report rather than duplicating it: drift compares us to
+    # our own last refresh ("did anything change that shouldn't have?"), which is
+    # blind to an error we make identically every month. This compares us to live
+    # FMCSA ("are we right at all?"). Skips with a warning if FMCSA_WEBKEY is
+    # unset or the API is unreachable — a third party's downtime must not fail
+    # our build.
+    Step(
+        name="ground_truth_check",
+        script="ground_truth_check.py",
+        description="Sample live carriers from FMCSA's QCMobile API and verify our fields agree",
+        runtime_estimate_min=0.5,
+    ),
 ]
 
 
