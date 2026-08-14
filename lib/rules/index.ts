@@ -36,7 +36,7 @@ export const RULES: Rule[] = [
       critical: "FMCSA status_code is anything other than 'A' (Active).",
     },
     fixtures: {
-      critical: { dot: 4440122, reason: "GENESIS TRANSPORT LLC: status_code=I (Jun 2026 snapshot)." },
+      critical: { dot: 2439172, reason: "HR SERVICES LLC: status_code=I (Aug 2026 snapshot)." },
       none: { dot: 53467, reason: "Werner Enterprises: status_code=A." },
     },
   },
@@ -54,7 +54,7 @@ export const RULES: Rule[] = [
       // crosses the 90-day threshold ~3 months after registration and
       // stops triggering. Refresh by re-running the find_rule_fixtures.py
       // query against the latest parquet snapshot.
-      critical: { dot: 4572009, reason: "VFV TRANSPORT LLC: dot_add_date 2026-04-24, < 90 days at snapshot." },
+      critical: { dot: 4586265, reason: "MOVERS 4 U LLC: dot_add_date 2026-06-23, < 90 days at snapshot." },
       none: { dot: 53467, reason: "Werner: established carrier, > 30 years old." },
     },
   },
@@ -72,7 +72,7 @@ export const RULES: Rule[] = [
       critical: "Safety rating = Unsatisfactory.",
     },
     fixtures: {
-      critical: { dot: 3173438, reason: "MECCA TRUCKING LLC: Unsatisfactory rated 2026-05-05." },
+      critical: { dot: 3720632, reason: "STATE AUTO GROUP LLC: Unsatisfactory rated 2026-05-27." },
       none: { dot: 53467, reason: "Werner: Satisfactory." },
     },
   },
@@ -183,7 +183,7 @@ export const RULES: Rule[] = [
       caution: "3 or 4 distinct BIPD policies in 24mo with zero Replaced events.",
     },
     fixtures: {
-      caution: { dot: 3432788, reason: "PUNIA TRANS INC: 3 distinct policies in 24mo, 0 replaces." },
+      caution: { dot: 70850, reason: "NORTH EXPRESS INC: 3 cancellations / 3 distinct policies in 24mo, 0 replaces." },
       none: { dot: 53467, reason: "Werner: single renewing policy, normal replacement pattern." },
     },
   },
@@ -215,7 +215,7 @@ export const RULES: Rule[] = [
       caution: "≥1 closed enforcement case in the last 24 months (settlement $ is context only).",
     },
     fixtures: {
-      caution: { dot: 3122364, reason: "MARIC TRANSPORTATION CORP: $48k settled, 1 closed case." },
+      caution: { dot: 305573, reason: "R & R TRANSPORTATION INC: 1 closed case, most recent 2026-04-13." },
       none: { dot: 53467, reason: "Werner: no enforcement cases." },
     },
   },
@@ -233,7 +233,7 @@ export const RULES: Rule[] = [
       critical: "FMCSA PRIOR_REVOKE_FLAG = Y AND PRIOR_REVOKE_DOT_NUMBER points to a different DOT.",
     },
     fixtures: {
-      critical: { dot: 1906024, reason: "ARIZONA SPORTSHIRTS INC: prior_revoke_flag=Y (used in snapshot baseline)." },
+      critical: { dot: 12311, reason: "CLOVERLEAF GARAGE INC: prior_revoke_flag=Y with a distinct predecessor DOT." },
       none: { dot: 53467, reason: "Werner: no prior-revoke flag." },
     },
   },
@@ -682,6 +682,21 @@ export const RULES: Rule[] = [
     },
   },
   {
+    id: "insurance-authority-suspension",
+    category: "insurance",
+    label: "FMCSA suspended authority for lack of insurance",
+    definition:
+      "FMCSA has involuntarily suspended this carrier's operating authority because it has no active insurance meeting the minimum required coverage, or has served notice that it will on a stated date. This is FMCSA's own enforcement action, not our inference from a cancellation date. A carrier whose authority is suspended is not legally able to haul, and any BIPD amount shown alongside it predates the suspension. Carriers with a later reinstatement are excluded upstream.",
+    thresholds: {
+      critical: "Suspension already in effect, or effective within ~10 days.",
+      high: "Suspension effective 11-30 days out.",
+    },
+    fixtures: {
+      critical: { dot: 3008423, reason: "JESTEVA TRANSPORT INC: authority suspended 2026-08-07 for no insurance meeting minimum, no reinstatement filed." },
+      none: { dot: 53467, reason: "Werner: no suspension." },
+    },
+  },
+  {
     id: "insurance-imminent-lapse",
     category: "insurance",
     label: "BIPD insurance about to lapse, no replacement on file",
@@ -692,7 +707,7 @@ export const RULES: Rule[] = [
       high: "Cancellation effective within ~45 days, no replacement on file.",
     },
     fixtures: {
-      high: { dot: 3293950, reason: "LUMY MOVING INC: last BIPD policy cancelling in ~15 days, no replacement on file." },
+      high: { dot: 784547, reason: "DEOL BROS EXPRESS INC: last BIPD policy cancels 2026-09-10 (~29 days out), $1.5M on file, no replacement, and no FMCSA suspension — so the lapse rule itself fires rather than being superseded by the suspension signal." },
       none: { dot: 53467, reason: "Werner: active BIPD insurance, no pending lapse." },
     },
   },
@@ -741,7 +756,12 @@ export const RULES: Rule[] = [
     fixtures: {
       critical: { dot: 3621624, reason: "DK MAX TRUCKING INC: 86% of its 140 inspected VINs run under 24 other active DOTs (rich sample, 60 PU)." },
       high:     { dot: 4198159, reason: "ALAKE LOGISTICS INC: 43% of 7 VINs run under 3 other active DOTs, top sibling 14% concentration." },
-      caution:  { dot: 3432788, reason: "PUNIA TRANS INC (relaxed-floor): 27% diffuse / 3 siblings, top sibling 9%, fires only because other chameleon signals (lapsed BIPD + revoke + all-cancel) relax the concentration floor from 10% to 5%." },
+      // DRIFTED (Aug 2026 refresh): this carrier is now 18% diffuse / 2 siblings
+      // and no longer clears the bar, so this fixture does not fire. Replacing it
+      // needs a candidate picked against the relaxed-floor branch itself — parquet
+      // predicates alone (diffuse %, sibling count, top-sibling %, a corroborating
+      // chameleon signal) were not sufficient to find one that fires.
+      caution:  { dot: 3432788, reason: "PUNIA TRANS INC (relaxed-floor): fires only because other chameleon signals (lapsed BIPD + revoke + all-cancel) relax the concentration floor from 10% to 5%." },
       none: [
         { dot: 53467, reason: "Werner: trucks unique to the operating fleet." },
         {

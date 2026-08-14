@@ -47,13 +47,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import polars as pl
 
+# Repo-relative default. These pointed at the san-antonio workspace, so a
+# standalone `uv run` silently read from (or wrote into) a different clone.
+# Harmless under build_all, which supplies the env; wrong every other way.
+REPO = Path(__file__).resolve().parents[2]
+
 # Candidate builds override the parquet target (FMCSA_PARQUET) so they never
 # clobber the committed data/carrier_aggregates.parquet, and source the 3
 # SMS_Input feeds from a refresh dir (FMCSA_REFRESH_DIR, un-dated names).
 PARQUET = Path(os.environ.get(
     "FMCSA_PARQUET",
-    "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
-    "data/carrier_aggregates.parquet",
+    REPO / "data" / "carrier_aggregates.parquet",
 ))
 _REFRESH_DIR = os.environ.get("FMCSA_REFRESH_DIR")
 
@@ -68,25 +72,28 @@ def _src(refresh_name: str, fallback: str) -> Path:
 
 INSP_CSV = Path(os.environ.get(
     "FMCSA_INSPECTION_FILE",
-    _src("SMS_Input_-_Inspection.csv", "/Users/art/Downloads/SMS_Input_-_Inspection_20260518.csv"),
+    _src("SMS_Input_-_Inspection.csv", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Inspection.csv"),
 ))
 VIOL_CSV = Path(os.environ.get(
     "FMCSA_VIOLATION_FILE",
-    _src("SMS_Input_-_Violation.csv", "/Users/art/Downloads/SMS_Input_-_Violation_20260518.csv"),
+    _src("SMS_Input_-_Violation.csv", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Violation.csv"),
 ))
 CRASH_CSV = Path(os.environ.get(
     "FMCSA_CRASH_FILE",
-    _src("SMS_Input_-_Crash.csv", "/Users/art/Downloads/SMS_Input_-_Crash_20260518.csv"),
+    _src("SMS_Input_-_Crash.csv", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Crash.csv"),
 ))
 SCRAPE_DIR = Path(
     os.environ.get(
         "FMCSA_SCRAPE_DIR",
-        "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
-        "data/fmcsa_scrape",
+        REPO / "data" / "fmcsa_scrape",
     )
 )
 
-SNAPSHOT = datetime(2026, 5, 18)
+# Data vintage, NOT a constant. Hardcoding this pinned the 24-month crash and
+# violation windows to May regardless of how fresh the inputs were, so the
+# 2026-08 refresh computed Crash Indicator over a May window and excluded
+# 6,512 post-May crashes. build_all exports FMCSA_SNAPSHOT_DATE from DATA_TAG.
+SNAPSHOT = datetime.strptime(os.environ.get("FMCSA_SNAPSHOT_DATE", "20260812"), "%Y%m%d")
 CUTOFF_24MO = SNAPSHOT - timedelta(days=730)
 CUTOFF_12MO = SNAPSHOT - timedelta(days=365)
 

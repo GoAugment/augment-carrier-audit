@@ -49,8 +49,8 @@ thresholds and sidecar risk tables have been generated.
 
 **One-command rebuild:**
 ```
-uv run build_all.py                # full pipeline including scrape (~2h)
-uv run build_all.py --no-scrape    # skip scrape, use existing PU history (~15m)
+uv run build_all.py                # full pipeline including scrape (~2.4h)
+uv run build_all.py --no-scrape    # skip scrape, use existing PU history (~4m)
 uv run build_all.py --list         # show all steps + runtime estimates
 uv run build_all.py --from compute_basics   # resume from a specific step
 uv run build_all.py --only add_inshist      # run a single step
@@ -91,8 +91,13 @@ uv run build_all.py --only add_inshist      # run a single step
 Each script reads the canonical parquet, mutates a subset of columns, writes
 back. The scripts are idempotent — re-running produces identical results.
 
-Typical full-refresh runtime: ~2-3 hours, dominated by the per-DOT scrape
-(step 8). With `--no-scrape`: ~15 minutes.
+Typical full-refresh runtime: ~2.4 hours, almost entirely the two ZenRows
+scrapes. With `--no-scrape`: **~4 minutes** for all 19 data steps (measured
+2026-08-12; the old "~15 minutes" estimate was off by ~4x). The slowest single
+step is now `build_risk_signals` at ~1.6m, which parses the 2 GB Company Census.
+
+The expensive part of a refresh is the DOWNLOAD, not the build — see
+`refresh_sms_data.py` (~20 min with the default 4 concurrent jobs).
 
 ## Scripts (alphabetical)
 
@@ -114,7 +119,7 @@ joining the FMCSA bulk files. Pulls 5 publicly-available BASIC measures + alert
 codes, MCS-150 census fields (PU, drivers, mileage, address), SMS inspection /
 violation aggregates, crash totals, peer-group classification.
 
-- **Inputs:** all FMCSA bulk CSVs in `/Users/art/Downloads/`
+- **Inputs:** all FMCSA bulk CSVs in `data/sources/`
 - **Output:** `carrier_aggregates.parquet` (overwrites)
 - **Frequency:** every monthly SMS refresh
 - **Runtime:** ~3 min
@@ -261,7 +266,7 @@ analyzer.ts. Run when the parquet is refreshed.
 - **Schema-stable parquet:** new columns are added via `.join` or
   `.with_columns`; existing columns are dropped + re-added rather than
   renamed in place (DuckDB doesn't tolerate type changes well).
-- **Snapshot vintage** in filenames: `crash_indicator_20260514.parquet`
+- **Snapshot vintage** in filenames: `crash_indicator_<SMS_DATA_TAG>.parquet`
   ties output to the SMS data vintage, not the calendar date the script
   ran. Lets resumable scrapes span multiple days.
 - **Compute scripts are idempotent:** running them twice in a row should
@@ -269,8 +274,7 @@ analyzer.ts. Run when the parquet is refreshed.
 
 ## TypeScript-side companion
 
-The web app at `/Users/art/conductor/workspaces/augment-carrier-audit-v1/
-san-antonio/` consumes the parquet via DuckDB:
+The Next.js app in this repo consumes the parquet via DuckDB:
 
 - `lib/fmcsa.ts`: `FmcsaCarrier` type definition — add new columns here
 - `lib/fmcsa-parquet.ts`: SQL SELECT + row-to-Carrier mapping

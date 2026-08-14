@@ -25,10 +25,14 @@ from pathlib import Path
 
 import polars as pl
 
+# Repo-relative: HERE is pipeline/fmcsa-aggregate/, so this used to read and
+# write a parquet INSIDE the pipeline dir rather than data/.
+REPO = Path(__file__).resolve().parents[2]
+
 HERE = Path(__file__).parent
 T1_DIR = HERE.parent / "t1-fmcsa-2026-05-14"
-REV_CSV = Path(os.environ.get("FMCSA_REVOCATION", "/Users/art/Downloads/Revocation_-_All_With_History_20260514.csv"))
-PARQUET = Path(os.environ.get("FMCSA_PARQUET", HERE / "carrier_aggregates.parquet"))
+REV_CSV = Path(os.environ.get("FMCSA_REVOCATION", "/__unset__run-via-build_all.py-or-set-the-env-var__/Revocation_-_All_With_History.csv"))
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", REPO / "data" / "carrier_aggregates.parquet"))
 CARRIERS_JSON = T1_DIR / "carriers.json"
 T1_OUT_CSV = T1_DIR / "revocations_t1.csv"
 T1_OUT_MD = T1_DIR / "revocations_t1.md"

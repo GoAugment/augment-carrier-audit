@@ -24,9 +24,13 @@ from pathlib import Path
 import os
 import polars as pl
 
+# Repo-relative: HERE is pipeline/fmcsa-aggregate/, so this used to read and
+# write a parquet INSIDE the pipeline dir rather than data/.
+REPO = Path(__file__).resolve().parents[2]
+
 HERE = Path(__file__).parent
-PARQUET = Path(os.environ.get("FMCSA_PARQUET", HERE / "carrier_aggregates.parquet"))
-INSP = Path(os.environ.get("FMCSA_INSPECTION_FILE", "/Users/art/Downloads/SMS_Input_-_Inspection_20260518.csv"))
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", REPO / "data" / "carrier_aggregates.parquet"))
+INSP = Path(os.environ.get("FMCSA_INSPECTION_FILE", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Inspection.csv"))
 
 def log(msg): print(f"[add_fleet_sharing] {msg}", flush=True)
 
@@ -77,7 +81,14 @@ log(f"Distinct DOT-pairs with shared VINs: {pair_counts.height:,}")
 # Step 5: for each dot_a, keep the largest sibling
 log("Step 5: per-DOT largest sibling...")
 largest = (
-    pair_counts.sort(["dot_a", "shared_vins"], descending=[False, True])
+    # dot_b is the tie-break: without it, carriers with several siblings at the
+    # SAME shared-VIN count got an arbitrary winner, and .first() picked
+    # whichever order the upstream join happened to produce. Two builds from
+    # identical inputs disagreed on largest_sibling_dot for 20,996 of 123,079
+    # carriers — and that DOT and its legal name are named in the
+    # chameleon-shared-fleet rule's evidence text, so the same carrier could be
+    # reported as sharing equipment with a different company between refreshes.
+    pair_counts.sort(["dot_a", "shared_vins", "dot_b"], descending=[False, True, False])
     .group_by("dot_a", maintain_order=True)
     .agg(
         pl.col("dot_b").first().alias("largest_sibling_dot"),

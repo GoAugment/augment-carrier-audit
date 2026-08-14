@@ -82,6 +82,11 @@ from tenacity import (
     retry_if_exception_type,
 )
 
+# Repo-relative default. These pointed at the san-antonio workspace, so a
+# standalone `uv run` silently read from (or wrote into) a different clone.
+# Harmless under build_all, which supplies the env; wrong every other way.
+REPO = Path(__file__).resolve().parents[2]
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -89,24 +94,28 @@ from tenacity import (
 PARQUET_AGG = Path(
     os.environ.get(
         "FMCSA_PARQUET",
-        "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
-        "data/carrier_aggregates.parquet",
+        REPO / "data" / "carrier_aggregates.parquet",
     )
 )
 OUTPUT_DIR = Path(
     os.environ.get(
         "FMCSA_SCRAPE_DIR",
-        "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
-        "data/fmcsa_scrape",
+        REPO / "data" / "fmcsa_scrape",
     )
 )
 # Output parquet is tagged by SMS data vintage (not "today") so a scrape that
 # spans midnight / restarts resumes into the same file. The monthly refresh
 # sets SMS_DATA_TAG to the new drop's date (build_all passes it); the default
 # keeps the current vintage so a bare re-run still resumes the existing file.
-SNAPSHOT_TAG = os.environ.get("SMS_DATA_TAG", "20260514")
+# No May default: an unset tag would write crash_indicator_20260514.parquet
+# over the previous vintage and mislabel fresh data.
+SNAPSHOT_TAG = os.environ.get("SMS_DATA_TAG") or _die("SMS_DATA_TAG is not set")
 
 BASE_URL = "https://ai.fmcsa.dot.gov/SMS/Carrier/{dot}/BASIC/{basic}.aspx"
+
+
+def _die(msg: str):
+    raise SystemExit(f"[scrape_pu_history] {msg} — run via build_all.py or set it explicitly.")
 
 
 def _sms_vintage_date():
@@ -120,10 +129,21 @@ def _sms_vintage_date():
     if override:
         return _dt.strptime(override, "%Y%m%d")
     crash_path = os.environ.get(
-        "FMCSA_CRASH_FILE", "/Users/art/Downloads/SMS_Input_-_Crash_20260518.csv"
+        "FMCSA_CRASH_FILE", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Crash.csv"
     )
+    # Only trust a date parsed out of a filename that actually EXISTS. The
+    # unset-sentinel path still contains the string 20260518, so this regex
+    # happily "succeeded" and returned May 18 — defeating the loud failure it
+    # was supposed to hit. With no env var and no real dated file, refuse to
+    # guess: guessing here is what made today's scrape select its carrier
+    # universe from May crash data.
     m = re.search(r"(\d{8})", os.path.basename(crash_path))
-    return _dt.strptime(m.group(1), "%Y%m%d") if m else _dt(2026, 5, 18)
+    if m and os.path.exists(crash_path):
+        return _dt.strptime(m.group(1), "%Y%m%d")
+    raise SystemExit(
+        "Cannot determine the SMS vintage: set SMS_DATA_DATE=YYYYMMDD (build_all.py "
+        f"exports it), or point FMCSA_CRASH_FILE at a dated file. Got {crash_path!r}."
+    )
 
 # Identifies the scraper + contact for FMCSA admins if they need to reach us.
 USER_AGENT = (
@@ -398,12 +418,22 @@ class AsyncScraper:
                 # to throttling without flooding stdout.
                 err = str(e)[:120].replace("\n", " ")
                 print(f"  [error] DOT {dot}: {err}", flush=True)
+                # scrape_status must stay SHORT and GROUPABLE. It used to be
+                # f"error:fetch:{err}", which embeds the full failing URL — so
+                # every single failure was a distinct status value and any
+                # group_by produced hundreds of singleton rows rather than one
+                # "error: 144". That is how a silent failure rate survives.
+                status = (
+                    f"error:http{e.response.status_code}"
+                    if isinstance(e, httpx.HTTPStatusError)
+                    else f"error:{type(e).__name__}"
+                )
                 return CrashIndicatorScrape(
                     dot_number=dot, avg_pu=None, current_pu=None, pu_6mo=None,
                     pu_18mo=None, utilization_factor=None, vmt_per_avg_pu=None,
                     vmt_mcs150=None, segment=None, segment_pct=None,
                     n_crashes_included=None, n_crashes_not_preventable=None,
-                    scrape_status=f"error:fetch:{err}",
+                    scrape_status=status,
                     scraped_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
                 )
         return parse_crash_indicator(dot, resp.content)
@@ -430,7 +460,7 @@ def select_universe(crash_sufficiency_only: bool = True) -> list[int]:
 
     crash = (
         pl.scan_csv(
-            os.environ.get("FMCSA_CRASH_FILE", "/Users/art/Downloads/SMS_Input_-_Crash_20260518.csv"),
+            os.environ.get("FMCSA_CRASH_FILE", "/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Crash.csv"),
             ignore_errors=True,
             schema_overrides={"DOT_Number": pl.Int64},
         )

@@ -166,6 +166,10 @@ async function fetchOne(
     bipdImminentLapse: false,
     bipdDaysToLapse: null,
     bipdPendingCancelDate: null,
+    hasActiveAuthority: null,
+    insuranceSuspensionStatus: null,
+    insuranceSuspensionDate: null,
+    insuranceSuspensionDays: null,
   };
 }
 

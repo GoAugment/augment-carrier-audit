@@ -3,23 +3,24 @@
   "reasonNote": "CRITICAL: prior-revoke chameleon",
   "carrierName": "OLE SOUTHERN TRUCKING INC",
   "riskLevel": "Critical",
-  "riskScore": 32,
-  "riskTier": "Low",
+  "riskScore": 37,
+  "riskTier": "Medium",
   "riskContributions": [
     "+24 [Identity / chameleon] FMCSA prior-revoke flag (chameleon)",
-    "+8 [Safety / compliance] Elevated safety context"
+    "+8 [Safety / compliance] Elevated safety context",
+    "+5 [Context] Personal contact/address corroborator"
   ],
   "reasonLabels": [
-    "FMCSA prior-revoke flag (chameleon)",
-    "Why the FMCSA SMS scores look clean"
+    "Vehicle OOS",
+    "FMCSA prior-revoke flag (chameleon)"
   ],
   "axes": {
     "crash": "na",
-    "unsafeDriving": "na",
-    "hos": "na",
-    "driverOos": "na",
+    "unsafeDriving": "clean",
+    "hos": "clean",
+    "driverOos": "clean",
     "controlledSubstances": "na",
-    "vehicleOos": "na",
+    "vehicleOos": "elevated",
     "hazmatOos": "na",
     "revocations": "critical",
     "authority": "clean",

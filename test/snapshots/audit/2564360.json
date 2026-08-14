@@ -3,12 +3,13 @@
   "reasonNote": "CRITICAL: recent involuntary revocation",
   "carrierName": "TIMEKEEPER TRUCKING INC",
   "riskLevel": "Critical",
-  "riskScore": 68,
+  "riskScore": 73,
   "riskTier": "High",
   "riskContributions": [
     "+30 [Authority / insurance] Recent revocation",
     "+30 [Authority / insurance] Insurance lapsed",
-    "+8 [Safety / compliance] Elevated safety context"
+    "+8 [Safety / compliance] Elevated safety context",
+    "+5 [Context] Personal contact/address corroborator"
   ],
   "reasonLabels": [
     "Insurance lapsed",
@@ -24,7 +25,7 @@
     "vehicleOos": "na",
     "hazmatOos": "na",
     "revocations": "high",
-    "authority": "clean",
+    "authority": "elevated",
     "insurance": "critical"
   }
 }

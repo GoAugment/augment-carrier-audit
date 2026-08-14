@@ -3,12 +3,13 @@
   "reasonNote": "CRITICAL: $0 BIPD",
   "carrierName": "ROAD EXPERTS LLC",
   "riskLevel": "Critical",
-  "riskScore": 42,
+  "riskScore": 47,
   "riskTier": "Medium",
   "riskContributions": [
     "+30 [Authority / insurance] Insurance lapsed",
     "+8 [Safety / compliance] Elevated safety context",
-    "+4 [Context] Insurer / ZIP risk context"
+    "+4 [Context] Insurer / ZIP risk context",
+    "+5 [Context] Personal contact/address corroborator"
   ],
   "reasonLabels": [
     "Insurance lapsed",
@@ -23,7 +24,7 @@
     "vehicleOos": "na",
     "hazmatOos": "na",
     "revocations": "na",
-    "authority": "clean",
+    "authority": "elevated",
     "insurance": "critical"
   }
 }

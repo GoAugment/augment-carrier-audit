@@ -582,14 +582,29 @@ function computeRiskScore(
   // revocation isn't cured. Only when insurance is back (not sub-minimum) is
   // the revocation truly behind them (e.g. F2F DOT 239699: $1M on file).
   const currentlyActive = code === "A" && allowed !== "N";
-  const revocationReinstated = currentlyActive && !subMin;
+  // An in-effect FMCSA suspension for lack of insurance overrides both tests.
+  // status_code lags (census still reads Active) and the BIPD amount on file
+  // predates the suspension, so a suspended carrier looks "insured enough" and
+  // scored +10 "revoked, since reinstated" while simultaneously scoring +30
+  // "authority suspended" — contradictory, and the stale-coverage bug the
+  // suspension signal exists to catch (DOT 3008423).
+  const suspendedNow = c.insuranceSuspensionStatus === "effective";
+  const revocationReinstated = currentlyActive && !subMin && !suspendedNow;
   const involDaysAgo = daysAgo(c.mostRecentInvoluntaryDate);
   if (involDaysAgo != null && involDaysAgo <= 730 && !revocationReinstated) {
     add(
       30,
       "Authority / insurance",
       getRule("recent-revocation").label,
-      `Own authority was involuntarily revoked within 24 months (${c.mostRecentInvoluntaryDate})${currentlyActive ? " and insurance is still not on file" : `; FMCSA status_code=${code || "?"} (not currently active)`}.`
+      `Own authority was involuntarily revoked within 24 months (${c.mostRecentInvoluntaryDate})${
+        suspendedNow
+          ? ` and FMCSA has since suspended the authority for lack of insurance${
+              c.insuranceSuspensionDate ? ` (${c.insuranceSuspensionDate})` : ""
+            }`
+          : currentlyActive
+            ? " and insurance is still not on file"
+            : `; FMCSA status_code=${code || "?"} (not currently active)`
+      }.`
     );
   } else if (involDaysAgo != null && involDaysAgo <= 730 && revocationReinstated) {
     const repeated = c.involuntaryRevocations >= 3;
@@ -632,7 +647,9 @@ function computeRiskScore(
         ? `$0 BIPD on file vs ${fmtMoney(c.bipdRequiredAmount)} FMCSA-required.`
         : `${fmtMoney(c.bipdInsuranceOnFile)} BIPD on file vs ${fmtMoney(c.bipdRequiredAmount)} FMCSA-required.`
     );
-  } else if (c.bipdImminentLapse) {
+  } else if (c.bipdImminentLapse && !c.insuranceSuspensionStatus) {
+    // see the suppression note on lapseReason — the suspension signal supersedes
+    // this and firing both double-counts the same fact
     add(
       28,
       "Authority / insurance",
@@ -817,12 +834,30 @@ function computeRiskScore(
     );
   }
 
+  // FMCSA's own suspension of authority for lack of insurance. Weighted above
+  // the identity signals: this is a regulator action, not an inference.
+  if (c.insuranceSuspensionStatus) {
+    const eff = c.insuranceSuspensionStatus === "effective";
+    const soon = c.insuranceSuspensionDays != null && c.insuranceSuspensionDays <= 10;
+    add(
+      eff || soon ? 30 : 18,
+      "Authority / insurance",
+      eff ? "Authority suspended for no insurance" : "FMCSA suspension notice served",
+      c.insuranceSuspensionDate
+        ? eff ? `Suspended ${c.insuranceSuspensionDate}` : `Effective ${c.insuranceSuspensionDate}`
+        : eff ? "Suspended" : "Notice served"
+    );
+  }
+
   if (identitySignals?.shutdownIdentityLinks.length) {
     const links = identitySignals.shutdownIdentityLinks;
     // Email/phone shared with a shut-down revoked DOT is the real identity tell
-    // (2.5x revoke lift); an officer-name-only match is the weak majority of
-    // volume (2.1x) and prone to common-name collisions / disparate impact, so
-    // it gets a much lower weight. See officer-reuse-deadend + the 2026-05 lift test.
+    // (2.46x revoke lift, measured 2026-08 over the full shut-down universe).
+    // Officer-name-only matches are no longer emitted by
+    // scripts/build_risk_signals.cjs at all: on that same universe they flag
+    // 10.7% of the carrier base at 1.33x, and no cluster cap rescues them (see
+    // officer-reuse-deadend). The officer branch below is kept as a defensive
+    // fallback for older parquets that still carry those links.
     const hasContactLink = links.some(
       (l) => l.startsWith("email") || l.startsWith("phone")
     );
@@ -1227,8 +1262,17 @@ function classifyRevocation(c: FmcsaCarrier): {
   // Revoked-then-reinstated requires currently active (status_code=A) AND
   // insurance restored — status A alone isn't enough (a carrier can read Active
   // with $0 BIPD, meaning the lapse that drove the revocation isn't cured).
+  // ...and NOT under an in-effect FMCSA suspension for lack of insurance. Both
+  // of the other tests are satisfied by a suspended carrier — census status
+  // lags at Active, and the BIPD amount on file predates the suspension — so
+  // without this the row rendered "Recent revocation, since reinstated" beside
+  // an authority cell reading "Suspended (no insurance)". Mirrors the same
+  // exclusion in computeRiskScore's revocationReinstated.
   const reinstated =
-    code === "A" && allowed !== "N" && c.bipdInsuranceOnFile > 0;
+    code === "A" &&
+    allowed !== "N" &&
+    c.bipdInsuranceOnFile > 0 &&
+    c.insuranceSuspensionStatus !== "effective";
   const sinceLastInvol = daysAgo(c.mostRecentInvoluntaryDate);
   const recentRevoke =
     sinceLastInvol !== null && sinceLastInvol <= RECENT_REVOCATION_WINDOW_DAYS;
@@ -1316,8 +1360,29 @@ function classifyAuthority(c: FmcsaCarrier): {
   // --- Status code ---
   const code = (c.statusCode ?? "").toUpperCase();
   const allowed = (c.allowedToOperate ?? "").toUpperCase();
-  if (code === "A" || allowed === "Y") {
-    parts.push("Active");
+  // An in-effect FMCSA suspension for lack of insurance beats the census status
+  // outright. status_code lags — a suspended carrier still reads Active — so
+  // without this the authority cell rendered "Active / clean" directly beside a
+  // reason saying FMCSA had suspended that very authority.
+  if (c.insuranceSuspensionStatus === "effective") {
+    parts.push("Suspended (no insurance)");
+    promote("critical");
+  } else if (code === "A" || allowed === "Y") {
+    // Census-active. But census status is NOT operating authority: FMCSA's own
+    // snapshot shows "USDOT Status: ACTIVE" alongside "Operating Status: NOT
+    // AUTHORIZED" for the same carrier. Surface the distinction, without
+    // over-flagging — 1,516,450 census-active carriers (73%) have no authority
+    // record at all, which is simply how intrastate and private operations look
+    // and is not a risk signal. Only the "held it, none active now" state is,
+    // and 217,833 of those 217,840 carry an MC docket.
+    if (c.hasActiveAuthority === false) {
+      parts.push("Active, no interstate authority");
+      promote("elevated");
+    } else if (c.hasActiveAuthority === null && !c.mcNumber) {
+      parts.push("Active (intrastate/private — no interstate authority)");
+    } else {
+      parts.push("Active");
+    }
   } else if (code) {
     parts.push(code);
     promote("critical");
@@ -2022,8 +2087,12 @@ function scoreCarrier(
   // bipdInsuranceOnFile >= 1 so it does NOT double-report with the standard
   // "$0 BIPD on file" insurance check (which already covers carriers that have
   // already lapsed to zero). This rule is the forward-looking early warning.
+  // Suppressed when a suspension is present: the suspension signal supersedes
+  // this rule (its ActPendInsur source froze 2026-05-14), and firing both
+  // double-counts (+28 lapse on top of +30/+18 suspension) and shows two
+  // reasons for one fact.
   const lapseReason: Reason | null =
-    c.bipdImminentLapse && c.bipdInsuranceOnFile >= 1
+    c.bipdImminentLapse && c.bipdInsuranceOnFile >= 1 && !c.insuranceSuspensionStatus
       ? {
           label: getRule("insurance-imminent-lapse").label,
           detail:
@@ -2055,6 +2124,49 @@ function scoreCarrier(
       : d === 0 ? "lapses today"
       : `lapses in ${d}d`;
   }
+  // FMCSA involuntary suspension for lack of insurance. This supersedes the
+  // imminent-lapse rule above: rather than inferring "about to lose authority"
+  // from a cancellation date in a feed FMCSA froze on 2026-05-14, this is
+  // FMCSA's own enforcement action, and the reason text states the cause
+  // ("no active insurance meeting minimum coverage on file").
+  //
+  // Gating (measured 2026-08 over 3,768 carriers, 0.18% of the base — versus
+  // 0.66% for the imminent-lapse rule it replaces, so this is the tighter
+  // signal, not a broader one):
+  //   effective        -> Critical. The authority is already suspended; the
+  //                       carrier's displayed coverage is pre-suspension and
+  //                       stale, which is exactly how 1,957 suspended carriers
+  //                       were reading as "meets required".
+  //   pending <=10d    -> Critical. You cannot tender a load delivering after
+  //                       the suspension date.
+  //   pending 11-30d   -> High/elevated.
+  // Carriers with a later REINSTATED/GRANTED action are filtered out upstream
+  // in add_insurance_suspension.py (~1.5% of notices), so a carrier that fixed
+  // its insurance never reaches this branch.
+  let suspensionReason: Reason | null = null;
+  if (c.insuranceSuspensionStatus) {
+    const effective = c.insuranceSuspensionStatus === "effective";
+    const d = c.insuranceSuspensionDays;
+    const soon = d != null && d <= 10;
+    const when = c.insuranceSuspensionDate ?? "an unstated date";
+    suspensionReason = {
+      label: getRule("insurance-authority-suspension").label,
+      detail: effective
+        ? `FMCSA involuntarily suspended this carrier's operating authority on ${when} for lack of insurance meeting the minimum required coverage, and no reinstatement has been filed since. Any coverage amount shown predates the suspension. Do not tender.`
+        : `FMCSA has served an involuntary suspension notice: this carrier's operating authority is suspended on ${when}${
+            d != null ? `, ${plural(d, "day")} out` : ""
+          }, for insurance below the required minimum. It can still haul today, but not a load delivering after that date, and no reinstatement has been filed.`,
+    };
+    const newStatus: AxisStatus = effective || soon ? "critical" : "elevated";
+    if (statusRank(insurance.cell.status) < statusRank(newStatus)) {
+      insurance.cell.status = newStatus;
+    }
+    insurance.cell.sub = effective
+      ? "authority suspended"
+      : d == null ? "suspension pending"
+      : `suspended in ${d}d`;
+  }
+
   // Show the BIPD cancellation count under the amount, churn is a leading
   // instability/fraud signal even when the carrier is currently insured.
   if (c.insuranceCancellations24mo > 0) {
@@ -2082,6 +2194,7 @@ function scoreCarrier(
   if (issReason) reasons.push(issReason);
   if (insurance.reason) reasons.push(insurance.reason);
   reasons.push(...extraInsuranceReasons);
+  if (suspensionReason) reasons.push(suspensionReason);
   if (lapseReason) reasons.push(lapseReason);
   // Insurer reputation, surface high-risk-specialist insurers in the issue list.
   {

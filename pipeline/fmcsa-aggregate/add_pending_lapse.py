@@ -42,13 +42,18 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 import polars as pl
 
+# Repo-relative default. These pointed at the san-antonio workspace, so a
+# standalone `uv run` silently read from (or wrote into) a different clone.
+# Harmless under build_all, which supplies the env; wrong every other way.
+REPO = Path(__file__).resolve().parents[2]
+
 PARQUET = Path(os.environ.get(
     "FMCSA_PARQUET",
-    "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/carrier_aggregates.parquet",
+    REPO / "data" / "carrier_aggregates.parquet",
 ))
 ACTPEND = Path(os.environ.get(
     "FMCSA_ACTPEND",
-    "/Users/art/Downloads/ActPendInsur_All_With_History.csv",
+    "/__unset__run-via-build_all.py-or-set-the-env-var__/ActPendInsur_All_With_History.csv",
 ))
 _asof = os.environ.get("FMCSA_LAPSE_ASOF")
 SNAPSHOT = datetime.strptime(_asof, "%Y-%m-%d").date() if _asof else date.today()

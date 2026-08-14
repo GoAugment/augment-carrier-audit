@@ -59,18 +59,27 @@ import random
 from pathlib import Path
 import polars as pl
 
+# Repo-relative default. These pointed at the san-antonio workspace, so a
+# standalone `uv run` silently read from (or wrote into) a different clone.
+# Harmless under build_all, which supplies the env; wrong every other way.
+REPO = Path(__file__).resolve().parents[2]
+
 PARQUET = Path(
     os.environ.get(
         "FMCSA_PARQUET",
-        "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/"
-        "data/carrier_aggregates.parquet",
+        REPO / "data" / "carrier_aggregates.parquet",
     )
 )
 
 # Random selection percentage for Insufficient Data Algorithm.
 # Per methodology: ~1% of carriers without ISS Safety value get random=99.
 RANDOM_SELECTION_PCT = 0.01
-RANDOM_SEED = 20260514  # match SMS data vintage for reproducibility
+# FIXED FOREVER — deliberately NOT the data vintage, despite the value looking
+# like one. FMCSA's methodology assigns ISS=99 to a random ~1% of
+# insufficient-data carriers; re-seeding per refresh would reshuffle which
+# carriers get it every month, churning verdicts for no reason. Do not 'update'
+# this with the snapshot date.
+RANDOM_SEED = 20260514
 
 # Insufficient Data Algorithm Case 2 buckets — ISS by max(PU, drivers).
 # Table from the ISS doc (December 2012, page 17).
@@ -336,7 +345,12 @@ def main() -> None:
     # Random 1% selection from insufficient-data carriers → ISS = 99
     n_random = int(insuff_iss.height * RANDOM_SELECTION_PCT)
     rng = random.Random(RANDOM_SEED)
-    random_dots = rng.sample(insuff_iss["DOT_NUMBER"].to_list(), n_random)
+    # SORT before sampling. The seed alone is not enough: rng.sample() draws by
+    # position, so if the input list arrives in a different order the selection
+    # differs even with a fixed seed. Row order here comes from upstream joins
+    # and is not stable, which made iss_score/iss_group differ for 38,196
+    # carriers between two builds of identical inputs.
+    random_dots = rng.sample(sorted(insuff_iss["DOT_NUMBER"].to_list()), n_random)
     insuff_iss = insuff_iss.with_columns(
         iss_score=pl.when(pl.col("DOT_NUMBER").is_in(random_dots)).then(99).otherwise(pl.col("iss_score")),
         iss_group=pl.when(pl.col("DOT_NUMBER").is_in(random_dots)).then(pl.lit("Random (insufficient data)")).otherwise(pl.col("iss_group")),

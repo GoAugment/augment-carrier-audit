@@ -30,15 +30,23 @@ import os
 from pathlib import Path
 import polars as pl
 
-PARQUET = Path(os.environ.get("FMCSA_PARQUET", "/Users/art/conductor/workspaces/augment-carrier-audit-v1/san-antonio/data/carrier_aggregates.parquet"))
+# Repo-relative default. These pointed at the san-antonio workspace, so a
+# standalone `uv run` silently read from (or wrote into) a different clone.
+# Harmless under build_all, which supplies the env; wrong every other way.
+REPO = Path(__file__).resolve().parents[2]
+
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", REPO / "data" / "carrier_aggregates.parquet"))
 _RD = os.environ.get("FMCSA_REFRESH_DIR")
 INSP = (
     Path(os.environ["FMCSA_INSPECTION_FILE"]) if os.environ.get("FMCSA_INSPECTION_FILE")
     else Path(_RD) / "SMS_Input_-_Inspection.csv" if _RD
-    else Path("/Users/art/Downloads/SMS_Input_-_Inspection_20260518.csv")
+    else Path("/__unset__run-via-build_all.py-or-set-the-env-var__/SMS_Input_-_Inspection.csv")
 )
-INSHIST = Path(os.environ.get("FMCSA_INSHIST", "/Users/art/Downloads/inshist_allwithhistory.txt"))
-SNAPSHOT_DATE = "2026-06-26"
+INSHIST = Path(os.environ.get("FMCSA_INSHIST", "/__unset__run-via-build_all.py-or-set-the-env-var__/inshist_allwithhistory.txt"))
+# Derived from the same env var as the rest of the pipeline; this was a
+# literal that had to be remembered every refresh.
+_sd = os.environ.get("FMCSA_SNAPSHOT_DATE", "20260812")
+SNAPSHOT_DATE = f"{_sd[:4]}-{_sd[4:6]}-{_sd[6:]}"
 
 def log(m): print(f"[add_new_signals] {m}", flush=True)
 

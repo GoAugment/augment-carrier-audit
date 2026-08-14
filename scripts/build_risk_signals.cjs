@@ -8,8 +8,16 @@
  * Inputs (already present locally / from the monthly refresh):
  *   data/carrier_identity.parquet   (email_address, phone, company_officer_1,
  *                                     email_domain, phy_street)
- *   data/carrier_aggregates.parquet (status_code, involuntary_revocations,
- *                                     LEGAL_NAME — to identify shut-down DOTs)
+ *   data/carrier_aggregates.parquet (power_units, home_state_insp_share — the
+ *                                     size/geo gates. NOTE: home_state_insp_share
+ *                                     is a build-only column that
+ *                                     prune_app_parquet drops, so this script
+ *                                     MUST run before that step; build_all.py
+ *                                     orders it that way.)
+ *   data/sources/Company_Census_File.csv + Revocation_-_All_With_History.csv
+ *                                    (the shut-down universe + its contacts —
+ *                                     see the `shutdowns` CTE for why these are
+ *                                     read raw instead of via the aggregate)
  * Output:
  *   data/carrier_risk_signals.parquet  — one row per DOT that has >=1 signal:
  *     DOT_NUMBER, free_email_domain, residential_marker, shutdown_links
@@ -19,8 +27,49 @@
  * (small), so /api/analyze needs neither the identity Blob nor the self-join.
  */
 const duckdb = require("duckdb");
+const fs = require("node:fs");
 const db = new duckdb.Database(":memory:");
 const run = (sql) => new Promise((res, rej) => db.all(sql, (e, r) => (e ? rej(e) : res(r))));
+
+// InsHist now arrives as the Socrata mirror's .csv (same 17-column order as
+// FMCSA's native header-less .txt, just with a header row — which the
+// TRY_CAST(...) > 0 filter below discards anyway). build_all.py exports
+// FMCSA_INSHIST; fall back to either filename for a standalone run.
+const INSHIST =
+  process.env.FMCSA_INSHIST ||
+  ["data/sources/inshist_allwithhistory.csv", "data/sources/inshist_allwithhistory.txt"].find((p) =>
+    fs.existsSync(p),
+  );
+if (!INSHIST) {
+  throw new Error(
+    "InsHist file not found (looked for data/sources/inshist_allwithhistory.{csv,txt}). " +
+      "Run: uv run pipeline/fmcsa-aggregate/refresh_sms_data.py --monthly",
+  );
+}
+
+// The shut-down universe comes from Company Census + Revocation, NOT from
+// carrier_aggregates — see the `shutdowns` CTE for why. build_all.py exports
+// both paths; fall back to the standard refresh filenames standalone.
+const CENSUS = process.env.FMCSA_COMPANY_CENSUS || "data/sources/Company_Census_File.csv";
+const REVOCATION = process.env.FMCSA_REVOCATION || "data/sources/Revocation_-_All_With_History.csv";
+for (const [label, p] of [["Company Census", CENSUS], ["Revocation", REVOCATION]]) {
+  if (!fs.existsSync(p)) {
+    throw new Error(
+      `${label} file not found at ${p}. Run: uv run pipeline/fmcsa-aggregate/refresh_sms_data.py --monthly`,
+    );
+  }
+}
+
+// A contact value shared by more than this many DISTINCT carriers (live AND
+// shut-down, counted together) is a shared service — a dispatcher, a filing
+// agent, a leasing company — not one operator behind two DOTs. Measured on the
+// 2026-08 data: capping across the combined universe rather than the shut-down
+// side alone lifts revoke-lift from 2.24x to 2.46x at comparable recall, and
+// 6 is the knee (cap 3 buys +0.04x for -3.3k carriers).
+const MAX_CONTACT_CLUSTER = 6;
+// The consumer (lib/fmcsa-identity.ts) slices to 5 links; cap at the source so
+// the bundled parquet can't blow up on a carrier matching hundreds of DOTs.
+const MAX_LINKS_PER_DOT = 5;
 
 // Mirror lib/fmcsa-identity.ts FREE_EMAIL_DOMAINS exactly.
 const FREE = ["gmail.com","yahoo.com","hotmail.com","outlook.com","aol.com","icloud.com","me.com","msn.com","live.com","comcast.net","sbcglobal.net","att.net","ymail.com","proton.me","protonmail.com","mail.com"];
@@ -51,7 +100,39 @@ async function main() {
       -- Fleet size + home-region inspection share (gates the geo signals to the
       -- small carriers where they carry lift; megafleets operate nationally).
       sz AS (
-        SELECT DOT_NUMBER AS dot, power_units, home_state_insp_share
+        SELECT DOT_NUMBER AS dot, power_units, home_state_insp_share,
+          -- A CORROBORATED large fleet: claims >=100 power units AND has been
+          -- seen operating >=50 distinct inspected VINs. Contact/policy reuse is
+          -- an operator-level tell and is meaningless at this scale — a shared
+          -- switchboard or a corporate insurance programme is not a chameleon.
+          -- Without this, FedEx, UPS, Amazon, Swift and First Student were all
+          -- flagged (Werner scored +24 "shares insurance policy with revoked
+          -- carrier"), which is a locked-in false positive on the largest
+          -- carriers in the country.
+          --
+          -- Deliberately keyed on INSPECTED VINS, not claimed power units:
+          -- carriers that invent a fleet (SHUNDEL JOHNSON 80,000 PU / 0 VINs,
+          -- TREASURE DEALS 30,012 PU / 0 VINs) must stay flagged, since the
+          -- inflated claim is itself a fraud signal. Splits 1,045 flagged
+          -- large carriers into 807 real (suppressed) and 238 claimed-only (kept).
+          -- Thresholds raised from 100/50: that band suppressed 405 carriers of
+          -- only 100-249 power units, 103 of which carried another strong signal
+          -- (DOT 3114701: 100 PU, a Jul-2026 revocation and a shared-policy edge,
+          -- all corroboration removed). The megafleets this exists for are an
+          -- order of magnitude larger — FedEx 138k, UPS 112k, Amazon 15k,
+          -- Swift 13k, Werner 9.8k PU — so 250/100 suppresses them while leaving
+          -- the mid-size band flagged.
+          -- ...AND carrying no independent fraud evidence of its own. A blanket
+          -- size threshold still stripped corroboration from 346 flagged
+          -- carriers, 31 of them with a recent involuntary revocation
+          -- (DOT 976560: 409 PU, a Mar-2026 revocation, sharing policy
+          -- CT00018715 with revoked DOT 1441919). Size explains a shared
+          -- switchboard or a corporate insurance programme; it does not explain
+          -- a revoked authority, so a corroborated carrier stays flagged
+          -- regardless of fleet size.
+          (power_units >= 250 AND coalesce(pu_vins_inspected, 0) >= 100
+           AND coalesce(involuntary_revocations, 0) = 0
+           AND NOT coalesce(prior_revoke_flag, false)) AS corroborated_large
         FROM read_parquet('data/carrier_aggregates.parquet')
       ),
       -- Empirical area-code -> home-state map: US area codes don't cross state
@@ -71,40 +152,82 @@ async function main() {
         SELECT ac, MAX(CASE WHEN rk=1 THEN phy_state END) AS home_state, MAX(tot) AS tot
         FROM r GROUP BY ac
       ),
-      shutdowns AS (
-        SELECT DOT_NUMBER AS dot, LEGAL_NAME AS name
-        FROM read_parquet('data/carrier_aggregates.parquet')
-        WHERE (status_code <> 'A' OR status_code IS NULL)
-          AND coalesce(involuntary_revocations,0) > 0
+      -- The shut-down universe. Deliberately NOT sourced from
+      -- carrier_aggregates: that parquet is built off the SMS census, which
+      -- FMCSA prunes to (essentially) active carriers, so it retained only
+      -- ~1.2k shut-down DOTs — 0.2% of the real universe, and shrinking every
+      -- time FMCSA prunes (the Jul 2026 snapshot alone cut it 4,416 -> 1,187).
+      -- Company Census keeps all ~1.94M inactive carriers AND carries the
+      -- contact columns, so the graph is built straight from it.
+      revoked AS (
+        SELECT TRY_CAST(DOT_NUMBER AS BIGINT) AS dot,
+               MAX(TRY_CAST(strptime(NULLIF(TRIM(order2_effective_Date),''),'%m/%d/%Y') AS DATE)) AS revoked_on
+        FROM read_csv('${REVOCATION}', header=true, all_varchar=true, ignore_errors=true, sample_size=-1)
+        WHERE upper(trim(ORDER2_TYPE_DESC)) = 'INVOLUNTARY REVOCATION'
+          AND TRY_CAST(DOT_NUMBER AS BIGINT) > 0
+        GROUP BY 1
       ),
+      shutdowns AS (
+        SELECT TRY_CAST(c.DOT_NUMBER AS BIGINT) AS dot,
+               trim(coalesce(c.LEGAL_NAME,'')) AS name,
+               lower(trim(coalesce(c.EMAIL_ADDRESS,''))) AS email,
+               regexp_replace(coalesce(c.PHONE,''),'[^0-9]','','g') AS phone_norm,
+               r.revoked_on
+        FROM read_csv('${CENSUS}', header=true, all_varchar=true, ignore_errors=true, sample_size=-1) c
+        JOIN revoked r ON r.dot = TRY_CAST(c.DOT_NUMBER AS BIGINT)
+        -- 'I' only: ~267k carriers hold a revoked authority but are still
+        -- registered and operating, which is not a shut-down.
+        WHERE upper(trim(coalesce(c.STATUS_CODE,''))) = 'I'
+      ),
+      -- Cluster sizes across the COMBINED live + shut-down universe (see
+      -- MAX_CONTACT_CLUSTER). Counting only the shut-down side would let a
+      -- dispatcher phone shared with hundreds of live carriers slip through.
+      email_clusters AS (
+        SELECT v, COUNT(DISTINCT dot) AS nd FROM (
+          SELECT email AS v, dot FROM shutdowns WHERE length(email) > 3
+          UNION ALL SELECT email AS v, dot FROM idn WHERE length(email) > 3
+        ) GROUP BY 1
+      ),
+      phone_clusters AS (
+        SELECT v, COUNT(DISTINCT dot) AS nd FROM (
+          SELECT phone_norm AS v, dot FROM shutdowns WHERE length(phone_norm) >= 10
+          UNION ALL SELECT phone_norm AS v, dot FROM idn WHERE length(phone_norm) >= 10
+        ) GROUP BY 1
+      ),
+      -- Officer-name links are deliberately NOT emitted. On the full universe
+      -- they flag 224,286 carriers (10.7% of the base) at only 1.33x revoke
+      -- lift — no cluster cap rescues them — and common-name collisions carry
+      -- a disparate-impact problem. Email 1.87x / phone 2.46x do the work.
       raw_links AS (
-        SELECT t.dot AS target, 'email' AS link_type, s.dot AS linked, s.name
-        FROM idn t JOIN idn i ON t.email <> '' AND t.email = i.email AND i.dot <> t.dot
-        JOIN shutdowns s ON s.dot = i.dot
+        SELECT t.dot AS target, 'email' AS link_type, s.dot AS linked, s.name, s.revoked_on
+        FROM idn t
+        JOIN shutdowns s ON length(t.email) > 3 AND t.email = s.email AND s.dot <> t.dot
+        JOIN email_clusters ec ON ec.v = t.email AND ec.nd <= ${MAX_CONTACT_CLUSTER}
         UNION ALL
-        SELECT t.dot, 'phone', s.dot, s.name
-        FROM idn t JOIN idn i ON length(t.phone_norm) >= 10
+        SELECT t.dot, 'phone', s.dot, s.name, s.revoked_on
+        FROM idn t
+        JOIN shutdowns s ON length(t.phone_norm) >= 10
           AND t.phone_norm NOT IN ('0000000000','9999999999','1111111111','1234567890')
-          AND t.phone_norm = i.phone_norm AND i.dot <> t.dot
-        JOIN shutdowns s ON s.dot = i.dot
-        UNION ALL
-        SELECT t.dot, 'officer', s.dot, s.name
-        FROM idn t JOIN idn i ON length(t.officer) >= 5
-          AND t.officer NOT IN ('OWNER','UNKNOWN','NONE','N/A','NA')
-          AND t.officer = i.officer AND i.dot <> t.dot
-        JOIN shutdowns s ON s.dot = i.dot
+          AND t.phone_norm = s.phone_norm AND s.dot <> t.dot
+        JOIN phone_clusters pc ON pc.v = t.phone_norm AND pc.nd <= ${MAX_CONTACT_CLUSTER}
       ),
       links_ranked AS (
-        SELECT DISTINCT target, link_type, linked, name FROM raw_links
+        SELECT target, link_type, linked, name,
+          row_number() OVER (
+            PARTITION BY target
+            ORDER BY CASE link_type WHEN 'email' THEN 0 ELSE 1 END,
+                     revoked_on DESC NULLS LAST, linked
+          ) AS rk
+        FROM (SELECT DISTINCT target, link_type, linked, name, revoked_on FROM raw_links)
       ),
       links_agg AS (
         SELECT target AS dot,
           string_agg(
             link_type || ' matches shut-down revoked DOT ' || CAST(linked AS VARCHAR)
               || CASE WHEN name IS NOT NULL AND name <> '' THEN ' (' || name || ')' ELSE '' END,
-            ' | '
+            ' | ' ORDER BY rk
           ) AS shutdown_links
-        FROM links_ranked GROUP BY target
+        FROM links_ranked WHERE rk <= ${MAX_LINKS_PER_DOT} GROUP BY target
       ),
       -- Insurance POLICY NUMBER shared across DOTs (from the L&I insurance-history
       -- file). One policy can't legitimately cover two separate carriers, so a
@@ -113,7 +236,7 @@ async function main() {
       -- policy#s shared by >10 DOTs.
       ins AS (
         SELECT DISTINCT TRY_CAST(column01 AS BIGINT) AS dot, TRIM(column07) AS pol
-        FROM read_csv('data/sources/inshist_allwithhistory.txt',
+        FROM read_csv('${INSHIST}',
                       header=false, all_varchar=true, ignore_errors=true, sample_size=-1)
         WHERE TRY_CAST(column01 AS BIGINT) > 0 AND length(TRIM(column07)) >= 4
       ),
@@ -134,8 +257,10 @@ async function main() {
         i.dot AS DOT_NUMBER,
         CASE WHEN i.email_domain IN (${freeList}) THEN i.email_domain ELSE NULL END AS free_email_domain,
         NULLIF(regexp_extract(i.street_u, '${RES_RE}', 2), '') AS residential_marker,
-        la.shutdown_links AS shutdown_links,
-        pl.shared_policy_links AS shared_policy_links,
+        CASE WHEN coalesce(sz.corroborated_large, false) THEN NULL
+             ELSE la.shutdown_links END AS shutdown_links,
+        CASE WHEN coalesce(sz.corroborated_large, false) THEN NULL
+             ELSE pl.shared_policy_links END AS shared_policy_links,
         -- Geo coherence, small carriers only (<=6 PU). Phone area code's home
         -- state differs from the carrier's domicile (~1.9x revoke lift).
         CASE WHEN sz.power_units <= 6
@@ -154,8 +279,8 @@ async function main() {
       LEFT JOIN ac_map am ON am.ac = i.area_code
       WHERE (i.email_domain IN (${freeList}))
          OR (regexp_extract(i.street_u, '${RES_RE}', 2) <> '')
-         OR (la.shutdown_links IS NOT NULL)
-         OR (pl.shared_policy_links IS NOT NULL)
+         OR (la.shutdown_links IS NOT NULL AND NOT coalesce(sz.corroborated_large, false))
+         OR (pl.shared_policy_links IS NOT NULL AND NOT coalesce(sz.corroborated_large, false))
          OR (sz.power_units <= 6 AND am.home_state IS NOT NULL AND am.tot >= 50
              AND i.phy_state <> '' AND am.home_state <> i.phy_state)
          OR (sz.power_units <= 6 AND sz.home_state_insp_share IS NOT NULL

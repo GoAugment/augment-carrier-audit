@@ -3,12 +3,14 @@
   "reasonNote": "CAUTION: 3 OOS DOTs at same address",
   "carrierName": "MARSHALLS CARGO LLC",
   "riskLevel": "Critical",
-  "riskScore": 46,
+  "riskScore": 57,
   "riskTier": "Medium",
   "riskContributions": [
     "+30 [Authority / insurance] Insurance lapsed",
     "+8 [Safety / compliance] Elevated safety context",
-    "+8 [Identity / chameleon] Address shared with out-of-service DOTs"
+    "+6 [Identity / chameleon] Phone area code outside domicile",
+    "+8 [Identity / chameleon] Address shared with out-of-service DOTs",
+    "+5 [Context] Personal contact/address corroborator"
   ],
   "reasonLabels": [
     "Insurance lapsed",
@@ -24,7 +26,7 @@
     "vehicleOos": "na",
     "hazmatOos": "na",
     "revocations": "clean",
-    "authority": "clean",
+    "authority": "elevated",
     "insurance": "critical"
   }
 }

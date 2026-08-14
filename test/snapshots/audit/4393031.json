@@ -3,11 +3,12 @@
   "reasonNote": "HIGH: 5 OOS DOTs at same address",
   "carrierName": "PURPLE HEART TRANSPORTATION LLC",
   "riskLevel": "High",
-  "riskScore": 21,
+  "riskScore": 26,
   "riskTier": "Low",
   "riskContributions": [
     "+8 [Safety / compliance] Elevated safety context",
-    "+13 [Identity / chameleon] Address shared with out-of-service DOTs"
+    "+13 [Identity / chameleon] Address shared with out-of-service DOTs",
+    "+5 [Context] Personal contact/address corroborator"
   ],
   "reasonLabels": [
     "Address shared with out-of-service DOTs",

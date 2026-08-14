@@ -31,8 +31,11 @@ import polars as pl
 
 # --- config -----------------------------------------------------------------
 
-SNAPSHOT_DATE = 20260626  # YYYYMMDD int — used to derive 24-mo window
-WINDOW_START = 20240626   # 24 months before snapshot
+# Single source of truth: build_all exports FMCSA_SNAPSHOT_DATE from DATA_TAG.
+# These were two independent literals — bump one, forget the other, and the
+# 24-month crash filter silently disagrees with the date the file stamps.
+SNAPSHOT_DATE = int(os.environ.get('FMCSA_SNAPSHOT_DATE', '20260812'))
+WINDOW_START = SNAPSHOT_DATE - 20000  # exactly 24 months earlier
 
 # Non-API feeds (PassProperty, Crash_File, Carrier auth, ActPendInsur) live here.
 # Override with FMCSA_INPUT_DIR for a candidate build from a staging dir.

@@ -21,9 +21,18 @@ from pathlib import Path
 
 import polars as pl
 
+# Repo-relative: HERE is pipeline/fmcsa-aggregate/, so this used to read and
+# write a parquet INSIDE the pipeline dir rather than data/.
+REPO = Path(__file__).resolve().parents[2]
+
 HERE = Path(__file__).parent
-PARQUET = Path(os.environ.get("FMCSA_PARQUET", HERE / "carrier_aggregates.parquet"))
+PARQUET = Path(os.environ.get("FMCSA_PARQUET", REPO / "data" / "carrier_aggregates.parquet"))
 OUT = Path(os.environ.get("FMCSA_THRESHOLDS_V2_OUT", HERE / "national_thresholds_v2.json"))
+
+# YYYYMMDD vintage of the data this was computed from, and the 24-month window
+# start it implies. Falls back to the last known refresh if run standalone.
+SNAPSHOT_DATE = os.environ.get("FMCSA_SNAPSHOT_DATE", "20260812")
+WINDOW_START = f"{int(SNAPSHOT_DATE[:4]) - 2}{SNAPSHOT_DATE[4:]}"
 
 
 def pcts(series: pl.Series, n: int) -> dict:
@@ -66,8 +75,14 @@ def main() -> None:
     print(f"Loaded {df.height:,} carriers")
 
     out: dict = {
-        "snapshot_date": 20260514,
-        "window_start": 20240514,
+        # Derived, not hardcoded. build_all exports FMCSA_SNAPSHOT_DATE from its
+        # DATA_TAG; build_aggregates writes the v1 file from its own
+        # SNAPSHOT_DATE constant, which IS bumped each refresh — so this file
+        # was the only one still stamped 2026-05-14 while containing current
+        # numbers (carrier_count matched the August build). A date label that
+        # lies is the same failure mode as Socrata's rowsUpdatedAt.
+        "snapshot_date": int(SNAPSHOT_DATE),
+        "window_start": int(WINDOW_START),
         "carrier_count_total": df.height,
         "national_inspection_weighted_rates": {
             "driver_oos": inspection_weighted_rate(df, num_col="driver_oos_24mo", den_col="driver_inspections_24mo"),

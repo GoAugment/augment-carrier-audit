@@ -1,8 +1,8 @@
 # FMCSA Carrier Safety Screening — Methodology
 
-**Snapshot date:** 2026-05-14
-**Window:** Trailing 24 months (2024-05-14 → 2026-05-14)
-**Universe:** 2,077,308 carriers in the FMCSA MCMIS census
+**Snapshot date:** 2026-08-12
+**Window:** Trailing 24 months (2024-05-14 → 2026-08-12)
+**Universe:** 2,085,534 carriers in the FMCSA MCMIS census
 
 ## Data source
 
@@ -63,7 +63,7 @@ A carrier with 1 inspection and 1 OOS appears at 100% OOS rate — directionally
 
 ## Output
 
-`carrier_aggregates.parquet` — 38 MB, 2,077,308 rows × 30 columns. One row per DOT. Indexed by `DOT_NUMBER`.
+`carrier_aggregates.parquet` — 38 MB, 2,085,534 rows × 30 columns. One row per DOT. Indexed by `DOT_NUMBER`.
 
 Key columns: `LEGAL_NAME`, `DBA_NAME`, `PHY_STATE`, `HM_FLAG`, `power_units`, `drivers`, `inspections_24mo`, `driver_oos_rate`, `vehicle_oos_rate`, `hazmat_oos_rate`, `crashes_24mo`, `fatal_crashes_24mo`, `injury_crashes_24mo`, `crashes_per_truck`, BASIC alert flags.
 

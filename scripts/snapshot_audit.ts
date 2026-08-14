@@ -34,6 +34,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlink
 import { join } from "node:path";
 import { fetchCarriers } from "../lib/fmcsa";
 import { analyze, parseInput } from "../lib/analyzer";
+import type { CarrierIdentityRiskSignals } from "../lib/analyzer";
 
 const SNAPSHOT_DIR = join(__dirname, "..", "test", "snapshots", "audit");
 const UPDATE = process.argv.includes("--update");
@@ -67,7 +68,7 @@ const SNAPSHOT_DOTS: SnapshotDot[] = [
   { dot: 2564360,  reason: "CRITICAL: recent involuntary revocation" },
 
   // Critical: prior-revoke flag (chameleon predecessor)
-  { dot: 1906024,  reason: "CRITICAL: prior-revoke chameleon" },
+  { dot: 12311,    reason: "CRITICAL: prior-revoke chameleon" },
   { dot: 2285207,  reason: "CRITICAL: prior-revoke chameleon" },
 
   // High/Critical: SMS BASIC alerts
@@ -96,6 +97,20 @@ const SNAPSHOT_DOTS: SnapshotDot[] = [
   // Enforcement
   { dot: 3439499,  reason: "ENFORCEMENT: closed enforcement case" },
   { dot: 2036827,  reason: "ENFORCEMENT: closed enforcement case" },
+
+  // Identity/chameleon via the shut-down contact graph. Both share email AND
+  // phone with several shut-down involuntarily-revoked DOTs — 3436431 with
+  // three serial "J & G" carriers, 3770548 with four home-delivery ones. These
+  // were invisible before the shut-down universe moved off the SMS census
+  // (build_risk_signals.cjs), so they guard that regression specifically.
+  { dot: 3436431,  reason: "IDENTITY: email+phone shared with shut-down revoked DOTs" },
+  { dot: 3770548,  reason: "IDENTITY: email+phone shared with shut-down revoked DOTs" },
+
+  // FMCSA involuntary suspension for lack of insurance — replaces the dead
+  // imminent-lapse rule. This carrier rendered Medium with "$750k meets
+  // required" before the signal existed, because the coverage on file predates
+  // the suspension.
+  { dot: 3008423,  reason: "CRITICAL: authority suspended for no insurance" },
 ];
 
 interface AuditSnapshot {
@@ -115,7 +130,19 @@ async function snapshotDot(dot: number, reasonNote: string): Promise<AuditSnapsh
   const carrier = carriers.get(dot);
   if (!carrier) return null;
   const { loads } = parseInput(String(dot));
-  const result = analyze(loads, carriers);
+  // Load the identity risk signals exactly as /api/analyze does. Without this
+  // the snapshots silently under-test production: every identity-derived
+  // contribution (shut-down contact graph, shared insurance policy, free email
+  // domain, residential address, phone/home geo) is worth up to +20 each and
+  // was invisible to this suite.
+  let identitySignals = new Map<number, CarrierIdentityRiskSignals>();
+  try {
+    const { fetchIdentityRiskSignals } = await import("../lib/fmcsa-identity");
+    identitySignals = await fetchIdentityRiskSignals([dot]);
+  } catch (err) {
+    console.warn(`identity risk signals unavailable for ${dot}`, err);
+  }
+  const result = analyze(loads, carriers, new Map(), identitySignals);
   const row = result.rows[0];
   if (!row) return null;
   const axes: Record<string, string> = {};

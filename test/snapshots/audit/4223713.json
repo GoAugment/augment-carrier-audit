@@ -3,11 +3,12 @@
   "reasonNote": "MEDIUM: rapid replace + 2 cancellations",
   "carrierName": "DJI EXPRESS LLC",
   "riskLevel": "Medium",
-  "riskScore": 24,
+  "riskScore": 29,
   "riskTier": "Low",
   "riskContributions": [
     "+16 [Authority / insurance] Insurance churn",
-    "+8 [Context] Insurer / ZIP risk context"
+    "+8 [Context] Insurer / ZIP risk context",
+    "+5 [Context] Personal contact/address corroborator"
   ],
   "reasonLabels": [
     "High-risk insurer"
