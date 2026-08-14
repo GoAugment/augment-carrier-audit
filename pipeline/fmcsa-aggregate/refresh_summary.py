@@ -118,6 +118,35 @@ def main() -> int:
             out.append(f"| {lbl} | {n:,} |")
         out.append("")
 
+    # --- the one manual source ---
+    # closed_enforcement_cases_*.xlsx is an A&I browser export (the Socrata
+    # mirror dxqq-yjrs is dead, and a plain POST to the A&I form returns the
+    # page, not the workbook — it needs a real browser session). So it silently
+    # keeps whatever vintage it had. It is not decorative: classifyEnforcement
+    # bumps a carrier's tier when a closed case lands within 24 months, so a
+    # stale file means cases quietly stop counting as recent.
+    enf = sorted((REPO / "data" / "sources").glob("closed_enforcement_cases_*.xlsx"))
+    if not enf:
+        attention.append("no closed_enforcement_cases_*.xlsx present — enforcement signals are absent entirely")
+    else:
+        stem = enf[-1].stem.replace("closed_enforcement_cases_", "")[:8]
+        out += ["## Manual source", "", f"- enforcement export: `{enf[-1].name}`"]
+        try:
+            from datetime import date
+            f = date(int(stem[:4]), int(stem[4:6]), int(stem[6:8]))
+            s = date(int(SNAPSHOT[:4]), int(SNAPSHOT[4:6]), int(SNAPSHOT[6:8]))
+            age = (s - f).days
+            out.append(f"- vintage: {f} ({age} days before this snapshot)")
+            if age > 60:
+                attention.append(
+                    f"enforcement export is {age} days old ({f}) — re-export from "
+                    f"https://ai.fmcsa.dot.gov/EnforcementPrograms/EnforcementCases/Index?type=ClosedCases "
+                    f"(it is a manual browser export; see data/sources/README.md)"
+                )
+        except ValueError:
+            out.append("- vintage: unparseable filename")
+        out.append("")
+
     # --- scrape coverage ---
     out += ["## Scrape coverage", "", "| scrape | ok | no data | errors |", "|---|---:|---:|---:|"]
     for label, fname in (("serious violations", f"serious_violations_status_{SNAPSHOT}.parquet"),
