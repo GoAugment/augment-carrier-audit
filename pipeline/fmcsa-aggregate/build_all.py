@@ -42,7 +42,11 @@ SCRAPE_DIR = DATA_DIR / "fmcsa_scrape"
 MERGED_DIR = SOURCES_DIR / "merged"  # merge_motus.py output (L&I + Motus splice)
 # Vintage of this refresh. Drives the scrape output filenames AND which scrape
 # vintage the pipeline reads back, so the two can never drift apart.
-DATA_TAG = "20260812"
+# Overridable so a monthly run is `FMCSA_DATA_TAG=YYYYMMDD ...` rather than a
+# source edit. The literal is the last shipped vintage: it keeps a bare re-run
+# reproducible, and drift_report fails the build if a new refresh ever reports
+# an unchanged snapshot_date, so a forgotten bump cannot ship silently.
+DATA_TAG = os.environ.get("FMCSA_DATA_TAG", "20260812")
 LIB_DATA_DIR = ROOT / "lib" / "data"
 
 
@@ -428,6 +432,15 @@ STEPS: list[Step] = [
         script="ground_truth_check.py",
         description="Sample live carriers from FMCSA's QCMobile API and verify our fields agree",
         runtime_estimate_min=0.5,
+    ),
+    # Reports, never gates — the checks above already decided pass/fail. Exists so
+    # reviewing a refresh is reading one page instead of remembering which
+    # parquets to poke at, which is how three defects shipped in Aug 2026.
+    Step(
+        name="refresh_summary",
+        script="refresh_summary.py",
+        description="Write data/refresh_reports/refresh_<TAG>.md — what moved, coverage, needs-attention",
+        runtime_estimate_min=0.2,
     ),
 ]
 

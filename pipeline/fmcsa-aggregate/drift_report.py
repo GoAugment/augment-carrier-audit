@@ -268,6 +268,19 @@ def main() -> int:
     old = json.loads(BASELINE.read_text())
     issues = compare(new, old)
 
+    # Persist the comparison BEFORE the baseline advances — once it does, the
+    # "previous" values are gone and the run summary would have nothing to diff
+    # against. This is what refresh_summary.py reads.
+    if SNAPSHOT:
+        rep_dir = REPO / "data" / "refresh_reports"
+        rep_dir.mkdir(parents=True, exist_ok=True)
+        (rep_dir / f"drift_{SNAPSHOT}.json").write_text(json.dumps({
+            "snapshot": SNAPSHOT,
+            "previous": old,
+            "current": new,
+            "issues": [{"severity": s, "metric": k, "message": m} for s, k, m in issues],
+        }, indent=2, sort_keys=True) + "\n")
+
     print(f"\n{'metric':<28} {'previous':>16} {'current':>16}   change")
     print("-" * 82)
     for key in SPEC:
