@@ -93,6 +93,35 @@ def _undated_or_newest_dated(stem: str) -> Path:
     return dated[0] if dated else exact
 
 
+def _load_dotenv() -> None:
+    """Load .env.local into the environment (never overriding what's already set).
+
+    The scrape steps need ZENROWS_API_KEY, which lives ONLY in .env.local — and
+    build_all never read it, so nothing put it in the child env. fetch_serious_
+    violations then fell through to a direct connection, FMCSA's WAF blocked it,
+    and 714 of 5,006 DOTs (14.3%) were written off as ordinary per-DOT errors in
+    the Aug 2026 refresh. scrape_pu_history has the same dependency.
+
+    Credentials belong in the environment the steps inherit, not in a file each
+    script re-parses differently (or forgets to).
+    """
+    for name in (".env.local", ".env"):
+        p = ROOT / name
+        if not p.exists():
+            continue
+        for raw in p.read_text().splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k, v = k.strip(), v.strip().strip("\"'")
+            if k and v and k not in os.environ:
+                os.environ[k] = v
+
+
+_load_dotenv()
+
+
 DEFAULT_ENV = {
     "FMCSA_OUTPUT_DIR": DATA_DIR,
     # build_aggregates.py resolves a few inputs relative to INPUT_DIR/REFRESH_DIR

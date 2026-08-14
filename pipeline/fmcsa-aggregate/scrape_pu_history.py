@@ -418,12 +418,22 @@ class AsyncScraper:
                 # to throttling without flooding stdout.
                 err = str(e)[:120].replace("\n", " ")
                 print(f"  [error] DOT {dot}: {err}", flush=True)
+                # scrape_status must stay SHORT and GROUPABLE. It used to be
+                # f"error:fetch:{err}", which embeds the full failing URL — so
+                # every single failure was a distinct status value and any
+                # group_by produced hundreds of singleton rows rather than one
+                # "error: 144". That is how a silent failure rate survives.
+                status = (
+                    f"error:http{e.response.status_code}"
+                    if isinstance(e, httpx.HTTPStatusError)
+                    else f"error:{type(e).__name__}"
+                )
                 return CrashIndicatorScrape(
                     dot_number=dot, avg_pu=None, current_pu=None, pu_6mo=None,
                     pu_18mo=None, utilization_factor=None, vmt_per_avg_pu=None,
                     vmt_mcs150=None, segment=None, segment_pct=None,
                     n_crashes_included=None, n_crashes_not_preventable=None,
-                    scrape_status=f"error:fetch:{err}",
+                    scrape_status=status,
                     scraped_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
                 )
         return parse_crash_indicator(dot, resp.content)

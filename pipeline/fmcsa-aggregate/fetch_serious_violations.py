@@ -102,7 +102,19 @@ class Fetcher:
         # requests before FMCSA's WAF blocks the IP (observed: ~400 then a
         # 403 storm). Route through ZenRows when SCRAPE_PROXY_URL is set:
         #   export SCRAPE_PROXY_URL="<key>:mode=auto@api.zenrows.com:8001"
+        # Nothing ever exported SCRAPE_PROXY_URL — build_all.py doesn't set it,
+        # so this scraper ran UNPROXIED every month while scrape_pu_history.py
+        # (which falls back to ZENROWS_API_KEY on its own) ran proxied. That
+        # asymmetry is the likely reason this scrape failed 714/5,006 = 14.3% of
+        # DOTs in Aug 2026 against the CI scraper's 0.5%: the WAF was blocking
+        # us. Mirror scrape_pu_history and derive the proxy from the credential
+        # we already have.
         proxy = os.environ.get("SCRAPE_PROXY_URL")
+        if not proxy:
+            zr_key = os.environ.get("ZENROWS_API_KEY")
+            if zr_key:
+                params = os.environ.get("ZENROWS_PROXY_PARAMS", "premium_proxy=true")
+                proxy = f"http://{zr_key}:{params}@api.zenrows.com:8001"
         kwargs = dict(headers={"User-Agent": UA}, follow_redirects=True,
                       timeout=90.0, limits=httpx.Limits(max_connections=CONCURRENCY))
         if proxy:
@@ -110,18 +122,42 @@ class Fetcher:
             kwargs["proxy"] = url
             kwargs["verify"] = False  # ZenRows MITMs TLS
             print(f"[proxy] routing via {url.split('@')[-1]}", flush=True)
+        elif os.environ.get("ALLOW_UNPROXIED_SCRAPE") == "1":
+            print("[proxy] none — UNPROXIED by explicit opt-in (WAF blocks ~400 reqs)", flush=True)
         else:
-            print("[proxy] none set — UNPROXIED (will hit WAF after ~400 reqs)", flush=True)
+            # Refuse rather than warn. An unproxied run doesn't just fail, it
+            # burns the IP for later runs, and the failure is silent: WAF
+            # rejections get recorded as ordinary per-DOT errors.
+            raise SystemExit(
+                "fetch_serious_violations: no proxy. FMCSA's WAF blocks direct IPs after ~400 "
+                "requests and the rejections are written as per-DOT errors, so the scrape looks "
+                "like it merely had a bad day. Set ZENROWS_API_KEY (or SCRAPE_PROXY_URL), or "
+                "ALLOW_UNPROXIED_SCRAPE=1 to override."
+            )
         self.client = httpx.AsyncClient(**kwargs)
         self.sem = asyncio.Semaphore(CONCURRENCY)
 
+    # Only 429 used to raise, so tenacity never saw anything else and every other
+    # non-200 became a PERMANENT verdict on the first try. ZenRows answers 422
+    # when its upstream fetch fails — a transient proxy condition, not "this DOT
+    # has no page". The Aug 2026 run wrote 714 of 5,006 DOTs (14.3%) off as
+    # error:http422; retried later, they returned 200 with full pages. Those
+    # carriers were simply never checked for serious violations.
+    RETRYABLE_STATUS = {408, 422, 425, 429, 500, 502, 503, 504}
+
+    # reraise=True so an exhausted retry surfaces the ORIGINAL httpx error
+    # ("http422") instead of tenacity's RetryError, which would erase the status
+    # code and record every exhausted DOT as an indistinguishable "RetryError".
     @retry(stop=stop_after_attempt(3),
            wait=wait_exponential(multiplier=1, min=2, max=20),
-           retry=retry_if_exception_type((httpx.HTTPError, httpx.TimeoutException)))
+           retry=retry_if_exception_type((httpx.HTTPError, httpx.TimeoutException)),
+           reraise=True)
     async def _get(self, dot: int) -> httpx.Response:
         r = await self.client.get(URL.format(dot=dot))
-        if r.status_code == 429:
-            raise httpx.HTTPError("429")
+        if r.status_code in self.RETRYABLE_STATUS:
+            if r.status_code == 429:
+                await asyncio.sleep(30)
+            raise httpx.HTTPError(f"http{r.status_code}")
         return r
 
     async def fetch(self, dot: int) -> tuple[int, str, list[dict]]:
@@ -130,7 +166,14 @@ class Fetcher:
             try:
                 r = await self._get(dot)
             except Exception as e:
-                return dot, f"error:{type(e).__name__}", []
+                # Keep the status a SHORT, GROUPABLE code. It used to embed the
+                # exception text (and in the CI scraper, the full URL), so every
+                # failure was its own distinct value and a group_by returned
+                # hundreds of singleton rows instead of one "error: N" —
+                # which is why a 14% failure rate went unnoticed for months.
+                msg = str(e)
+                code = msg if msg.startswith("http") else type(e).__name__
+                return dot, f"error:{code}", []
             if r.status_code != 200:
                 return dot, f"error:http{r.status_code}", []
             status, rows = parse_acute_critical(dot, r.content)
