@@ -61,9 +61,23 @@ step "2/4  Build pipeline"
 uv run pipeline/fmcsa-aggregate/build_all.py "${BUILD_ARGS[@]}"
 
 step "3/4  Validate app contract + rules + snapshots"
+# NOT under `set -e`. Validation failing is exactly when the run report matters
+# most, and aborting here would skip it — the first real run of this script died
+# on a known-failing fixture and printed a wall of test output with no summary.
+# Capture the status, always report, then exit with it.
+set +e
 pnpm test
+TEST_STATUS=$?
+set -e
+[[ "$TEST_STATUS" == "0" ]] || echo "VALIDATION FAILED (exit $TEST_STATUS) — see output above."
 
 step "4/4  Summary"
+# Regenerate now that the test outcome is known. build_all already wrote a
+# report, but it runs before validation and would claim "nothing needs
+# attention" with a red test. Idempotent — it only re-reads persisted artifacts.
+FMCSA_SNAPSHOT_DATE="$TAG" FMCSA_VALIDATION_STATUS="$TEST_STATUS" \
+  uv run pipeline/fmcsa-aggregate/refresh_summary.py >/dev/null
+
 REPORT="data/refresh_reports/refresh_${TAG}.md"
 if [[ -f "$REPORT" ]]; then
   sed -n '1,/^## What moved/p' "$REPORT" | sed '$d'
@@ -74,5 +88,10 @@ fi
 
 step "Refresh $TAG complete"
 echo "finished $(date '+%Y-%m-%d %H:%M:%S')"
+if [[ "$TEST_STATUS" != "0" ]]; then
+  echo
+  echo "Pipeline built, but VALIDATION FAILED — do not promote until resolved."
+  exit "$TEST_STATUS"
+fi
 echo
 echo "Nothing has been deployed. To promote:  scripts/promote.sh"

@@ -1148,7 +1148,9 @@ def main() -> None:
     dot_universe = df.select("DOT_NUMBER")
     identity = build_identity(dot_universe=dot_universe)
     log(f"Writing {OUT_IDENTITY}")
-    identity.write_parquet(OUT_IDENTITY, compression="zstd")
+    # Canonical row order — see prune_app_parquet. Without it an unchanged
+    # rebuild rewrites all 96MB with identical values in a different order.
+    identity.sort("DOT_NUMBER").write_parquet(OUT_IDENTITY, compression="zstd")
 
     thresholds = compute_thresholds(df)
     log(f"Writing {OUT_THRESHOLDS}")

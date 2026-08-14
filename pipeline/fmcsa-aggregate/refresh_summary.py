@@ -69,6 +69,17 @@ def main() -> int:
     attention: list[str] = []
     out: list[str] = [f"# FMCSA refresh — {SNAPSHOT}", ""]
 
+    # This step runs inside build_all, BEFORE the app tests — so on its own it
+    # cannot see them, and would cheerfully report "nothing needs attention"
+    # while a test was red. refresh.sh re-invokes it after `pnpm test` with the
+    # outcome, so the report reflects the whole run rather than half of it.
+    validation = os.environ.get("FMCSA_VALIDATION_STATUS")
+    if validation not in (None, "", "0"):
+        attention.append(
+            f"app validation FAILED (exit {validation}) — check:parquet / rules / "
+            f"snapshots did not pass. Do not promote."
+        )
+
     # --- drift ---
     drift_path = REPORTS / f"drift_{SNAPSHOT}.json"
     drift = json.loads(drift_path.read_text()) if drift_path.exists() else None

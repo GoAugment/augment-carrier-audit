@@ -5,44 +5,65 @@
   "carriers": 40,
   "floor": 0.95,
   "gated": 360,
-  "gated_ok": 355,
+  "gated_ok": 352,
   "mismatches": [
     {
-      "dot": 3884907,
-      "field": "injury_crashes_24mo",
-      "fmcsa": "1",
-      "ours": "2",
-      "rule": "exact"
-    },
-    {
-      "dot": 1944065,
+      "dot": 4276750,
       "field": "driver_inspections_24mo",
-      "fmcsa": "2",
+      "fmcsa": "1",
       "ours": "None",
       "rule": "tol:3,0.25"
     },
     {
-      "dot": 1944065,
+      "dot": 4276750,
       "field": "vehicle_inspections_24mo",
       "fmcsa": "1",
       "ours": "None",
       "rule": "tol:3,0.25"
     },
     {
-      "dot": 1944065,
+      "dot": 3451466,
+      "field": "driver_inspections_24mo",
+      "fmcsa": "1",
+      "ours": "None",
+      "rule": "tol:3,0.25"
+    },
+    {
+      "dot": 3451466,
+      "field": "vehicle_inspections_24mo",
+      "fmcsa": "1",
+      "ours": "None",
+      "rule": "tol:3,0.25"
+    },
+    {
+      "dot": 3451466,
       "field": "driver_oos_24mo",
       "fmcsa": "1",
       "ours": "None",
       "rule": "tol:2,0.25"
     },
     {
-      "dot": 1944065,
+      "dot": 3451466,
       "field": "vehicle_oos_24mo",
       "fmcsa": "1",
       "ours": "None",
       "rule": "tol:2,0.25"
+    },
+    {
+      "dot": 3394122,
+      "field": "driver_inspections_24mo",
+      "fmcsa": "29",
+      "ours": "None",
+      "rule": "tol:3,0.25"
+    },
+    {
+      "dot": 3394122,
+      "field": "vehicle_inspections_24mo",
+      "fmcsa": "23",
+      "ours": "None",
+      "rule": "tol:3,0.25"
     }
   ],
-  "rate": 0.9861111111111112,
+  "rate": 0.9777777777777777,
   "snapshot": "20260812"
 }

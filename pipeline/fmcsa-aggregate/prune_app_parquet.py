@@ -73,6 +73,15 @@ def main() -> None:
     before_size = PARQUET.stat().st_size
     tmp = PARQUET.with_suffix(".pruned.tmp.parquet")
     df = pl.read_parquet(PARQUET, columns=cols)
+    # Sort before writing so the artifact is CANONICAL. Rebuilding an unchanged
+    # vintage was producing a byte-different 86MB file every time: the values were
+    # identical (verified column by column) but the row ORDER moved, because
+    # polars group_by does not preserve order. That meant a no-op refresh still
+    # committed a ~180MB diff across this and the identity parquet — noise that
+    # buries real changes in review, on a file already near GitHub's 100MB limit.
+    # DOT order also gives the runtime better row-group pruning on single-carrier
+    # lookups, so this is not purely cosmetic.
+    df = df.sort("DOT_NUMBER")
     df.write_parquet(tmp, compression="zstd")
     tmp.replace(PARQUET)
 
