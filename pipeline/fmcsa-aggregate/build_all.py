@@ -378,6 +378,16 @@ STEPS: list[Step] = [
         description="Drop build-only columns; keep the checked-in aggregate at the app contract",
         runtime_estimate_min=0.2,
     ),
+    # LAST, and it reads the finished artifacts. Fails the build when a metric
+    # moves implausibly OR when one that must move every refresh is byte-identical
+    # to last month — the signature of a frozen window / stale source read, which
+    # is invisible to every other check because a stale artifact is still valid.
+    Step(
+        name="drift_report",
+        script="drift_report.py",
+        description="Compare artifacts vs data/refresh_metrics.json; fail on implausible or absent drift",
+        runtime_estimate_min=0.2,
+    ),
 ]
 
 
