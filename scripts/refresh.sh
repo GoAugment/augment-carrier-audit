@@ -53,12 +53,46 @@ if [[ "$DOWNLOAD" == "1" ]]; then
     echo "WARNING: no closed_enforcement_cases_*.xlsx — enforcement counts will be stale."
     echo "         Export it manually; see data/sources/README.md."
   fi
+
+  # PROMOTE the staged download into data/sources/.
+  #
+  # refresh_sms_data.py writes to data/sources/refresh_<stamp>/, while the build
+  # reads data/sources/. Moving between the two was a MANUAL step buried in the
+  # README — so `pnpm refresh <tag>` downloaded 8.9GB of fresh data and then
+  # built from the previous month's files, silently and with every check green.
+  # Caught only by comparing row counts after a real end-to-end run: staging had
+  # 258,353 crash rows, the build used 258,069.
+  #
+  # Promote only what the manifest marks ok, so a partial download cannot half-
+  # replace the source set and leave the build reading a mix of two vintages.
+  STAGING="$(ls -dt data/sources/refresh_* 2>/dev/null | head -1 || true)"
+  if [[ -n "$STAGING" && -f "$STAGING/MANIFEST.txt" ]]; then
+    if ! grep -q '^status=complete' "$STAGING/MANIFEST.txt"; then
+      echo "Refusing to promote: $STAGING/MANIFEST.txt is not status=complete." >&2
+      exit 1
+    fi
+    promoted=0; skipped=0
+    while IFS=$'\t' read -r _did fname state; do
+      [[ "$state" == "ok" && -f "$STAGING/$fname" ]] || { [[ -n "${fname:-}" ]] && skipped=$((skipped+1)); continue; }
+      mv -f "$STAGING/$fname" "data/sources/$fname"
+      promoted=$((promoted+1))
+    done < <(grep -E $'\t(ok|MISSING)$' "$STAGING/MANIFEST.txt")
+    echo "promoted $promoted file(s) from $STAGING into data/sources/ (skipped $skipped)"
+    rmdir "$STAGING" 2>/dev/null || echo "  (left $STAGING in place — not empty)"
+  else
+    echo "no staged download found to promote (nothing new was fetched)"
+  fi
 else
   step "1/4  Download SKIPPED (--no-download)"
 fi
 
 step "2/4  Build pipeline"
-uv run pipeline/fmcsa-aggregate/build_all.py "${BUILD_ARGS[@]}"
+# ${arr[@]+"${arr[@]}"} — the bash 3.2 idiom for "expand only if set". macOS
+# ships bash 3.2, where `set -u` treats an EMPTY array expansion as unbound and
+# aborts. That made the no-flags invocation — `pnpm refresh <tag>`, i.e. exactly
+# what a scheduled run would use — fail after the ~20 minutes of downloads,
+# while every flagged invocation worked. Found only by running it for real.
+uv run pipeline/fmcsa-aggregate/build_all.py ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"}
 
 step "3/4  Validate app contract + rules + snapshots"
 # NOT under `set -e`. Validation failing is exactly when the run report matters

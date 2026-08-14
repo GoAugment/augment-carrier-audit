@@ -18,7 +18,7 @@
     "driverOos": "clean",
     "controlledSubstances": "clean",
     "vehicleOos": "clean",
-    "hazmatOos": "elevated",
+    "hazmatOos": "high",
     "revocations": "clean",
     "authority": "info",
     "insurance": "clean"

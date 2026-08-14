@@ -3,12 +3,11 @@
   "reasonNote": "HIGH: crashes per million miles",
   "carrierName": "TARA WRECKER INC",
   "riskLevel": "Critical",
-  "riskScore": 65,
+  "riskScore": 61,
   "riskTier": "High",
   "riskContributions": [
     "+14 [Operations] Dormant authority reactivation pattern",
     "+18 [Safety / compliance] Hard safety signal",
-    "+4 [Context] Insurer / ZIP risk context",
     "+24 [Identity / chameleon] Shares insurance policy with revoked carrier",
     "+5 [Context] Personal contact/address corroborator"
   ],
@@ -21,7 +20,7 @@
     "unsafeDriving": "clean",
     "hos": "clean",
     "driverOos": "clean",
-    "controlledSubstances": "na",
+    "controlledSubstances": "clean",
     "vehicleOos": "elevated",
     "hazmatOos": "na",
     "revocations": "na",

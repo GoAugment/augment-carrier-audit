@@ -4,66 +4,87 @@
   "api_errors": 0,
   "carriers": 40,
   "floor": 0.95,
-  "gated": 360,
-  "gated_ok": 352,
+  "gated": 358,
+  "gated_ok": 347,
   "mismatches": [
     {
-      "dot": 4276750,
+      "dot": 1478248,
       "field": "driver_inspections_24mo",
       "fmcsa": "1",
       "ours": "None",
       "rule": "tol:3,0.25"
     },
     {
-      "dot": 4276750,
+      "dot": 1478248,
       "field": "vehicle_inspections_24mo",
       "fmcsa": "1",
       "ours": "None",
       "rule": "tol:3,0.25"
     },
     {
-      "dot": 3451466,
+      "dot": 1658874,
       "field": "driver_inspections_24mo",
-      "fmcsa": "1",
+      "fmcsa": "4",
       "ours": "None",
       "rule": "tol:3,0.25"
     },
     {
-      "dot": 3451466,
+      "dot": 1658874,
       "field": "vehicle_inspections_24mo",
-      "fmcsa": "1",
+      "fmcsa": "2",
       "ours": "None",
       "rule": "tol:3,0.25"
     },
     {
-      "dot": 3451466,
+      "dot": 1658874,
       "field": "driver_oos_24mo",
       "fmcsa": "1",
       "ours": "None",
       "rule": "tol:2,0.25"
     },
     {
-      "dot": 3451466,
+      "dot": 1658874,
       "field": "vehicle_oos_24mo",
       "fmcsa": "1",
       "ours": "None",
       "rule": "tol:2,0.25"
     },
     {
-      "dot": 3394122,
+      "dot": 3506005,
       "field": "driver_inspections_24mo",
-      "fmcsa": "29",
+      "fmcsa": "1",
       "ours": "None",
       "rule": "tol:3,0.25"
     },
     {
-      "dot": 3394122,
-      "field": "vehicle_inspections_24mo",
-      "fmcsa": "23",
+      "dot": 3125505,
+      "field": "driver_inspections_24mo",
+      "fmcsa": "3",
       "ours": "None",
       "rule": "tol:3,0.25"
+    },
+    {
+      "dot": 3125505,
+      "field": "vehicle_inspections_24mo",
+      "fmcsa": "3",
+      "ours": "None",
+      "rule": "tol:3,0.25"
+    },
+    {
+      "dot": 3125505,
+      "field": "driver_oos_24mo",
+      "fmcsa": "1",
+      "ours": "None",
+      "rule": "tol:2,0.25"
+    },
+    {
+      "dot": 3125505,
+      "field": "vehicle_oos_24mo",
+      "fmcsa": "1",
+      "ours": "None",
+      "rule": "tol:2,0.25"
     }
   ],
-  "rate": 0.9777777777777777,
+  "rate": 0.9692737430167597,
   "snapshot": "20260812"
 }

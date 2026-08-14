@@ -584,7 +584,10 @@ export const RULES: Rule[] = [
       caution:  "Between P85 and P90 for peer group.",
     },
     fixtures: {
-      critical: { dot: 1135439, reason: "GIDDENS TRUCKING LLC: 100% unsafe driving rate on 13 inspections." },
+      // GIDDENS TRUCKING (1135439) held this slot until Aug 2026, when three of
+      // its 13 inspections rolled out of the 24-month window; still 100% but no
+      // longer a large enough sample to clear the peer P95 gate.
+      critical: { dot: 3878486, reason: "GARY Z HORST: 11 unsafe-driving violations on 11 driver inspections (100%), 6 power units." },
       none: { dot: 53467, reason: "Werner: clean Unsafe Driving record." },
     },
   },
@@ -769,7 +772,7 @@ export const RULES: Rule[] = [
       // Ryder) as their top sibling — a fixture anchored on one of those would
       // enshrine the exact leasing-pool false positive the concentration floor
       // exists to suppress.
-      caution:  { dot: 2516921, reason: "NOBLE TRANS INC (relaxed-floor): 26% diffuse across 5 siblings, top sibling KAL FREIGHT INC at 7.4% — BELOW the default 10% concentration floor, so it fires only because chameleon signals (involuntary revocation 2024-11-26 + all-cancel insurance: 3 policies, 0 replacements) relax the floor to 5%. If the relaxed-floor branch is ever removed, this fixture stops firing, which is the point of it.", expectMatch: /run under \d+ other active DOTs/ },
+      caution:  { dot: 1106798, reason: "GREEN HORIZONS INC (relaxed-floor): 27% diffuse across 4 siblings, top sibling CARROLL FULMER LOGISTICS at 9.1% — below the 10% default floor, so it fires only via the relaxed branch. Replaced NOBLE TRANS (2516921), which drifted 25.9% -> 22.2% within a single refresh. If the relaxed-floor branch is ever removed, this fixture stops firing, which is the point of it.", expectMatch: /run under \d+ other active DOTs/ },
       none: [
         { dot: 53467, reason: "Werner: trucks unique to the operating fleet." },
         {
