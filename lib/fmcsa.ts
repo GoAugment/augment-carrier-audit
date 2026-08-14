@@ -202,6 +202,13 @@ export interface FmcsaCarrier {
   /** Overlap as a percentage of this carrier's inspected fleet (0-100).
    *  Drives the chameleon-shared-fleet rule tier. */
   largestSiblingOverlapPct: number;
+  /** VIN-sharing partners FMCSA has already revoked AND that remain
+   *  unauthorized. The chameleon-succession signal: old authority killed,
+   *  trucks move to the new one. ~10x lift at 1 partner, ~22x at 3+. */
+  shutdownSiblingCount: number;
+  shutdownSiblingDot: number | null;
+  shutdownSiblingName: string | null;
+  shutdownSiblingRevokedDate: string | null;
   /** % of this carrier's inspected VINs that have ALSO run under any other
    *  active DOT (24-month window). Diffuse equipment-sharing signal —
    *  catches carriers whose trucks are spread thin across many siblings

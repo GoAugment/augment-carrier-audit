@@ -131,6 +131,10 @@ interface ParquetRow {
   largest_sibling_shared_vins: number | bigint | null;
   largest_sibling_total_vins: number | bigint | null;
   largest_sibling_overlap_pct: number | null;
+  shutdown_sibling_count: number | bigint | null;
+  shutdown_sibling_dot: number | bigint | null;
+  shutdown_sibling_name: string | null;
+  shutdown_sibling_revoked_date: string | null;
   diffuse_vin_share_pct: number | null;
   diffuse_vin_share_n_siblings: number | bigint | null;
   insurance_replaces_24mo: number | bigint | null;
@@ -271,6 +275,10 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
     largestSiblingSharedVins: asInt(r.largest_sibling_shared_vins),
     largestSiblingTotalVins: asInt(r.largest_sibling_total_vins),
     largestSiblingOverlapPct: r.largest_sibling_overlap_pct ?? 0,
+    shutdownSiblingCount: asInt(r.shutdown_sibling_count) ?? 0,
+    shutdownSiblingDot: asInt(r.shutdown_sibling_dot),
+    shutdownSiblingName: r.shutdown_sibling_name ?? null,
+    shutdownSiblingRevokedDate: r.shutdown_sibling_revoked_date ?? null,
     diffuseVinSharePct: r.diffuse_vin_share_pct ?? 0,
     diffuseVinShareNSiblings: asInt(r.diffuse_vin_share_n_siblings),
     insuranceReplaces24mo: asInt(r.insurance_replaces_24mo),
@@ -437,6 +445,8 @@ const CARRIER_SELECT_COLUMNS = `
   largest_sibling_dot, largest_sibling_legal_name,
   largest_sibling_shared_vins, largest_sibling_total_vins,
   largest_sibling_overlap_pct,
+  shutdown_sibling_count, shutdown_sibling_dot, shutdown_sibling_name,
+  shutdown_sibling_revoked_date,
   diffuse_vin_share_pct, diffuse_vin_share_n_siblings,
   insurance_replaces_24mo, insurance_distinct_policies_24mo,
   fast_act_high_risk, fast_act_high_risk_n, fast_act_high_risk_basics,

@@ -148,6 +148,12 @@ async function fetchOne(
     largestSiblingTotalVins: 0,
     largestSiblingOverlapPct: 0,
     diffuseVinSharePct: 0,
+    // Not available from QCMobile — this is a cross-carrier VIN signal that only
+    // exists in the parquet. The live-API path degrades to "no known partner".
+    shutdownSiblingCount: 0,
+    shutdownSiblingDot: null,
+    shutdownSiblingName: null,
+    shutdownSiblingRevokedDate: null,
     diffuseVinShareNSiblings: 0,
     insuranceReplaces24mo: 0,
     insuranceDistinctPolicies24mo: 0,
