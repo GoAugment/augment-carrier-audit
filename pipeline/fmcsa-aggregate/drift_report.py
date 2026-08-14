@@ -65,6 +65,10 @@ SPEC: dict[str, dict] = {
     # --- authority / revocation ---
     "active_authority":           {"tol": 0.15},
     "prior_revoke_flag":          {"tol": 0.20},
+    # New Aug 2026. Watch it like any other gating signal: a join change or a
+    # shift in what counts as "shut down" would move this sharply and silently.
+    "shutdown_sibling_any":       {"tol": 0.30},
+    "shutdown_sibling_high":      {"tol": 0.40},
     # --- safety volume (should drift gently as the 24mo window rolls) ---
     "sum_crashes":                {"tol": 0.20, "must_move": True},
     "sum_fatal_crashes":          {"tol": 0.25, "must_move": True},
@@ -107,7 +111,8 @@ def collect() -> dict:
     want = [c for c in (
         "bipd_insurance_on_file", "bipd_insurance_required", "bipd_required_amount",
         "insurance_suspension_status", "bipd_imminent_lapse", "has_active_authority",
-        "prior_revoke_flag", "crashes_24mo", "fatal_crashes_24mo",
+        "prior_revoke_flag", "shutdown_sibling_count", "power_units",
+        "crashes_24mo", "fatal_crashes_24mo",
         "driver_inspections_24mo", "vehicle_inspections_24mo", "crash_indicator_alert",
     ) if has(c)]
     df = pl.read_parquet(AGG, columns=want)
@@ -131,6 +136,12 @@ def collect() -> dict:
         m["active_authority"] = _count(df, pl.col("has_active_authority").cast(pl.Int64))
     if has("prior_revoke_flag"):
         m["prior_revoke_flag"] = _count(df, pl.col("prior_revoke_flag").cast(pl.Int64))
+    if has("shutdown_sibling_count"):
+        n = pl.col("shutdown_sibling_count").fill_null(0)
+        pu = pl.col("power_units").fill_null(0).clip(1) if has("power_units") else pl.lit(1)
+        m["shutdown_sibling_any"] = _count(df, (n >= 1).cast(pl.Int64))
+        # The gating population: matches the analyzer's high/critical tiers.
+        m["shutdown_sibling_high"] = _count(df, ((n >= 2) & (n / pu >= 0.25)).cast(pl.Int64))
     for src, dst in (("crashes_24mo", "sum_crashes"), ("fatal_crashes_24mo", "sum_fatal_crashes"),
                      ("driver_inspections_24mo", "sum_driver_inspections"),
                      ("vehicle_inspections_24mo", "sum_vehicle_inspections")):

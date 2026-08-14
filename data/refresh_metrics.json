@@ -16,6 +16,8 @@
   "scrape_ci_ok": 28853,
   "scrape_sv_error": 15,
   "scrape_sv_ok": 910,
+  "shutdown_sibling_any": 26748,
+  "shutdown_sibling_high": 4719,
   "snapshot_date": "20260812",
   "sum_crashes": 256631,
   "sum_driver_inspections": 4902721,
