@@ -232,8 +232,21 @@ def aggregate_crashes() -> pl.LazyFrame:
       * Original counts: crashes_24mo, fatal_crashes_24mo, injury_crashes_24mo,
         tow_crashes_24mo (overlapping severity flags — kept for backward
         compatibility with v9/v10/v11 Python scoring scripts).
-      * SMS-style weighted crash measure: each crash gets a mutually-exclusive
-        severity tier (Fatal=4 > Injury=3 > Tow=2 > NoHarm=1) times a
+      * crash_measure — OUR weighted crash rate, deliberately NOT a reproduction
+        of the SMS Crash Indicator BASIC. That reproduction lives in
+        compute_basics.py (crash_indicator_measure) and uses FMCSA's own
+        Severity_Weight/Time_Weight columns, excludes Not_Preventable crashes,
+        and divides by the scraped Avg PU x UF. THIS column instead uses our own
+        severity tiers and divides by reported power_units, so it covers ~1.98M
+        carriers versus the ~23k the real BASIC can reach (which needs a scraped
+        Avg PU). Both are wanted; only the BASIC is FMCSA-conformant.
+        Our severity tiers intentionally separate fatal from injury because a
+        fatality is a far larger liability for a broker; FMCSA collapses both to
+        2 (methodology Table 3-6) because it is triaging investigations, not
+        pricing risk. Do NOT "fix" this to match Table 3-6 without also changing
+        what it is called and what consumes it.
+        Each crash gets a mutually-exclusive severity tier
+        (Fatal=4 > Injury=3 > Tow=2 > NoHarm=1) times a
         time-recency weight (≤6mo ago=3, 7-12mo=2, 13-24mo=1). Summed per
         carrier; divided by power_units downstream to produce the SMS Crash
         Indicator measure.
@@ -888,8 +901,23 @@ def compute_thresholds(df: pl.DataFrame) -> dict:
 
     crash = df.filter(pl.col("power_units") >= MIN_PU_FOR_CRASH_THRESHOLD)
     out["crashes_per_truck"] = pcts(crash["crashes_per_truck"].drop_nulls(), crash.height)
-    # SMS-style weighted crash measure (severity × time-recency / PU)
+    # OUR crash rate — NOT the SMS Crash Indicator BASIC. See the docstring on
+    # aggregate_crashes for the distinction; conflating the two cost real
+    # debugging time. Percentiles over the whole PU>=threshold population, which
+    # is ~94% zero-crash, so p50..p85 are all 0.0 and this block cannot band a
+    # carrier on its own.
     out["crash_measure"] = pcts(crash["crash_measure"].drop_nulls(), crash.height)
+    # Same metric ranked ONLY among carriers that actually have a weighted crash.
+    # This is the population any "top N%" label must be stated against: with 94%
+    # zeros, "top 15%" off the full distribution is meaningless, while the
+    # non-zero cutoffs (p85=3, p95=6, p99=9 in Aug 2026) are the real bands.
+    # lib/email/check.ts hardcoded exactly those numbers; this makes them track.
+    crash_nz = crash.filter(pl.col("crash_measure") > 0)
+    _nz = crash_nz["crash_measure"].drop_nulls()
+    out["crash_measure_nonzero"] = pcts(_nz, crash_nz.height)
+    if crash_nz.height:
+        # p99 is not in the shared pcts() shape but the band label needs it.
+        out["crash_measure_nonzero"]["p99"] = float(_nz.quantile(0.99) or 0)
     # Industry-standard crashes per million miles (the primary safety metric).
     # Filter to carriers with actual reported mileage to avoid percentile
     # contamination from non-operating / fake-PU carriers.

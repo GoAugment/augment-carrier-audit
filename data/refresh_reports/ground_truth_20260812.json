@@ -5,7 +5,7 @@
   "carriers": 40,
   "floor": 0.95,
   "gated": 358,
-  "gated_ok": 347,
+  "gated_ok": 346,
   "mismatches": [
     {
       "dot": 1478248,
@@ -83,8 +83,15 @@
       "fmcsa": "1",
       "ours": "None",
       "rule": "tol:2,0.25"
+    },
+    {
+      "dot": 1608216,
+      "field": "crashes_24mo",
+      "fmcsa": "0",
+      "ours": "1",
+      "rule": "exact"
     }
   ],
-  "rate": 0.9692737430167597,
+  "rate": 0.9664804469273743,
   "snapshot": "20260812"
 }
