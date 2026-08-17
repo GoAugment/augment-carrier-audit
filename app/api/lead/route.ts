@@ -107,16 +107,27 @@ export async function POST(req: NextRequest) {
  */
 export async function GET(req: NextRequest) {
   if (req.nextUrl.searchParams.get("blocked") !== "1") {
-    // Not a beacon — the cron/keep-warm probes also hit this path.
+    // Not a beacon. Crons only hit /api/analyze and /api/check (vercel.json),
+    // so nothing routine reaches here — but a bare GET should still be inert
+    // rather than logging a phantom "blocked" event.
     return NextResponse.json({ ok: true });
   }
   const ipHash = await hashIp(
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? null
   );
+  // Clamp both params. They arrive from a public GET, so an arbitrary caller
+  // could otherwise write unbounded attacker-chosen strings into our logs.
+  // logEvent JSON-encodes, so this is log hygiene rather than injection, but an
+  // allow-list keeps the metric aggregatable instead of open-ended.
+  const REASONS = new Set(["http-error", "non-json-response", "threw"]);
+  const rawReason = req.nextUrl.searchParams.get("reason");
+  const rawStatus = Number(req.nextUrl.searchParams.get("status"));
   logEvent("audit_lead_capture_blocked", {
     // Deliberately NO email: the whole point is that this request stays clean.
-    reason: req.nextUrl.searchParams.get("reason") ?? null,
-    status: req.nextUrl.searchParams.get("status") ?? null,
+    reason: rawReason && REASONS.has(rawReason) ? rawReason : "other",
+    status: Number.isInteger(rawStatus) && rawStatus >= 100 && rawStatus <= 599
+      ? rawStatus
+      : null,
     ipHash,
     referer: req.headers.get("referer") ?? null,
     userAgent: req.headers.get("user-agent") ?? null,
