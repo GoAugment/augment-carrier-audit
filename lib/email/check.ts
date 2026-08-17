@@ -14,6 +14,7 @@
  */
 import { fetchCarriers, fetchDotByMc, type FmcsaCarrier } from "../fmcsa";
 import { getRule } from "../rules";
+import { basicsOf } from "../basics";
 import { fetchIdentity, findIdentityByPhone, cargoLabels, type CarrierIdentity } from "../fmcsa-identity";
 import { analyze } from "../analyzer";
 import { getCutoffs, crashMeasureNonzeroCutoffs, type AxisKey, type PeerGroup } from "../thresholds";
@@ -1209,15 +1210,8 @@ function composeVerdict(
       riskScore: audit?.riskScore ?? null,
       issScore: carrier.issScore ?? null,
       issTier: carrier.issTier ?? null,
-      basics: [
-        { name: "Unsafe Driving", percentile: carrier.unsafeDrivingPercentile, alert: carrier.unsafeDrivingAlert === "Y" },
-        { name: "HOS Compliance", percentile: carrier.hosPercentile, alert: carrier.hosAlert === "Y" },
-        { name: "Driver Fitness", percentile: carrier.driverFitnessPercentile, alert: carrier.driverFitnessAlert === "Y" },
-        { name: "Controlled Subs", percentile: carrier.controlledSubstancesPercentile, alert: carrier.controlledSubstancesAlert === "Y" },
-        { name: "Vehicle Maint.", percentile: carrier.vehicleMaintenancePercentile, alert: carrier.vehicleMaintenanceAlert === "Y" },
-        { name: "Crash Indicator", percentile: carrier.crashIndicatorPercentile, alert: carrier.crashIndicatorAlert === "Y" },
-        { name: "Hazmat", percentile: carrier.hmCompliancePercentile, alert: carrier.hmComplianceAlert === "Y" },
-      ],
+      // Shared helper — this block and /api/analyze must never diverge.
+      basics: basicsOf(carrier),
       physicalState: identity?.phyState ?? carrier.physicalState ?? null,
       physicalLocation,
       powerUnits: carrier.totalPowerUnits || null,

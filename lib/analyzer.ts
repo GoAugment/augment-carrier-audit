@@ -20,6 +20,7 @@
  */
 import type { FmcsaCarrier } from "./fmcsa";
 import { getRule } from "./rules";
+import { basicsOf, type BasicScore } from "./basics";
 import insurerRisk from "./data/insurer-risk.json";
 import zipRiskData from "./data/zip-risk.json";
 
@@ -228,6 +229,18 @@ export interface CarrierRow {
   };
   /** Prose summary of the flagged signals (for tooltip / expand). */
   reasons: Reason[];
+  /**
+   * The 7 FMCSA SMS BASICs as a flat, machine-keyed block.
+   *
+   * Also reachable field-by-field under `carrier.*Percentile`, but published
+   * here as a stable array so an API consumer has one contract instead of
+   * fourteen field names — and so this surface cannot drift from the email/page
+   * check, which renders the same block from the same helper.
+   *
+   * `percentile: null` means NOT RATED (FMCSA data sufficiency unmet), not
+   * clean. Most carriers populate only 2-3 of the 7.
+   */
+  basics: BasicScore[];
   /**
    * Sort metadata. Drives the in-tier ordering: statistical-signal carriers
    * first, ranked by worst-axis severity then magnitude. Pattern-only carriers
@@ -2926,6 +2939,7 @@ function scoreCarrier(
       insurance: insurance.cell,
     },
     reasons,
+    basics: basicsOf(c),
     sortMeta: { hasStatSignal, worstAxisRank, worstAxisMagnitude },
   };
 }
