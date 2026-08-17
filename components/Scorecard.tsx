@@ -786,6 +786,11 @@ function FullReportCta({
       void fetch(`/api/lead?${q.toString()}`, {
         method: "GET",
         keepalive: true,
+        // The whole promise of this beacon is that it carries no PII. The
+        // Referer header would undo that: if the page were ever loaded with an
+        // address in the URL (?email=...), the browser would attach it here and
+        // we would log the very thing we avoided putting in the body.
+        referrerPolicy: "no-referrer",
       }).catch(() => {});
     } catch {
       /* nothing we can do, and nothing worth telling the user */
@@ -818,6 +823,12 @@ function FullReportCta({
       const isJson = res.headers
         .get("content-type")
         ?.includes("application/json");
+      // A proxy can intercept with 200 + text/html, which res.ok happily accepts.
+      // Without this, capture looks successful, the CSV downloads, and the
+      // blockage is never counted — the exact blind spot the beacon exists for.
+      if (res.ok && !isJson) {
+        reportCaptureBlocked("non-json-response", res.status);
+      }
       if (!res.ok) {
         // A validation failure is the ONLY case worth blocking on, because the
         // user can act on it. Anything else (proxy, 5xx, edge error) must not

@@ -27,10 +27,14 @@ DRY=0
 
 step() { printf '\n\033[1m=== %s ===\033[0m\n' "$1"; }
 
-if [[ -n "$(git status --porcelain data lib pipeline 2>/dev/null)" ]]; then
-  echo "Refusing to promote: uncommitted changes in data/, lib/ or pipeline/." >&2
-  echo "What reaches production should be exactly what is committed." >&2
-  git status --short data lib pipeline >&2
+# WHOLE tree, not just data/lib/pipeline: Vercel deploys the working directory,
+# so uncommitted app/, components/, scripts/ or config changes would ship while
+# this script claimed production matched the commit.
+if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+  echo "Refusing to promote: uncommitted changes in the working tree." >&2
+  echo "Vercel deploys the working directory, so what reaches production must be" >&2
+  echo "exactly what is committed." >&2
+  git status --short >&2
   exit 1
 fi
 
@@ -48,15 +52,24 @@ if [[ "$DRY" == "1" ]]; then
   exit 0
 fi
 
-step "1/2  Deploy to production"
-npx vercel --prod --yes
-
-step "2/2  Upload parquets to Blob"
+# Resolve the Blob token BEFORE deploying. Deploying first and discovering the
+# token is missing leaves production split: bundled routes on the new vintage,
+# /api/check still reading the old parquet from Blob, indefinitely. Fail here
+# instead, while nothing has changed.
 if [[ -z "${BLOB_READ_WRITE_TOKEN:-}" && -f .env.local ]]; then
   BLOB_READ_WRITE_TOKEN="$(grep '^BLOB_READ_WRITE_TOKEN=' .env.local | cut -d= -f2- | tr -d '"'"'"' ')"
   export BLOB_READ_WRITE_TOKEN
 fi
-[[ -n "${BLOB_READ_WRITE_TOKEN:-}" ]] || { echo "BLOB_READ_WRITE_TOKEN unset" >&2; exit 1; }
+if [[ -z "${BLOB_READ_WRITE_TOKEN:-}" ]]; then
+  echo "BLOB_READ_WRITE_TOKEN unset — refusing to deploy, because the Blob upload" >&2
+  echo "would then fail and leave production reading a stale parquet." >&2
+  exit 1
+fi
+
+step "1/2  Deploy to production"
+npx vercel --prod --yes
+
+step "2/2  Upload parquets to Blob"
 node scripts/upload-identity-blob.mjs
 
 step "Promoted"

@@ -55,6 +55,21 @@ agg = pl.read_parquet(PARQUET)
 log(f"Parquet: {agg.shape}")
 active_set = set(agg.filter(pl.col("status_code") == "A")["DOT_NUMBER"].to_list())
 log(f"Active carriers: {len(active_set):,}")
+# Shut-down carriers must stay VISIBLE in the VIN pair universe even when their
+# USDOT registration has gone inactive, or the shutdown-predecessor signal below
+# silently cannot see them. status_code=='A' excluded 382 of 114,883 shut-down
+# carriers (0.33%) — e.g. BM 5 EXPRESS (DOT 4252114, status 'I', revoked
+# 2025-09-16, 178 inspected VINs), which shares a VIN with the still-active
+# WILLIAM BODDICKER (DOT 2836522) yet contributed nothing to its count.
+_shut_dots = set(
+    agg.filter(
+        pl.col("most_recent_involuntary_date").is_not_null()
+        & (pl.col("has_active_authority") == False)  # noqa: E712
+    )["DOT_NUMBER"].to_list()
+)
+pair_universe = active_set | _shut_dots
+log(f"Pair universe (active + shut-down): {len(pair_universe):,} "
+    f"(+{len(pair_universe) - len(active_set):,} shut-down but not status 'A')")
 
 # === DIFFUSE EQUIPMENT ===
 peek = pl.scan_csv(INSP, n_rows=5, ignore_errors=True).collect()
@@ -66,7 +81,7 @@ pairs = (
     pl.scan_csv(INSP, schema_overrides={dot_col: pl.Int64}, ignore_errors=True)
     .filter(pl.col(vin_col).is_not_null())
     .filter(pl.col(vin_col).str.len_chars() >= 10)
-    .filter(pl.col(dot_col).is_in(list(active_set)))
+    .filter(pl.col(dot_col).is_in(list(pair_universe)))
     .select(pl.col(vin_col).alias("vin"), pl.col(dot_col).alias("dot"))
     .unique()
     .collect(engine="streaming")

@@ -71,6 +71,20 @@ if [[ "$DOWNLOAD" == "1" ]]; then
       echo "Refusing to promote: $STAGING/MANIFEST.txt is not status=complete." >&2
       exit 1
     fi
+    # PRE-FLIGHT before touching anything. The moves below are sequential and
+    # destructive: a failure on file 6 of 16 leaves 5 new sources beside 11 old
+    # ones, and `set -e` stops the script but cannot roll back. Verifying every
+    # promised file exists and is non-empty first removes the realistic causes
+    # (a truncated or missing download) while nothing has been replaced yet.
+    missing=""
+    while IFS=$'\t' read -r _did fname state; do
+      [[ "$state" == "ok" ]] || continue
+      if [[ ! -s "$STAGING/$fname" ]]; then missing="$missing $fname"; fi
+    done < <(grep -E $'\t(ok|MISSING)$' "$STAGING/MANIFEST.txt")
+    if [[ -n "$missing" ]]; then
+      echo "Refusing to promote: manifest says ok but these are missing/empty:$missing" >&2
+      exit 1
+    fi
     promoted=0; skipped=0
     while IFS=$'\t' read -r _did fname state; do
       [[ "$state" == "ok" && -f "$STAGING/$fname" ]] || { [[ -n "${fname:-}" ]] && skipped=$((skipped+1)); continue; }

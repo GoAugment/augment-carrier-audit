@@ -129,7 +129,10 @@ export async function GET(req: NextRequest) {
       ? rawStatus
       : null,
     ipHash,
-    referer: req.headers.get("referer") ?? null,
+    // Origin, not Referer: we want to know WHICH EMBED is being blocked without
+    // recording a full URL that could carry an address in its query string. The
+    // client also sends referrerPolicy: "no-referrer", so this is belt and braces.
+    origin: req.headers.get("origin") ?? null,
     userAgent: req.headers.get("user-agent") ?? null,
   });
   return NextResponse.json({ ok: true, recorded: true });

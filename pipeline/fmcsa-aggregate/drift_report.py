@@ -212,18 +212,47 @@ def compare(new: dict, old: dict) -> list[tuple[str, str, str]]:
     not having it. The tripwire that matters is unaffected: a NEW snapshot_date
     with identical metrics still errors, and that is the actual bug signature.
     """
-    rerun = "snapshot_date" in new and new.get("snapshot_date") == old.get("snapshot_date")
+    same_tag = "snapshot_date" in new and new.get("snapshot_date") == old.get("snapshot_date")
+    # An unchanged tag is only a re-run if the DATA also matches. Trusting the tag
+    # alone was a hole: build September sources under a forgotten August tag and
+    # every must_move tripwire got muted, so mislabeled data passed and updated
+    # the baseline — the exact "forgotten bump" this was supposed to stop.
+    # A genuine re-run reproduces its inputs bit for bit (builds are sorted and
+    # byte-reproducible), so any movement in the volume metrics means new data.
+    VOLUME = ("rows", "sum_crashes", "sum_driver_inspections", "sum_vehicle_inspections")
+    moved = [
+        k for k in VOLUME
+        if k in new and k in old and new[k] != old[k]
+    ]
+    rerun = same_tag and not moved
     issues = []
-    if rerun:
+    if same_tag and moved:
+        issues.append((
+            "ERROR", "snapshot_date",
+            f"tag is unchanged ({new['snapshot_date']}) but the DATA moved "
+            f"({', '.join(moved)}) — this is new data under a stale tag. Pass the "
+            f"real vintage (FMCSA_DATA_TAG=YYYYMMDD) instead of re-using the last one.",
+        ))
+    elif rerun:
         issues.append((
             "WARN", "snapshot_date",
-            f"same vintage as baseline ({new['snapshot_date']}) — treating as a re-run; "
-            f"'must move' checks muted, tolerances still enforced",
+            f"same vintage as baseline ({new['snapshot_date']}) and identical volume "
+            f"metrics — treating as a re-run; 'must move' checks muted, "
+            f"tolerances still enforced",
         ))
     for key, spec in SPEC.items():
         if rerun and (spec.get("must_move") or spec.get("exact_must_move")):
             continue
         if key not in new:
+            # A metric DISAPPEARING is not a pass. A renamed column, a missing
+            # sidecar or an unwritten status parquet would otherwise delete its
+            # own guard and the thinner baseline would be accepted as clean.
+            if key in old:
+                issues.append((
+                    "ERROR", key,
+                    "was present last refresh and is now MISSING — a dropped column "
+                    "or unwritten artifact silently removes this guard",
+                ))
             continue
         if key not in old:
             issues.append(("WARN", key, f"new metric ({new[key]}) — no baseline to compare"))
@@ -310,6 +339,15 @@ def main() -> int:
     print("-" * 82)
     for key in SPEC:
         if key not in new:
+            # A metric DISAPPEARING is not a pass. A renamed column, a missing
+            # sidecar or an unwritten status parquet would otherwise delete its
+            # own guard and the thinner baseline would be accepted as clean.
+            if key in old:
+                issues.append((
+                    "ERROR", key,
+                    "was present last refresh and is now MISSING — a dropped column "
+                    "or unwritten artifact silently removes this guard",
+                ))
             continue
         a, b = old.get(key), new[key]
         chg = ""
