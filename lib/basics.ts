@@ -32,13 +32,30 @@ export interface BasicScore {
     | "hm_compliance";
   /** Human label as shown in our UI. Display only; do not key on it. */
   name: string;
-  /** 0-100, higher = worse. Null when FMCSA data sufficiency isn't met. */
+  /** 0-100, higher = worse, rounded to 1 decimal. Null when FMCSA data
+   *  sufficiency isn't met. Rounded for readability only — our own threshold
+   *  gates use the unrounded value, and we round HALF-UP rather than ceiling on
+   *  purpose: ceiling would turn 89.96 into 90 and make a carrier look like it
+   *  cleared the FAST Act >=90th bar when it hadn't. */
   percentile: number | null;
-  /** FMCSA's intervention-threshold flag for this BASIC. */
+  /**
+   * FMCSA's own intervention-threshold flag: true = FMCSA would prioritise this
+   * carrier for intervention on this BASIC.
+   *
+   * NOT derivable from `percentile`, which is why it is worth a field. The
+   * threshold differs per BASIC — measured on this vintage, alert cuts in at 65
+   * for Unsafe Driving / HOS / Crash Indicator but 80 for Driver Fitness /
+   * Controlled Substances / Vehicle Maintenance — and drops further for
+   * passenger and hazmat carriers. So 70 is an alert on Unsafe Driving and not
+   * on Vehicle Maintenance. Without this field a consumer has to carry FMCSA's
+   * threshold table themselves and keep it current.
+   */
   alert: boolean;
-  /** True when FMCSA does not publish this BASIC at all, so the measure as well
-   *  as the percentile is ours (computed from their inputs). */
-  derived: boolean;
+}
+
+/** Half-up to 1dp; null stays null. Never ceiling — see BasicScore.percentile. */
+function round1(v: number | null | undefined): number | null {
+  return v == null ? null : Math.round(v * 10) / 10;
 }
 
 export function basicsOf(c: FmcsaCarrier): BasicScore[] {
@@ -46,54 +63,50 @@ export function basicsOf(c: FmcsaCarrier): BasicScore[] {
     {
       key: "unsafe_driving",
       name: "Unsafe Driving",
-      percentile: c.unsafeDrivingPercentile,
+      percentile: round1(c.unsafeDrivingPercentile),
       alert: c.unsafeDrivingAlert === "Y",
-      derived: false,
     },
     {
       key: "hos_compliance",
       name: "HOS Compliance",
-      percentile: c.hosPercentile,
+      percentile: round1(c.hosPercentile),
       alert: c.hosAlert === "Y",
-      derived: false,
     },
     {
       key: "driver_fitness",
       name: "Driver Fitness",
-      percentile: c.driverFitnessPercentile,
+      percentile: round1(c.driverFitnessPercentile),
       alert: c.driverFitnessAlert === "Y",
-      derived: false,
     },
     {
       key: "controlled_substances",
       name: "Controlled Subs",
-      percentile: c.controlledSubstancesPercentile,
+      percentile: round1(c.controlledSubstancesPercentile),
       alert: c.controlledSubstancesAlert === "Y",
-      derived: false,
     },
     {
       key: "vehicle_maintenance",
       name: "Vehicle Maint.",
-      percentile: c.vehicleMaintenancePercentile,
+      percentile: round1(c.vehicleMaintenancePercentile),
       alert: c.vehicleMaintenanceAlert === "Y",
-      derived: false,
     },
-    // FMCSA hides these two entirely, so we compute the measure as well as the
-    // rank: Crash Indicator from their Severity_Weight x Time_Weight columns over
-    // the scraped Avg PU x UF, HM Compliance from the violation file.
+    // NOTE: FMCSA publishes NEITHER of the next two at all, so for these the
+    // measure is ours as well as the rank — Crash Indicator from their
+    // Severity_Weight x Time_Weight columns over the scraped Avg PU x UF, HM
+    // Compliance from the violation file. That used to be a `derived: true` flag
+    // on every response; it is constant per key, so it belongs here and in the
+    // API docs rather than repeated in every payload.
     {
       key: "crash_indicator",
       name: "Crash Indicator",
-      percentile: c.crashIndicatorPercentile,
+      percentile: round1(c.crashIndicatorPercentile),
       alert: c.crashIndicatorAlert === "Y",
-      derived: true,
     },
     {
       key: "hm_compliance",
       name: "Hazmat",
-      percentile: c.hmCompliancePercentile,
+      percentile: round1(c.hmCompliancePercentile),
       alert: c.hmComplianceAlert === "Y",
-      derived: true,
     },
   ];
 }
