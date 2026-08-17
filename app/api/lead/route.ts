@@ -90,3 +90,36 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true, slack: slackStatus, slackDetail });
 }
+
+/**
+ * PII-free failure beacon.
+ *
+ * The POST above carries an email address, and corporate DLP appliances block
+ * exactly that: on 2026-08-17 a lead POST never reached this function while the
+ * same browser's /api/analyze POST (DOT numbers only, no PII) succeeded in the
+ * same minute. The client now hands over the CSV regardless, which means the
+ * failure is invisible to the user AND to us.
+ *
+ * This GET carries no body and no email, so a content filter has nothing to
+ * match on. It does not recover the lead — it only lets us count how often
+ * capture is being blocked, and from which referrers. Without it, enterprise
+ * lead-capture rates look like disinterest rather than interception.
+ */
+export async function GET(req: NextRequest) {
+  if (req.nextUrl.searchParams.get("blocked") !== "1") {
+    // Not a beacon — the cron/keep-warm probes also hit this path.
+    return NextResponse.json({ ok: true });
+  }
+  const ipHash = await hashIp(
+    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? null
+  );
+  logEvent("audit_lead_capture_blocked", {
+    // Deliberately NO email: the whole point is that this request stays clean.
+    reason: req.nextUrl.searchParams.get("reason") ?? null,
+    status: req.nextUrl.searchParams.get("status") ?? null,
+    ipHash,
+    referer: req.headers.get("referer") ?? null,
+    userAgent: req.headers.get("user-agent") ?? null,
+  });
+  return NextResponse.json({ ok: true, recorded: true });
+}

@@ -775,6 +775,23 @@ function FullReportCta({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /** Tell the server capture was blocked, WITHOUT resending the email.
+   *  A GET with no body gives a content filter nothing to match on, so it
+   *  survives the same interception that ate the POST. Best-effort: never
+   *  awaited into the user's path, never allowed to throw. */
+  function reportCaptureBlocked(reason: string, status?: number) {
+    try {
+      const q = new URLSearchParams({ blocked: "1", reason });
+      if (status) q.set("status", String(status));
+      void fetch(`/api/lead?${q.toString()}`, {
+        method: "GET",
+        keepalive: true,
+      }).catch(() => {});
+    } catch {
+      /* nothing we can do, and nothing worth telling the user */
+    }
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -811,6 +828,7 @@ function FullReportCta({
           setError(data.error);
           return;
         }
+        reportCaptureBlocked(isJson ? "http-error" : "non-json-response", res.status);
       }
       // Trigger CSV download client-side
       const csv = toCsv(result);
@@ -829,6 +847,7 @@ function FullReportCta({
       // Lead capture failed outright (offline, proxy, DNS). Still hand over the
       // report — it is already computed client-side — and say so plainly rather
       // than surfacing a parser message the user cannot act on.
+      reportCaptureBlocked("threw");
       try {
         const csv = toCsv(result);
         const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
