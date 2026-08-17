@@ -793,10 +793,24 @@ function FullReportCta({
           },
         }),
       });
-      const data = await res.json();
+      // Only parse as JSON when the server actually sent JSON. On 2026-08-17 a
+      // 3,612-carrier audit was lost here: the POST never reached the function
+      // (no Vercel log) but an HTML body came back — most likely a corporate
+      // proxy intercepting it. res.json() threw, and the user saw the raw
+      // "Unexpected token '<', "<html> <!"... is not valid JSON".
+      const isJson = res.headers
+        .get("content-type")
+        ?.includes("application/json");
       if (!res.ok) {
-        setError(data.error ?? "Couldn't capture your email. Try again?");
-        return;
+        // A validation failure is the ONLY case worth blocking on, because the
+        // user can act on it. Anything else (proxy, 5xx, edge error) must not
+        // cost them the report — /api/lead is a soft gate by design and the CSV
+        // below is built entirely from data already in memory.
+        const data = isJson ? await res.json().catch(() => null) : null;
+        if (res.status === 400 && data?.error) {
+          setError(data.error);
+          return;
+        }
       }
       // Trigger CSV download client-side
       const csv = toCsv(result);
@@ -812,7 +826,30 @@ function FullReportCta({
       URL.revokeObjectURL(url);
       onUnlock();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Network error.");
+      // Lead capture failed outright (offline, proxy, DNS). Still hand over the
+      // report — it is already computed client-side — and say so plainly rather
+      // than surfacing a parser message the user cannot act on.
+      try {
+        const csv = toCsv(result);
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `carrier-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        onUnlock();
+        return;
+      } catch {
+        setError(
+          e instanceof Error && /fetch|network/i.test(e.message)
+            ? "Couldn't reach the server, and the download failed. Check your connection."
+            : "Couldn't generate the CSV. Please retry."
+        );
+        return;
+      }
     } finally {
       setLoading(false);
     }
