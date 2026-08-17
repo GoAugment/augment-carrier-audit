@@ -55,6 +55,21 @@ agg = pl.read_parquet(PARQUET)
 log(f"Parquet: {agg.shape}")
 active_set = set(agg.filter(pl.col("status_code") == "A")["DOT_NUMBER"].to_list())
 log(f"Active carriers: {len(active_set):,}")
+# Shut-down carriers must stay VISIBLE in the VIN pair universe even when their
+# USDOT registration has gone inactive, or the shutdown-predecessor signal below
+# silently cannot see them. status_code=='A' excluded 382 of 114,883 shut-down
+# carriers (0.33%) — e.g. BM 5 EXPRESS (DOT 4252114, status 'I', revoked
+# 2025-09-16, 178 inspected VINs), which shares a VIN with the still-active
+# WILLIAM BODDICKER (DOT 2836522) yet contributed nothing to its count.
+_shut_dots = set(
+    agg.filter(
+        pl.col("most_recent_involuntary_date").is_not_null()
+        & (pl.col("has_active_authority") == False)  # noqa: E712
+    )["DOT_NUMBER"].to_list()
+)
+pair_universe = active_set | _shut_dots
+log(f"Pair universe (active + shut-down): {len(pair_universe):,} "
+    f"(+{len(pair_universe) - len(active_set):,} shut-down but not status 'A')")
 
 # === DIFFUSE EQUIPMENT ===
 peek = pl.scan_csv(INSP, n_rows=5, ignore_errors=True).collect()
@@ -66,7 +81,7 @@ pairs = (
     pl.scan_csv(INSP, schema_overrides={dot_col: pl.Int64}, ignore_errors=True)
     .filter(pl.col(vin_col).is_not_null())
     .filter(pl.col(vin_col).str.len_chars() >= 10)
-    .filter(pl.col(dot_col).is_in(list(active_set)))
+    .filter(pl.col(dot_col).is_in(list(pair_universe)))
     .select(pl.col(vin_col).alias("vin"), pl.col(dot_col).alias("dot"))
     .unique()
     .collect(engine="streaming")
@@ -120,6 +135,54 @@ diffuse = (
 log(f"  diffuse rows: {diffuse.height:,}")
 log(f"  sample (top by spread): {diffuse.sort('diffuse_vin_share_n_siblings', descending=True).head(5)}")
 
+# === SHUT-DOWN EQUIPMENT PREDECESSORS ===
+# Which of this carrier's VIN-sharing partners has FMCSA already shut down?
+#
+# The classic chameleon succession: the old authority is revoked, the trucks
+# move to a new one. The diffuse counter above treats such a partner exactly
+# like any other, which throws away the strongest signal in it. Measured on this
+# vintage with a temporal split (partner revoked before 2026-02-12, carrier's own
+# revocation after), against a 1.15% base rate:
+#     1 shut-down partner    11,428 carriers   11.2%   9.8x
+#     2                       2,075            16.1%  14.1x
+#     >=3                     1,952            25.6%  22.4x
+#     >=5                       781            31.0%  27.1x
+#
+# "Shut down" MUST mean revoked AND still unauthorized, not merely "has a
+# revocation on record". The latter includes SWIFT, UPS, LANDSTAR, CRETE and
+# PENSKE — large carriers with a decades-old docket action since reinstated —
+# which between them link to ~3,000 carriers and would have made this signal a
+# false-positive generator. With the stricter definition the top hubs are
+# instead the likes of SUPLICIUM TRANSPORT (1 reported power unit, 333 VIN-
+# sharing partners) — shells, which is the point.
+log("Step A5: VIN-sharing partners that FMCSA has already shut down...")
+shut = agg.filter(
+    pl.col("most_recent_involuntary_date").is_not_null()
+    & (pl.col("has_active_authority") == False)  # noqa: E712 — null must not match
+).select(
+    pl.col("DOT_NUMBER").alias("dot_b"),
+    pl.col("LEGAL_NAME").alias("shutdown_sibling_name"),
+    pl.col("most_recent_involuntary_date").alias("shutdown_sibling_revoked_date"),
+)
+log(f"  shut-down carriers (revoked AND still unauthorized): {shut.height:,}")
+
+shut_links = joined.select("dot_a", "dot_b").unique().join(shut, on="dot_b", how="inner")
+shutdown_sib = (
+    shut_links.group_by("dot_a")
+    .agg(
+        pl.len().alias("shutdown_sibling_count"),
+        # Surface the most RECENTLY shut-down partner: it is the one a broker can
+        # still recognise, and the closest in time to whatever is happening now.
+        pl.col("dot_b").sort_by("shutdown_sibling_revoked_date", descending=True).first().alias("shutdown_sibling_dot"),
+        pl.col("shutdown_sibling_name").sort_by("shutdown_sibling_revoked_date", descending=True).first(),
+        pl.col("shutdown_sibling_revoked_date").max().alias("shutdown_sibling_revoked_date"),
+    )
+    .rename({"dot_a": "DOT_NUMBER"})
+)
+log(f"  carriers with >=1 shut-down VIN partner: {shutdown_sib.height:,}")
+for k in (1, 2, 3, 5, 10):
+    log(f"    >={k}: {shutdown_sib.filter(pl.col('shutdown_sibling_count') >= k).height:,}")
+
 # === INSURANCE REPLACE COUNT + DISTINCT POLICIES ===
 log("\nStep B1: parse InsHist (header-less)...")
 cols = [f"c{i:02d}" for i in range(1, 18)]
@@ -158,6 +221,8 @@ log("\nStep C: merge into parquet...")
 for col in [
     "diffuse_vin_share_pct", "diffuse_vin_share_n_siblings",
     "insurance_replaces_24mo", "insurance_distinct_policies_24mo",
+    "shutdown_sibling_count", "shutdown_sibling_dot",
+    "shutdown_sibling_name", "shutdown_sibling_revoked_date",
 ]:
     if col in agg.columns:
         agg = agg.drop(col)
@@ -165,12 +230,15 @@ for col in [
 out = (
     agg
     .join(diffuse, on="DOT_NUMBER", how="left")
+    .join(shutdown_sib, on="DOT_NUMBER", how="left")
     .join(ins_agg, on="DOT_NUMBER", how="left")
     .with_columns(
         diffuse_vin_share_pct=pl.col("diffuse_vin_share_pct").fill_null(0.0),
         diffuse_vin_share_n_siblings=pl.col("diffuse_vin_share_n_siblings").fill_null(0),
         insurance_replaces_24mo=pl.col("insurance_replaces_24mo").fill_null(0),
         insurance_distinct_policies_24mo=pl.col("insurance_distinct_policies_24mo").fill_null(0),
+        # 0 means "no shut-down partner", which is a real answer, not missing data.
+        shutdown_sibling_count=pl.col("shutdown_sibling_count").fill_null(0),
     )
 )
 log(f"Final: {out.shape}")

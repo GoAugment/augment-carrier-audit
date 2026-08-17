@@ -12,9 +12,7 @@
   ],
   "reasonLabels": [
     "FMCSA suspended authority for lack of insurance",
-    "Vehicle OOS",
-    "Recent revocation",
-    "Why the FMCSA SMS scores look clean"
+    "Recent revocation"
   ],
   "axes": {
     "crash": "clean",
@@ -22,7 +20,7 @@
     "hos": "clean",
     "driverOos": "clean",
     "controlledSubstances": "na",
-    "vehicleOos": "elevated",
+    "vehicleOos": "clean",
     "hazmatOos": "na",
     "revocations": "high",
     "authority": "critical",

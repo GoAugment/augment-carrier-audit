@@ -3,12 +3,13 @@
   "reasonNote": "HIGH: HOS alert",
   "carrierName": "LBLMX LOGISTICS LLC",
   "riskLevel": "Critical",
-  "riskScore": 83,
+  "riskScore": 93,
   "riskTier": "Critical",
   "riskContributions": [
     "+20 [Safety / compliance] Conditional safety rating",
     "+16 [Safety / compliance] FMCSA enforcement case",
     "+18 [Safety / compliance] Hard safety signal",
+    "+10 [Identity / chameleon] Running trucks from carriers FMCSA shut down",
     "+24 [Identity / chameleon] Equipment spread across multiple active DOTs",
     "+5 [Context] Personal contact/address corroborator"
   ],
@@ -19,7 +20,8 @@
     "Crashes",
     "HOS Compliance",
     "Recent enforcement",
-    "Equipment spread across multiple active DOTs"
+    "Equipment spread across multiple active DOTs",
+    "Running trucks from carriers FMCSA shut down"
   ],
   "axes": {
     "crash": "elevated",

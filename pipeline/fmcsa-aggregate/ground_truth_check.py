@@ -243,6 +243,22 @@ def main() -> int:
 
     rate = gated_ok / gated if gated else 1.0
     adv_rate = advisory_ok / advisory if advisory else 1.0
+
+    # Persist for refresh_summary.py so the run report carries the agreement
+    # score without re-hitting the API.
+    if SNAPSHOT:
+        rep = REPO / "data" / "refresh_reports"
+        rep.mkdir(parents=True, exist_ok=True)
+        (rep / f"ground_truth_{SNAPSHOT}.json").write_text(json.dumps({
+            "snapshot": SNAPSHOT, "carriers": len(live), "gated": gated,
+            "gated_ok": gated_ok, "rate": rate, "floor": args.min_match,
+            "advisory": advisory, "advisory_ok": advisory_ok,
+            "api_errors": len(errs),
+            "mismatches": [
+                {"dot": d, "field": c, "ours": str(a), "fmcsa": str(b), "rule": r}
+                for d, c, a, b, r in mismatches[:50]
+            ],
+        }, indent=2, sort_keys=True) + "\n")
     print(f"[ground-truth] carriers compared: {len(live)}"
           + (f"  (api errors: {len(errs)})" if errs else ""))
     print(f"[ground-truth] gated fields:    {gated_ok}/{gated} = {rate:.1%} (floor {args.min_match:.0%})")

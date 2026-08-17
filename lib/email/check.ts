@@ -16,7 +16,7 @@ import { fetchCarriers, fetchDotByMc, type FmcsaCarrier } from "../fmcsa";
 import { getRule } from "../rules";
 import { fetchIdentity, findIdentityByPhone, cargoLabels, type CarrierIdentity } from "../fmcsa-identity";
 import { analyze } from "../analyzer";
-import { getCutoffs, type AxisKey, type PeerGroup } from "../thresholds";
+import { getCutoffs, crashMeasureNonzeroCutoffs, type AxisKey, type PeerGroup } from "../thresholds";
 import { checkDomainAuth } from "./dns-check";
 import laneLiability from "../data/lane-liability.json";
 import type {
@@ -1348,15 +1348,21 @@ function pickAxis(
  *  from the May 2026 parquet population (~112k carriers with non-zero CSI).
  *  Used to label a carrier's raw CSI value as "top 5% nationally" etc.,
  *  matching the framing the analyzer already uses for SMS BASIC measures. */
-const CRASH_MEASURE_CUTOFFS = { p85: 3.0, p95: 6.0, p99: 9.0 } as const;
+// Was hardcoded { p85: 3.0, p95: 6.0, p99: 9.0 } — correct for Aug 2026 but
+// frozen, so it would silently stop tracking the data. Now sourced from the
+// generated thresholds (with those same values as the pre-rebuild fallback).
+const CRASH_MEASURE_CUTOFFS = crashMeasureNonzeroCutoffs;
 
 function labelCrashMeasure(measure: number | null | undefined): string | null {
   if (measure == null || measure <= 0) return null;
   const c = CRASH_MEASURE_CUTOFFS;
-  if (measure >= c.p99) return "≥P99, top 1% nationally";
-  if (measure >= c.p95) return "≈P95, top 5%";
-  if (measure >= c.p85) return "≈P85, top 15%";
-  return "below P85";
+  // Population matters: these cutoffs rank carriers that HAVE a weighted
+  // crash, not all carriers. Only ~5.7% of carriers have any, so "top 15%
+  // nationally" overstated the population by ~17x. State it honestly.
+  if (measure >= c.p99) return "top 1% of carriers with crashes";
+  if (measure >= c.p95) return "top 5% of carriers with crashes";
+  if (measure >= c.p85) return "top 15% of carriers with crashes";
+  return "below P85 among carriers with crashes";
 }
 
 /** FMCSA's BASIC "alert" flags are Y when a carrier is over the intervention

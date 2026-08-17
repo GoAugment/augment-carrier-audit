@@ -80,6 +80,11 @@ interface ThresholdsFile {
   hazmat_oos_rate: PercentileBlock;
   crashes_per_truck: PercentileBlock;
   crash_measure: PercentileBlock;
+  /** crash_measure ranked ONLY among carriers that have a weighted crash.
+   *  The full-population block above is ~94% zeros, so its p50..p85 are all
+   *  0.0 and cannot band anything. Any "top N%" wording must cite THIS
+   *  population, not "nationally". */
+  crash_measure_nonzero?: PercentileBlock & { p99?: number };
   crashes_per_million_miles: PercentileBlock;
   unsafe_driving_rate: PercentileBlock;
   hos_rate: PercentileBlock;
@@ -146,6 +151,24 @@ export function getCutoffs(axis: AxisKey, peer: PeerGroup): TierCutoffs {
 }
 
 /** National cutoffs (used by the methodology display + analytics fallback). */
+/** Cutoffs for crash_measure among carriers that actually have crashes.
+ *  Falls back to the Aug-2026 measured values if the pipeline predates the
+ *  crash_measure_nonzero block, so this can ship ahead of a rebuild. */
+export const crashMeasureNonzeroCutoffs = (() => {
+  const b = (
+    data as unknown as {
+      crash_measure_nonzero?: PercentileBlock & { p99?: number };
+    }
+  ).crash_measure_nonzero;
+  const fb = { p85: 3.0, p95: 6.0, p99: 9.0 };
+  if (!b) return fb;
+  return {
+    p85: b.p85 ?? fb.p85,
+    p95: b.p95 ?? fb.p95,
+    p99: b.p99 ?? b.p95 ?? fb.p99,
+  };
+})();
+
 export const nationalThresholds = {
   driverOos: toCutoffs(data.driver_oos_rate),
   vehicleOos: toCutoffs(data.vehicle_oos_rate),

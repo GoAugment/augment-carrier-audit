@@ -584,7 +584,10 @@ export const RULES: Rule[] = [
       caution:  "Between P85 and P90 for peer group.",
     },
     fixtures: {
-      critical: { dot: 1135439, reason: "GIDDENS TRUCKING LLC: 100% unsafe driving rate on 13 inspections." },
+      // GIDDENS TRUCKING (1135439) held this slot until Aug 2026, when three of
+      // its 13 inspections rolled out of the 24-month window; still 100% but no
+      // longer a large enough sample to clear the peer P95 gate.
+      critical: { dot: 3878486, reason: "GARY Z HORST: 11 unsafe-driving violations on 11 driver inspections (100%), 6 power units." },
       none: { dot: 53467, reason: "Werner: clean Unsafe Driving record." },
     },
   },
@@ -756,18 +759,71 @@ export const RULES: Rule[] = [
     fixtures: {
       critical: { dot: 3621624, reason: "DK MAX TRUCKING INC: 86% of its 140 inspected VINs run under 24 other active DOTs (rich sample, 60 PU)." },
       high:     { dot: 4198159, reason: "ALAKE LOGISTICS INC: 43% of 7 VINs run under 3 other active DOTs, top sibling 14% concentration." },
-      // DRIFTED (Aug 2026 refresh): this carrier is now 18% diffuse / 2 siblings
-      // and no longer clears the bar, so this fixture does not fire. Replacing it
-      // needs a candidate picked against the relaxed-floor branch itself — parquet
-      // predicates alone (diffuse %, sibling count, top-sibling %, a corroborating
-      // chameleon signal) were not sufficient to find one that fires.
-      caution:  { dot: 3432788, reason: "PUNIA TRANS INC (relaxed-floor): fires only because other chameleon signals (lapsed BIPD + revoke + all-cancel) relax the concentration floor from 10% to 5%." },
+      // Replaced Aug 2026: the previous fixture (3432788 PUNIA TRANS) drifted to
+      // 18% diffuse / 2 siblings and stopped clearing the bar. Picking a
+      // replacement from parquet predicates alone had failed before because two
+      // of the analyzer's conditions are not the obvious columns: the VIN floor
+      // reads largestSiblingTotalVins (NOT pu_vins_inspected), and the
+      // corroboration test wants addressDupeOosCount >= 3 (NOT the active count).
+      // Candidates were verified by running analyze() rather than inferred.
+      //
+      // NOBLE TRANS is deliberately one whose largest sibling is a REAL carrier.
+      // Of the relaxed-floor-only firings, ~7% have a rental company (Penske,
+      // Ryder) as their top sibling — a fixture anchored on one of those would
+      // enshrine the exact leasing-pool false positive the concentration floor
+      // exists to suppress.
+      caution:  { dot: 1106798, reason: "GREEN HORIZONS INC (relaxed-floor): 27% diffuse across 4 siblings, top sibling CARROLL FULMER LOGISTICS at 9.1% — below the 10% default floor, so it fires only via the relaxed branch. Replaced NOBLE TRANS (2516921), which drifted 25.9% -> 22.2% within a single refresh. If the relaxed-floor branch is ever removed, this fixture stops firing, which is the point of it.", expectMatch: /run under \d+ other active DOTs/ },
       none: [
         { dot: 53467, reason: "Werner: trucks unique to the operating fleet." },
         {
           dot: 3863705,
           reason: "NOOR EXPRESS LOGISTICS INC (leasing-pool guard): 54% diffuse share across 109 siblings (Ryder, UPS, New Prime) but top sibling shares only 4% AND no chameleon-specific corroborating signals, rule must not fire on rental-fleet turnover even with churn.",
         },
+      ],
+    },
+  },
+
+  // ---------------------------------------------------------------------
+  // CHAMELEON, shut-down equipment predecessor
+  // ---------------------------------------------------------------------
+  {
+    id: "chameleon-shutdown-predecessor",
+    category: "chameleon",
+    label: "Running trucks from carriers FMCSA shut down",
+    definition:
+      "This carrier's trucks were previously inspected under one or more OTHER carriers that FMCSA has since revoked and which remain unauthorized. That is the chameleon succession pattern in its plainest form: the old authority is killed, the equipment moves to a new one, operations continue. Distinct from chameleon-diffuse-equipment, which counts how WIDELY equipment is shared without regard to what happened to those partners — it treats a shut-down predecessor exactly like any active leasing pool, discarding the strongest evidence in the link. Also distinct from FMCSA's own prior-revoke flag, which only captures predecessors FMCSA itself linked; this finds them through the equipment.",
+    thresholds: {
+      critical: "≥5 such partners AND at least as many partners as trucks (ratio ≥1.0).",
+      high:     "≥2 such partners AND ratio ≥0.25.",
+      caution:  "≥1 such partner AND ratio ≥0.05. Below that dilution it is used-truck turnover, not succession, so the rule stays silent.",
+    },
+    // Measured on the Aug 2026 vintage with a temporal split — partner revoked
+    // BEFORE 2026-02-12, this carrier's own revocation AFTER — so a ring
+    // collapsing in one enforcement sweep cannot inflate it. Base rate of a
+    // later revocation is 1.15%:
+    //     1 partner    11,428 carriers   11.2%    9.8x
+    //     2             2,075            16.1%   14.1x
+    //     >=3           1,952            25.6%   22.4x
+    //     >=5             781            31.0%   27.1x
+    // For comparison: shared insurance policy ~6x, geo-mismatch ~1.9x.
+    //
+    // Severity keys on the RATIO to fleet size, not the raw count: "1 partner"
+    // is 10.1x lift at 1-5 power units but 1.5x at 100+, i.e. noise. Without
+    // that, NEW PRIME (77 partners across 7,919 trucks) and UPS (73 / 112,321)
+    // score Critical alongside GOLLA GROUP (82 partners, 2 trucks). Ratio bands:
+    // >=1.0 -> 22.8x, 0.25-1.0 -> ~10-11x, below -> ~6-10x.
+    //
+    // "Shut down" means revoked AND still unauthorized. Defining it as merely
+    // "has a revocation on record" pulls in SWIFT, UPS, LANDSTAR, CRETE and
+    // PENSKE — decades-old docket actions since reinstated — which link to
+    // ~3,000 carriers between them and would swamp the signal with false
+    // positives.
+    fixtures: {
+      critical: { dot: 4514820, reason: "GOLLA GROUP LLC: 82 shut-down VIN partners against 2 reported trucks (ratio 41). Most recent: AUTOHAULX LLC." },
+      high:     { dot: 2370225, reason: "TRAINA SERVICES LLC: 4 shut-down partners, 1 truck (ratio 4.0). Most recent: ATLAS ONE EXPRESS LLC." },
+      caution:  { dot: 271644,  reason: "RONALD L WILCOX: a single shut-down partner (DSC TRUCKING INC) on a 1-truck fleet — ratio 1.0, the honest-used-truck case that still warrants a look." },
+      none: [
+        { dot: 53467, reason: "Werner: 7 shut-down partners across 9,851 trucks (ratio 0.0007) — below the 0.05 floor, so it must NOT fire. This fixture is the guard against the size-confounding that would otherwise flag every large fleet." },
       ],
     },
   },

@@ -2643,6 +2643,95 @@ function scoreCarrier(
     }
   }
 
+  // D10e. Shut-down equipment predecessor. The trucks were previously run by a
+  // carrier FMCSA has since revoked and which remains unauthorized — chameleon
+  // succession read off the equipment rather than off FMCSA's own predecessor
+  // link (prior_revoke_flag), which only catches the ones FMCSA connected.
+  //
+  // Independent of D10d on purpose. Diffuse asks how WIDELY equipment is shared
+  // and treats a shut-down predecessor like any leasing pool; this asks WHO the
+  // partners were. A carrier can trip this with a single partner and no diffuse
+  // spread at all, which is exactly the one-predecessor-one-successor case.
+  {
+    const shutRule = getRule("chameleon-shutdown-predecessor");
+    const nShut = c.shutdownSiblingCount ?? 0;
+    // Fire only once the count is material RELATIVE to the fleet. Werner has 7
+    // shut-down partners across 9,851 trucks (0.0007) and UPS 73 across 112,321
+    // (0.0006) — at that dilution it is used-truck turnover, not succession, and
+    // firing would floor two of the cleanest carriers in the country at Medium.
+    // The 0.05 floor still retains the signal: the 0.05-0.10 band carries 10.1x
+    // lift, essentially the same as the 0.5-1.0 band's 11.5x.
+    const shutRatioFire = nShut / Math.max(1, c.totalPowerUnits || 1);
+    if (nShut >= 1 && shutRatioFire >= 0.05) {
+      // Severity keys on the RATIO to fleet size, not the raw count. A large
+      // carrier accumulates shut-down partners honestly — it buys and sells used
+      // trucks and owner-operators lease on and off — so the count alone is
+      // confounded by size. Measured lift for "1 partner": 10.1x at 1-5 power
+      // units but only 1.5x at 100+, where it is noise. NEW PRIME (77 partners /
+      // 7,919 trucks = 0.01) and UPS (73 / 112,321 = 0.0006) must not read the
+      // same as GOLLA GROUP (82 partners / 2 trucks = 41.0).
+      // Ratio bands, later-revocation lift over a 1.15% base: >=1.0 -> 22.8x,
+      // 0.25-1.0 -> ~10-11x, below that ~6-10x.
+      const shutRatio = nShut / Math.max(1, c.totalPowerUnits || 1);
+      const shutTier: "critical" | "high" | "caution" =
+        nShut >= 5 && shutRatio >= 1.0
+          ? "critical"
+          : nShut >= 2 && shutRatio >= 0.25
+            ? "high"
+            : "caution";
+      const who = c.shutdownSiblingName
+        ? `${c.shutdownSiblingName}${c.shutdownSiblingDot ? ` (DOT ${c.shutdownSiblingDot})` : ""}`
+        : c.shutdownSiblingDot
+          ? `DOT ${c.shutdownSiblingDot}`
+          : null;
+      const when = c.shutdownSiblingRevokedDate ? `, revoked ${c.shutdownSiblingRevokedDate}` : "";
+      const detail =
+        `${nShut === 1 ? "A truck" : "Trucks"} in this fleet previously ran under ` +
+        `${nShut} ${nShut === 1 ? "carrier" : "carriers"} FMCSA has revoked and that ` +
+        `remain unauthorized.` +
+        (who ? ` Most recent: ${who}${when}.` : "") +
+        ` Verify this is not the same operator under a new authority.`;
+      reasons.push({ label: shutRule.label, detail });
+      if (!siblingRef && c.shutdownSiblingDot) {
+        siblingRef = { dot: c.shutdownSiblingDot, name: c.shutdownSiblingName };
+      }
+      chameleonSignals.push(
+        `${nShut} shut-down ${nShut === 1 ? "predecessor" : "predecessors"} on shared equipment`
+      );
+
+      // Do not double-charge. The diffuse block above already adds "Linked
+      // authority revoked" (24 pts) when the LARGEST sibling is revoked, which
+      // is the same underlying fact for a single-partner carrier. Score the
+      // increment only.
+      const alreadyChargedLinkedRevoked = risk.contributions.some(
+        (f) => f.label === "Linked authority revoked"
+      );
+      const points = shutTier === "critical" ? 28 : shutTier === "high" ? 20 : 10;
+      if (!alreadyChargedLinkedRevoked || shutTier !== "caution") {
+        addRiskContribution(risk, {
+          category: "Identity / chameleon",
+          label: shutRule.label,
+          points: alreadyChargedLinkedRevoked ? Math.max(0, points - 10) : points,
+          detail:
+            `${nShut} VIN-sharing ${nShut === 1 ? "partner has" : "partners have"} been ` +
+            `revoked by FMCSA and remain unauthorized.`,
+          kind: "core",
+        });
+      }
+
+      // Gate. Multiple shut-down predecessors is not a coincidence a legitimate
+      // carrier produces: >=2 forces High, >=5 forces Critical. A single one
+      // floors at Medium — it can be an honestly-bought used truck.
+      if (shutTier === "critical") {
+        level = "Critical";
+      } else if (shutTier === "high") {
+        if (level !== "Critical") level = "High";
+      } else if (level !== "Critical" && level !== "High") {
+        level = "Medium";
+      }
+    }
+  }
+
   // Chameleon-pattern CLUSTER removed: the "2+ independent re-incarnation
   // signals → Critical" escalator over-called on weak combos (e.g. 2 insurance
   // cancellations + 33% diffuse VIN on an insured, established carrier → false

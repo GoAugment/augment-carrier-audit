@@ -51,6 +51,20 @@ SNAPSHOT = os.environ.get("FMCSA_SNAPSHOT_DATE")
 
 # tolerance = max relative change before we complain; None = must not change sign/zero only.
 # must_move  = this value is expected to differ from last refresh; identical means stale.
+#
+# CALIBRATION (not guesswork). Replayed the committed June 2026 parquet against
+# August to get real two-month movement:
+#     rows +1.9%   bipd_on_file +2.5%   crashes -5.8%   fatal -4.7%
+#     driver insp +1.5%   vehicle insp +1.5%   prior_revoke -5.7%
+# So genuine movement is 1.5-6% over two months and the tolerances below sit at
+# 10-25%, i.e. 3-4x headroom. Verified against that baseline: a healthy new
+# vintage raises ZERO errors, while the two real Aug 2026 defects both trip —
+# frozen insurer/zip tables on a vintage change, and the scrape error ceiling.
+# A check that cries wolf gets switched off, so no-false-alarms was the
+# requirement; detection headroom is the deliberate trade.
+#
+# Note crashes fall while inspections rise: the 24-month window sheds old
+# crashes faster than new ones land. Expected, not a bug.
 SPEC: dict[str, dict] = {
     # --- universe ---
     "rows":                       {"tol": 0.10},
@@ -65,6 +79,10 @@ SPEC: dict[str, dict] = {
     # --- authority / revocation ---
     "active_authority":           {"tol": 0.15},
     "prior_revoke_flag":          {"tol": 0.20},
+    # New Aug 2026. Watch it like any other gating signal: a join change or a
+    # shift in what counts as "shut down" would move this sharply and silently.
+    "shutdown_sibling_any":       {"tol": 0.30},
+    "shutdown_sibling_high":      {"tol": 0.40},
     # --- safety volume (should drift gently as the 24mo window rolls) ---
     "sum_crashes":                {"tol": 0.20, "must_move": True},
     "sum_fatal_crashes":          {"tol": 0.25, "must_move": True},
@@ -107,7 +125,8 @@ def collect() -> dict:
     want = [c for c in (
         "bipd_insurance_on_file", "bipd_insurance_required", "bipd_required_amount",
         "insurance_suspension_status", "bipd_imminent_lapse", "has_active_authority",
-        "prior_revoke_flag", "crashes_24mo", "fatal_crashes_24mo",
+        "prior_revoke_flag", "shutdown_sibling_count", "power_units",
+        "crashes_24mo", "fatal_crashes_24mo",
         "driver_inspections_24mo", "vehicle_inspections_24mo", "crash_indicator_alert",
     ) if has(c)]
     df = pl.read_parquet(AGG, columns=want)
@@ -131,6 +150,12 @@ def collect() -> dict:
         m["active_authority"] = _count(df, pl.col("has_active_authority").cast(pl.Int64))
     if has("prior_revoke_flag"):
         m["prior_revoke_flag"] = _count(df, pl.col("prior_revoke_flag").cast(pl.Int64))
+    if has("shutdown_sibling_count"):
+        n = pl.col("shutdown_sibling_count").fill_null(0)
+        pu = pl.col("power_units").fill_null(0).clip(1) if has("power_units") else pl.lit(1)
+        m["shutdown_sibling_any"] = _count(df, (n >= 1).cast(pl.Int64))
+        # The gating population: matches the analyzer's high/critical tiers.
+        m["shutdown_sibling_high"] = _count(df, ((n >= 2) & (n / pu >= 0.25)).cast(pl.Int64))
     for src, dst in (("crashes_24mo", "sum_crashes"), ("fatal_crashes_24mo", "sum_fatal_crashes"),
                      ("driver_inspections_24mo", "sum_driver_inspections"),
                      ("vehicle_inspections_24mo", "sum_vehicle_inspections")):
@@ -187,18 +212,47 @@ def compare(new: dict, old: dict) -> list[tuple[str, str, str]]:
     not having it. The tripwire that matters is unaffected: a NEW snapshot_date
     with identical metrics still errors, and that is the actual bug signature.
     """
-    rerun = "snapshot_date" in new and new.get("snapshot_date") == old.get("snapshot_date")
+    same_tag = "snapshot_date" in new and new.get("snapshot_date") == old.get("snapshot_date")
+    # An unchanged tag is only a re-run if the DATA also matches. Trusting the tag
+    # alone was a hole: build September sources under a forgotten August tag and
+    # every must_move tripwire got muted, so mislabeled data passed and updated
+    # the baseline — the exact "forgotten bump" this was supposed to stop.
+    # A genuine re-run reproduces its inputs bit for bit (builds are sorted and
+    # byte-reproducible), so any movement in the volume metrics means new data.
+    VOLUME = ("rows", "sum_crashes", "sum_driver_inspections", "sum_vehicle_inspections")
+    moved = [
+        k for k in VOLUME
+        if k in new and k in old and new[k] != old[k]
+    ]
+    rerun = same_tag and not moved
     issues = []
-    if rerun:
+    if same_tag and moved:
+        issues.append((
+            "ERROR", "snapshot_date",
+            f"tag is unchanged ({new['snapshot_date']}) but the DATA moved "
+            f"({', '.join(moved)}) — this is new data under a stale tag. Pass the "
+            f"real vintage (FMCSA_DATA_TAG=YYYYMMDD) instead of re-using the last one.",
+        ))
+    elif rerun:
         issues.append((
             "WARN", "snapshot_date",
-            f"same vintage as baseline ({new['snapshot_date']}) — treating as a re-run; "
-            f"'must move' checks muted, tolerances still enforced",
+            f"same vintage as baseline ({new['snapshot_date']}) and identical volume "
+            f"metrics — treating as a re-run; 'must move' checks muted, "
+            f"tolerances still enforced",
         ))
     for key, spec in SPEC.items():
         if rerun and (spec.get("must_move") or spec.get("exact_must_move")):
             continue
         if key not in new:
+            # A metric DISAPPEARING is not a pass. A renamed column, a missing
+            # sidecar or an unwritten status parquet would otherwise delete its
+            # own guard and the thinner baseline would be accepted as clean.
+            if key in old:
+                issues.append((
+                    "ERROR", key,
+                    "was present last refresh and is now MISSING — a dropped column "
+                    "or unwritten artifact silently removes this guard",
+                ))
             continue
         if key not in old:
             issues.append(("WARN", key, f"new metric ({new[key]}) — no baseline to compare"))
@@ -268,10 +322,32 @@ def main() -> int:
     old = json.loads(BASELINE.read_text())
     issues = compare(new, old)
 
+    # Persist the comparison BEFORE the baseline advances — once it does, the
+    # "previous" values are gone and the run summary would have nothing to diff
+    # against. This is what refresh_summary.py reads.
+    if SNAPSHOT:
+        rep_dir = REPO / "data" / "refresh_reports"
+        rep_dir.mkdir(parents=True, exist_ok=True)
+        (rep_dir / f"drift_{SNAPSHOT}.json").write_text(json.dumps({
+            "snapshot": SNAPSHOT,
+            "previous": old,
+            "current": new,
+            "issues": [{"severity": s, "metric": k, "message": m} for s, k, m in issues],
+        }, indent=2, sort_keys=True) + "\n")
+
     print(f"\n{'metric':<28} {'previous':>16} {'current':>16}   change")
     print("-" * 82)
     for key in SPEC:
         if key not in new:
+            # A metric DISAPPEARING is not a pass. A renamed column, a missing
+            # sidecar or an unwritten status parquet would otherwise delete its
+            # own guard and the thinner baseline would be accepted as clean.
+            if key in old:
+                issues.append((
+                    "ERROR", key,
+                    "was present last refresh and is now MISSING — a dropped column "
+                    "or unwritten artifact silently removes this guard",
+                ))
             continue
         a, b = old.get(key), new[key]
         chg = ""

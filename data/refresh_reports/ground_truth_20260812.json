@@ -1,0 +1,97 @@
+{
+  "advisory": 40,
+  "advisory_ok": 40,
+  "api_errors": 0,
+  "carriers": 40,
+  "floor": 0.95,
+  "gated": 358,
+  "gated_ok": 346,
+  "mismatches": [
+    {
+      "dot": 1478248,
+      "field": "driver_inspections_24mo",
+      "fmcsa": "1",
+      "ours": "None",
+      "rule": "tol:3,0.25"
+    },
+    {
+      "dot": 1478248,
+      "field": "vehicle_inspections_24mo",
+      "fmcsa": "1",
+      "ours": "None",
+      "rule": "tol:3,0.25"
+    },
+    {
+      "dot": 1658874,
+      "field": "driver_inspections_24mo",
+      "fmcsa": "4",
+      "ours": "None",
+      "rule": "tol:3,0.25"
+    },
+    {
+      "dot": 1658874,
+      "field": "vehicle_inspections_24mo",
+      "fmcsa": "2",
+      "ours": "None",
+      "rule": "tol:3,0.25"
+    },
+    {
+      "dot": 1658874,
+      "field": "driver_oos_24mo",
+      "fmcsa": "1",
+      "ours": "None",
+      "rule": "tol:2,0.25"
+    },
+    {
+      "dot": 1658874,
+      "field": "vehicle_oos_24mo",
+      "fmcsa": "1",
+      "ours": "None",
+      "rule": "tol:2,0.25"
+    },
+    {
+      "dot": 3506005,
+      "field": "driver_inspections_24mo",
+      "fmcsa": "1",
+      "ours": "None",
+      "rule": "tol:3,0.25"
+    },
+    {
+      "dot": 3125505,
+      "field": "driver_inspections_24mo",
+      "fmcsa": "3",
+      "ours": "None",
+      "rule": "tol:3,0.25"
+    },
+    {
+      "dot": 3125505,
+      "field": "vehicle_inspections_24mo",
+      "fmcsa": "3",
+      "ours": "None",
+      "rule": "tol:3,0.25"
+    },
+    {
+      "dot": 3125505,
+      "field": "driver_oos_24mo",
+      "fmcsa": "1",
+      "ours": "None",
+      "rule": "tol:2,0.25"
+    },
+    {
+      "dot": 3125505,
+      "field": "vehicle_oos_24mo",
+      "fmcsa": "1",
+      "ours": "None",
+      "rule": "tol:2,0.25"
+    },
+    {
+      "dot": 1608216,
+      "field": "crashes_24mo",
+      "fmcsa": "0",
+      "ours": "1",
+      "rule": "exact"
+    }
+  ],
+  "rate": 0.9664804469273743,
+  "snapshot": "20260812"
+}

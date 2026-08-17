@@ -16,7 +16,9 @@
     "upload:single-check-compact": "node scripts/upload_single_check_buckets.mjs --src data/single-check-compact --prefix single-check-compact",
     "test:rules": "tsx --env-file=.env.local scripts/test_rules.ts",
     "test:snapshots": "tsx --env-file=.env.local scripts/snapshot_audit.ts",
-    "test": "pnpm check:parquet && pnpm test:rules && pnpm test:snapshots"
+    "test": "pnpm check:parquet && pnpm test:rules && pnpm test:snapshots",
+    "refresh": "bash scripts/refresh.sh",
+    "promote": "bash scripts/promote.sh"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

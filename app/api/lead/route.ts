@@ -90,3 +90,50 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true, slack: slackStatus, slackDetail });
 }
+
+/**
+ * PII-free failure beacon.
+ *
+ * The POST above carries an email address, and corporate DLP appliances block
+ * exactly that: on 2026-08-17 a lead POST never reached this function while the
+ * same browser's /api/analyze POST (DOT numbers only, no PII) succeeded in the
+ * same minute. The client now hands over the CSV regardless, which means the
+ * failure is invisible to the user AND to us.
+ *
+ * This GET carries no body and no email, so a content filter has nothing to
+ * match on. It does not recover the lead — it only lets us count how often
+ * capture is being blocked, and from which referrers. Without it, enterprise
+ * lead-capture rates look like disinterest rather than interception.
+ */
+export async function GET(req: NextRequest) {
+  if (req.nextUrl.searchParams.get("blocked") !== "1") {
+    // Not a beacon. Crons only hit /api/analyze and /api/check (vercel.json),
+    // so nothing routine reaches here — but a bare GET should still be inert
+    // rather than logging a phantom "blocked" event.
+    return NextResponse.json({ ok: true });
+  }
+  const ipHash = await hashIp(
+    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? null
+  );
+  // Clamp both params. They arrive from a public GET, so an arbitrary caller
+  // could otherwise write unbounded attacker-chosen strings into our logs.
+  // logEvent JSON-encodes, so this is log hygiene rather than injection, but an
+  // allow-list keeps the metric aggregatable instead of open-ended.
+  const REASONS = new Set(["http-error", "non-json-response", "threw"]);
+  const rawReason = req.nextUrl.searchParams.get("reason");
+  const rawStatus = Number(req.nextUrl.searchParams.get("status"));
+  logEvent("audit_lead_capture_blocked", {
+    // Deliberately NO email: the whole point is that this request stays clean.
+    reason: rawReason && REASONS.has(rawReason) ? rawReason : "other",
+    status: Number.isInteger(rawStatus) && rawStatus >= 100 && rawStatus <= 599
+      ? rawStatus
+      : null,
+    ipHash,
+    // Origin, not Referer: we want to know WHICH EMBED is being blocked without
+    // recording a full URL that could carry an address in its query string. The
+    // client also sends referrerPolicy: "no-referrer", so this is belt and braces.
+    origin: req.headers.get("origin") ?? null,
+    userAgent: req.headers.get("user-agent") ?? null,
+  });
+  return NextResponse.json({ ok: true, recorded: true });
+}
