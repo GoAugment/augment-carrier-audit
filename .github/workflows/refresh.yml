@@ -1,0 +1,138 @@
+name: FMCSA refresh
+
+# Runs WEEKLY but does nothing unless FMCSA actually published a new vintage.
+# FMCSA drops the SMS extract roughly monthly on no fixed day, so a monthly cron
+# would either miss it or run on stale data. Checking cheaply and skipping is
+# more robust than guessing the date — and it avoids burning ~2.5h of runner
+# time and ZenRows credits on a no-op.
+on:
+  schedule:
+    - cron: "0 9 * * 1" # Mondays 09:00 UTC
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Force a vintage tag (YYYYMMDD). Leave blank to auto-detect."
+        required: false
+      force:
+        description: "Run even if the vintage hasn't changed"
+        type: boolean
+        default: false
+
+concurrency:
+  # Never let two refreshes overlap: they write the same parquets and would
+  # interleave into a mixed vintage.
+  group: fmcsa-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330 # full run is ~150 min; headroom for slow scrapes
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # We commit the rebuilt parquets, so we need a writable checkout.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
+
+      - name: Detect FMCSA vintage
+        id: vintage
+        run: |
+          set -euo pipefail
+          # Socrata exposes rowsUpdatedAt on the dataset metadata, so we learn the
+          # vintage without downloading 9GB first. Keyed on the SMS crash extract;
+          # the SMS feeds are published together.
+          UPDATED=$(curl -sf --max-time 60 https://data.transportation.gov/api/views/4wxs-vbns.json \
+            | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);
+                const t=j.rowsUpdatedAt||j.dataUpdatedAt;
+                console.log(new Date(t*1000).toISOString().slice(0,10).replace(/-/g,''));})")
+          FORCED="${{ github.event.inputs.tag }}"
+          TAG="${FORCED:-$UPDATED}"
+          CURRENT=$(node -e "console.log(require('./data/refresh_metrics.json').snapshot_date||'')")
+          echo "detected=$UPDATED current=$CURRENT using=$TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" == "$CURRENT" && "${{ github.event.inputs.force }}" != "true" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::FMCSA vintage $TAG already shipped — nothing to do."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Free runner disk
+        if: steps.vintage.outputs.changed == 'true'
+        run: |
+          # The download alone is ~9GB and a stock runner has ~14GB free. Drop
+          # preinstalled toolchains we don't use rather than fail 40 minutes in.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h / | tail -1
+
+      - uses: pnpm/action-setup@v4
+        if: steps.vintage.outputs.changed == 'true'
+        with: { version: 10 }
+
+      - uses: actions/setup-node@v4
+        if: steps.vintage.outputs.changed == 'true'
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install uv
+        if: steps.vintage.outputs.changed == 'true'
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install deps
+        if: steps.vintage.outputs.changed == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Refresh (download → build → scrape → validate → report)
+        if: steps.vintage.outputs.changed == 'true'
+        env:
+          ZENROWS_API_KEY: ${{ secrets.ZENROWS_API_KEY }}
+          FMCSA_WEBKEY: ${{ secrets.FMCSA_WEBKEY }}
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+        run: pnpm refresh "${{ steps.vintage.outputs.tag }}"
+
+      - name: Commit refreshed artifacts
+        if: steps.vintage.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "::warning::Refresh produced no file changes — unexpected for a new vintage."
+            exit 0
+          fi
+          git commit -m "data: FMCSA refresh ${{ steps.vintage.outputs.tag }} (automated)
+
+          Ran by .github/workflows/refresh.yml. Validation passed (check:parquet,
+          rules, snapshots) and drift stayed within tolerance, or this commit
+          would not exist — refresh.sh exits non-zero otherwise.
+
+          Report: data/refresh_reports/refresh_${{ steps.vintage.outputs.tag }}.md"
+          git push
+
+      - name: Promote to production
+        if: steps.vintage.outputs.changed == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+        run: |
+          # promote.sh refuses on a dirty tree, which is why the commit above runs
+          # first. It also resolves the Blob token BEFORE deploying, so a missing
+          # token cannot leave production split across two vintages.
+          pnpm promote
+
+      - name: Publish the run report
+        if: steps.vintage.outputs.changed == 'true' && always()
+        run: |
+          REPORT="data/refresh_reports/refresh_${{ steps.vintage.outputs.tag }}.md"
+          if [[ -f "$REPORT" ]]; then
+            { echo "## FMCSA refresh ${{ steps.vintage.outputs.tag }}"; echo; cat "$REPORT"; } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No report at $REPORT" >> "$GITHUB_STEP_SUMMARY"
+          fi
