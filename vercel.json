@@ -1,8 +1,14 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
-    { "path": "/api/analyze", "schedule": "*/5 * * * *" },
-    { "path": "/api/check", "schedule": "*/5 * * * *" }
+    {
+      "path": "/api/analyze",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/check",
+      "schedule": "*/5 * * * *"
+    }
   ],
   "functions": {
     "app/api/analyze/route.ts": {
@@ -12,6 +18,9 @@
       "includeFiles": "{data/carrier_risk_signals.parquet,data/national_thresholds.json,lib/data/lane-liability.json,node_modules/duckdb/lib/**,node_modules/duckdb/package.json,node_modules/@mapbox/node-pre-gyp/**}"
     },
     "app/api/email/inbound/route.ts": {
+      "includeFiles": "{data/carrier_aggregates.parquet,data/carrier_risk_signals.parquet,data/national_thresholds.json,node_modules/duckdb/lib/**,node_modules/duckdb/package.json,node_modules/@mapbox/node-pre-gyp/**}"
+    },
+    "app/api/v1/carriers/route.ts": {
       "includeFiles": "{data/carrier_aggregates.parquet,data/carrier_risk_signals.parquet,data/national_thresholds.json,node_modules/duckdb/lib/**,node_modules/duckdb/package.json,node_modules/@mapbox/node-pre-gyp/**}"
     }
   }
