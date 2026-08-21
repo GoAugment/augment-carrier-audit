@@ -92,6 +92,11 @@ jobs:
           ZENROWS_API_KEY: ${{ secrets.ZENROWS_API_KEY }}
           FMCSA_WEBKEY: ${{ secrets.FMCSA_WEBKEY }}
           BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+          # Optional — the download falls back to anonymous, which Socrata
+          # throttles harder on multi-GB exports. There is no .env.local on a
+          # runner, so these MUST come through the environment.
+          SOCRATA_API_KEY: ${{ secrets.SOCRATA_API_KEY }}
+          SOCRATA_API_SECRET: ${{ secrets.SOCRATA_API_SECRET }}
         run: pnpm refresh "${{ steps.vintage.outputs.tag }}"
 
       - name: Commit refreshed artifacts

@@ -38,8 +38,12 @@ SNAPSHOT_DATE = int(os.environ.get('FMCSA_SNAPSHOT_DATE', '20260812'))
 WINDOW_START = SNAPSHOT_DATE - 20000  # exactly 24 months earlier
 
 # Non-API feeds (PassProperty, Crash_File, Carrier auth, ActPendInsur) live here.
-# Override with FMCSA_INPUT_DIR for a candidate build from a staging dir.
-INPUT_DIR = Path(os.environ.get("FMCSA_INPUT_DIR", "/Users/art/Downloads"))
+# build_all.py sets FMCSA_INPUT_DIR to the sources dir; the unset default is a
+# deliberate non-path so a direct run fails loudly, matching every other script
+# here. It used to default to a developer's ~/Downloads, which on that one laptop
+# would quietly build from whatever vintage happened to be sitting there.
+INPUT_DIR = Path(os.environ.get(
+    "FMCSA_INPUT_DIR", "/__unset__run-via-build_all.py-or-set-the-env-var__"))
 # The 5 Socrata-refreshable feeds resolve from REFRESH_DIR when set (files use
 # the un-dated refresh_sms_data.py names); otherwise they fall back to INPUT_DIR
 # with the original dated filenames. Lets us refresh inspection/violation/crash/
