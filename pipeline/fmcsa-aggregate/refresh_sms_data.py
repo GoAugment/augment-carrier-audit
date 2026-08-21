@@ -24,8 +24,11 @@ Robustness (these files are 1-6M rows / multi-GB and the connection drops):
     line-count is verified against the expected count; a short file fails the
     attempt and retries.
 
-Creds: SOCRATA_API_KEY / SOCRATA_API_SECRET from the app's .env.local (basic auth;
-raises rate limits / avoids throttling on large exports).
+Creds: SOCRATA_API_KEY / SOCRATA_API_SECRET, read from the ENVIRONMENT first and
+from .env.local only as a local-dev fallback (basic auth; raises rate limits /
+avoids throttling on large exports). Both are OPTIONAL — Socrata serves these
+exports anonymously, just on a stingier throttle — so a missing credential warns
+and continues rather than failing the run.
 """
 from __future__ import annotations
 
@@ -154,12 +157,33 @@ def log(tag: str, msg: str) -> None:
 
 
 def load_auth():
+    """Socrata basic-auth pair, or None to download anonymously.
+
+    Environment first, .env.local second. That order matters: CI has no
+    .env.local at all, and this used to call ENV.read_text() unconditionally —
+    so the very first step of an automated refresh died on FileNotFoundError
+    before a single byte was downloaded, with the credentials sitting right
+    there in the environment.
+
+    Returns None (not a (None, None) tuple) when unset: httpx would treat the
+    tuple as a real basic-auth attempt and send an `Authorization: Basic Og==`
+    header, which is worse than sending nothing.
+    """
     env = {}
-    for line in ENV.read_text().splitlines():
-        m = re.match(r'\s*([A-Z_]+)\s*=\s*"?([^"\n]+)"?', line)
-        if m:
-            env[m.group(1)] = m.group(2)
-    return (env.get("SOCRATA_API_KEY"), env.get("SOCRATA_API_SECRET"))
+    if ENV.exists():
+        for line in ENV.read_text().splitlines():
+            m = re.match(r'\s*([A-Z_]+)\s*=\s*"?([^"\n]+)"?', line)
+            if m:
+                env[m.group(1)] = m.group(2)
+
+    key = os.environ.get("SOCRATA_API_KEY") or env.get("SOCRATA_API_KEY")
+    secret = os.environ.get("SOCRATA_API_SECRET") or env.get("SOCRATA_API_SECRET")
+    if key and secret:
+        return (key, secret)
+
+    log("auth", "! no SOCRATA_API_KEY/SECRET — downloading anonymously "
+                "(works, but throttled harder; expect more retries)")
+    return None
 
 
 def expected_count(c: httpx.Client, did: str, tag: str = "?") -> int | None:
