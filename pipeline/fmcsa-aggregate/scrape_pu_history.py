@@ -153,18 +153,61 @@ USER_AGENT = (
 
 # Polite rate. Empirically FMCSA's SMS site starts returning errors after
 # ~150 successful requests at 5 RPS with 30 concurrent connections. Backing
-# off to 2 RPS with 8 workers keeps the success rate >99%. Runtime is
-# proportionally longer (~3.5h for 25k DOTs) but it actually finishes.
+# off to 2 RPS keeps the success rate >99%.
+#
+# THIS IS THE CEILING WE PROMISE FMCSA. Leave it alone unless you have decided,
+# deliberately, to be less polite. Everything below only affects whether we
+# actually REACH it.
 TARGET_RPS = 2.0
 JITTER = 0.2
-# Concurrency. Lower number = fewer parallel connections from our IP, which
-# FMCSA seems to prefer. At 2 RPS × ~4s latency, 8 workers keeps the
-# pipeline full without saturating.
-CONCURRENCY = 8
+
+# Concurrency — how many requests are in flight, NOT how fast we send them.
+# TARGET_RPS is enforced by AsyncRateLimiter regardless of this number, so
+# raising it cannot exceed the promised rate; it only decides whether we hit it.
+#
+# Actual throughput is CONCURRENCY / latency. The old value of 8 was chosen for
+# ~4s direct-connection latency (8/4s = 2 rps, exactly the cap). Through the
+# ZenRows residential proxy latency is ~13s, so 8 workers delivered just
+# 8/13 = 0.6 rps and the limiter never engaged at all — CI run 32500378060
+# measured exactly that, and its 25,994-DOT scrape projected a 7-hour ETA
+# against a 6-hour hard ceiling on GitHub-hosted runners.
+#
+# 28 workers restores ~2 rps at proxy latency (28/13 = 2.15, so the limiter is
+# once again the binding constraint, which is the point). Override for a
+# direct-connection run, where 8 is still right.
+CONCURRENCY = int(os.environ.get("SCRAPE_PU_CONCURRENCY", "28"))
 
 # Persist intermediate results every N successful scrapes so a kill mid-run
 # doesn't lose progress.
 CHECKPOINT_EVERY = 500
+
+# Wall-clock budget. Unset = unlimited (the local default).
+#
+# A hosted CI job is capped at 6 hours and a full refresh no longer fits, so it
+# has to span runs. Past the deadline we stop starting NEW work, flush what we
+# have, and exit EXIT_PARTIAL — not an error: every completed DOT is in the
+# parquet, and the next run reads it back and scrapes only the remainder.
+#
+# SCRAPE_DEADLINE_EPOCH is absolute (unix seconds) and is what CI sets, because
+# the budget has to be SHARED across both scrape steps. A per-step budget would
+# let step 10 and step 13 each consume the whole allowance and together overrun
+# the job cap — the exact thing this exists to prevent. SCRAPE_BUDGET_MIN stays
+# as a convenience for local runs; when both are set the earlier one wins.
+SCRAPE_BUDGET_MIN = float(os.environ.get("SCRAPE_BUDGET_MIN", "0") or 0)
+SCRAPE_DEADLINE_EPOCH = float(os.environ.get("SCRAPE_DEADLINE_EPOCH", "0") or 0)
+
+
+def _deadline_epoch() -> float | None:
+    """Earliest of the absolute deadline and the relative budget, or None."""
+    candidates = []
+    if SCRAPE_DEADLINE_EPOCH > 0:
+        candidates.append(SCRAPE_DEADLINE_EPOCH)
+    if SCRAPE_BUDGET_MIN > 0:
+        candidates.append(time.time() + SCRAPE_BUDGET_MIN * 60)
+    return min(candidates) if candidates else None
+
+# Distinct from 1 so callers can tell "ran out of time, resume me" from "broke".
+EXIT_PARTIAL = 75
 
 
 # ---------------------------------------------------------------------------
@@ -534,12 +577,21 @@ async def run_scrape(
 ) -> int:
     scraper = AsyncScraper(target_rps=target_rps, concurrency=concurrency)
     results_buffer: list[CrashIndicatorScrape] = []
-    counters = {"ok": 0, "no_data": 0, "err": 0, "completed": 0}
+    counters = {"ok": 0, "no_data": 0, "err": 0, "completed": 0, "deferred": 0}
     start = time.monotonic()
+    deadline = _deadline_epoch()  # epoch seconds, or None for unlimited
     buffer_lock = asyncio.Lock()
     print_lock = asyncio.Lock()
 
     async def process(dot: int) -> None:
+        # asyncio.gather creates every coroutine up front, so past the budget
+        # the remainder drain instantly here instead of queueing on the limiter.
+        # They are simply not scraped — no row is written, so load_existing_
+        # results() won't count them as done and the next run picks them up.
+        if deadline is not None and time.time() >= deadline:
+            async with buffer_lock:
+                counters["deferred"] += 1
+            return
         r = await scraper.fetch_crash_indicator(dot)
         async with buffer_lock:
             results_buffer.append(r)
@@ -593,6 +645,19 @@ async def run_scrape(
         flush=True,
     )
     print(f"Wrote: {output_path}", flush=True)
+
+    if counters["deferred"]:
+        # Flushed above, so everything scraped is durable. Exit non-zero on
+        # purpose: the caller must NOT go on to build a parquet from a partial
+        # scrape and validate it as if it were complete.
+        print(
+            f"\nPARTIAL: time budget elapsed with "
+            f"{counters['deferred']:,} DOTs not yet scraped.\n"
+            f"  {counters['ok']:,} results are saved in {output_path.name}.\n"
+            f"  Re-run to resume — the remaining DOTs are picked up automatically.",
+            flush=True,
+        )
+        return EXIT_PARTIAL
     return 0
 
 

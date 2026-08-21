@@ -106,7 +106,24 @@ step "2/4  Build pipeline"
 # aborts. That made the no-flags invocation — `pnpm refresh <tag>`, i.e. exactly
 # what a scheduled run would use — fail after the ~20 minutes of downloads,
 # while every flagged invocation worked. Found only by running it for real.
+#
+# NOT under `set -e`: exit 75 is "scrape budget elapsed, progress saved, resume
+# me", which must not be treated as a failure — and must not fall through to
+# validation either, because the parquet is built from a partial scrape.
+set +e
 uv run pipeline/fmcsa-aggregate/build_all.py ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"}
+BUILD_STATUS=$?
+set -e
+if [[ "$BUILD_STATUS" == "75" ]]; then
+  step "Refresh $TAG PARTIAL"
+  echo "The scrape hit its time budget. Everything it finished is saved to"
+  echo "data/fmcsa_scrape/ — commit that and re-run to resume where it stopped."
+  echo
+  echo "Skipping validation on purpose: the parquet is built from a partial"
+  echo "scrape, so a green test run here would mean nothing."
+  exit 75
+fi
+[[ "$BUILD_STATUS" == "0" ]] || exit "$BUILD_STATUS"
 
 step "3/4  Validate app contract + rules + snapshots"
 # NOT under `set -e`. Validation failing is exactly when the run report matters
