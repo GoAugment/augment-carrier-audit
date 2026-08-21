@@ -49,6 +49,10 @@ MERGED_DIR = SOURCES_DIR / "merged"  # merge_motus.py output (L&I + Motus splice
 DATA_TAG = os.environ.get("FMCSA_DATA_TAG", "20260812")
 LIB_DATA_DIR = ROOT / "lib" / "data"
 
+# Exit code a scrape step uses for "budget elapsed, progress saved, resume me".
+# Must match scrape_pu_history.EXIT_PARTIAL / fetch_serious_violations.EXIT_PARTIAL.
+EXIT_PARTIAL = 75
+
 
 def _first_existing(*names: str) -> Path:
     """First source file that exists, else the preferred (first) name. Lets a
@@ -475,6 +479,10 @@ def run_step(step: Step) -> int:
     elapsed = (time.monotonic() - start) / 60
     if rc == 0:
         print(f"\n  ✓ {step.name} ok ({elapsed:.1f}m)")
+    elif rc == EXIT_PARTIAL:
+        # Calling this FAILED sends someone hunting for a bug that isn't there.
+        print(f"\n  ◐ {step.name} PARTIAL — time budget elapsed, progress saved "
+              f"({elapsed:.1f}m)")
     else:
         print(f"\n  ✗ {step.name} FAILED (exit {rc}, {elapsed:.1f}m)")
     return rc
@@ -526,6 +534,15 @@ def main() -> int:
     pipeline_start = time.monotonic()
     for step in steps_to_run:
         rc = run_step(step)
+        if rc == EXIT_PARTIAL:
+            # Not a failure: the scrape hit its wall-clock budget and saved
+            # everything it finished. Stop here rather than build a parquet from
+            # a half-scraped input and validate it as though it were whole.
+            print(f"\n◐ Pipeline PARTIAL at step '{step.name}' — ran out of "
+                  f"time budget, progress is saved.\n"
+                  f"  Re-run to resume; '{step.name}' will skip what it already "
+                  f"did and continue.")
+            return rc
         if rc != 0:
             print(f"\n✗ Pipeline FAILED at step '{step.name}'. "
                   f"Fix and resume with: --from {step.name}")

@@ -17,6 +17,15 @@ on:
         description: "Run even if the vintage hasn't changed"
         type: boolean
         default: false
+      attempt:
+        description: "Continuation counter — set automatically when a run resumes a partial scrape. Leave blank."
+        required: false
+
+# contents: write to commit refreshed artifacts; actions: write so a run that
+# runs out of time can dispatch its own continuation.
+permissions:
+  contents: write
+  actions: write
 
 concurrency:
   # Never let two refreshes overlap: they write the same parquets and would
@@ -27,7 +36,11 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 330 # full run is ~150 min; headroom for slow scrapes
+    # GitHub-hosted runners hard-cap a job at 6h (360 min) — this cannot be
+    # raised. A full refresh does NOT fit: run 32500378060 was killed at 330 min
+    # with the crash-indicator scrape only 38% done. That is why the scrape now
+    # works to a deadline and the run continues itself; see SCRAPE_DEADLINE_EPOCH.
+    timeout-minutes: 350
 
     steps:
       - uses: actions/checkout@v4
@@ -86,7 +99,19 @@ jobs:
         if: steps.vintage.outputs.changed == 'true'
         run: pnpm install --frozen-lockfile
 
+      - name: Set the shared scrape deadline
+        if: steps.vintage.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          # ONE absolute instant, shared by both scrape steps. A per-step budget
+          # would hand the full allowance to each of them and overrun the job cap.
+          # 290 min from now, inside a 350-min job: leaves ~60 min for the tail of
+          # the build, the commit and the push after the scrape stops.
+          echo "SCRAPE_DEADLINE_EPOCH=$(( $(date +%s) + 290*60 ))" >> "$GITHUB_ENV"
+          echo "Scrape deadline: $(date -u -d "@$(( $(date +%s) + 290*60 ))" '+%H:%M:%SZ')"
+
       - name: Refresh (download → build → scrape → validate → report)
+        id: refresh
         if: steps.vintage.outputs.changed == 'true'
         env:
           ZENROWS_API_KEY: ${{ secrets.ZENROWS_API_KEY }}
@@ -97,7 +122,20 @@ jobs:
           # runner, so these MUST come through the environment.
           SOCRATA_API_KEY: ${{ secrets.SOCRATA_API_KEY }}
           SOCRATA_API_SECRET: ${{ secrets.SOCRATA_API_SECRET }}
-        run: pnpm refresh "${{ steps.vintage.outputs.tag }}"
+        run: |
+          set +e
+          pnpm refresh "${{ steps.vintage.outputs.tag }}"
+          rc=$?
+          set -e
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          # 75 = "scrape hit the deadline, progress is saved, resume me". Not a
+          # failure: we still want the commit below to bank the partial scrape.
+          if [[ $rc -eq 75 ]]; then
+            echo "partial=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Scrape hit its time budget — banking progress and continuing in a follow-up run."
+            exit 0
+          fi
+          exit $rc
 
       - name: Commit refreshed artifacts
         if: steps.vintage.outputs.changed == 'true'
@@ -105,22 +143,92 @@ jobs:
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
+
+          if [[ "${{ steps.refresh.outputs.partial }}" == "true" ]]; then
+            # ONLY the scrape cache. By the time the scrape runs, steps 2-9 have
+            # already rewritten data/carrier_aggregates.parquet — a `git add -A`
+            # here would put a partially-built, UNVALIDATED app parquet on main,
+            # where a git-integration deploy could pick it up. The scrape parquets
+            # are the expensive thing and the only thing worth banking; everything
+            # else is rebuilt from scratch by the continuation run anyway.
+            git add data/fmcsa_scrape
+            git checkout -- . 2>/dev/null || true
+            git clean -fd data/refresh_reports 2>/dev/null || true
+          else
+            git add -A
+          fi
+
           if git diff --cached --quiet; then
             echo "::warning::Refresh produced no file changes — unexpected for a new vintage."
             exit 0
           fi
-          git commit -m "data: FMCSA refresh ${{ steps.vintage.outputs.tag }} (automated)
+
+          if [[ "${{ steps.refresh.outputs.partial }}" == "true" ]]; then
+            # THE POINT OF ALL THIS: bank the scrape. Every DOT already fetched
+            # lives in data/fmcsa_scrape/*.parquet, and the next run reads it back
+            # and scrapes only the remainder. Without this commit the runner is
+            # torn down and hours of scraping are simply lost — which is exactly
+            # what happened to run 32500378060.
+            MSG="data: FMCSA refresh ${{ steps.vintage.outputs.tag }} — partial scrape (automated)
+
+          Scrape hit its wall-clock budget. This commit banks the DOTs fetched so
+          far so a continuation run resumes instead of restarting. NOT validated
+          and NOT promoted: the parquet here is built from a partial scrape."
+          else
+            MSG="data: FMCSA refresh ${{ steps.vintage.outputs.tag }} (automated)
 
           Ran by .github/workflows/refresh.yml. Validation passed (check:parquet,
           rules, snapshots) and drift stayed within tolerance, or this commit
           would not exist — refresh.sh exits non-zero otherwise.
 
           Report: data/refresh_reports/refresh_${{ steps.vintage.outputs.tag }}.md"
-          git push
+          fi
+          git commit -m "$MSG"
+
+          # A run can last 5+ hours, so main may well have moved under us — and a
+          # bare push would throw away the whole run at the finish line. Retry by
+          # rebasing. The checkout is shallow (10 GB of history; fetch-depth 0 is
+          # not an option), so deepen first or there is no common ancestor.
+          for attempt in 1 2 3; do
+            if git push; then exit 0; fi
+            echo "push rejected (attempt $attempt) — deepening and rebasing onto origin/main"
+            git fetch --deepen=50 origin main || git fetch origin main
+            if ! git rebase origin/main; then
+              git rebase --abort || true
+              echo "::error::Rebase onto origin/main conflicted — refusing to force. Resolve by hand."
+              exit 1
+            fi
+          done
+          echo "::error::Could not push after 3 rebase attempts."
+          exit 1
+
+      - name: Continue in a follow-up run
+        if: steps.vintage.outputs.changed == 'true' && steps.refresh.outputs.partial == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ATTEMPT="${{ github.event.inputs.attempt }}"
+          ATTEMPT="${ATTEMPT:-1}"
+          NEXT=$(( ATTEMPT + 1 ))
+          # Bound the chain. If the scrape genuinely cannot finish in 6 attempts
+          # (~29h of budget) something is wrong and looping forever would just
+          # burn runner time and ZenRows credits while hiding it.
+          if (( NEXT > 6 )); then
+            echo "::error::Scrape still incomplete after $ATTEMPT attempts — stopping the chain. Investigate before re-running."
+            exit 1
+          fi
+          echo "::notice::Dispatching continuation $NEXT/6 for vintage ${{ steps.vintage.outputs.tag }}."
+          # Pin the tag: the continuation must extend THIS vintage's scrape, not
+          # re-detect and possibly start a different one mid-chain. force=true
+          # because refresh_metrics.json may already name this tag.
+          gh workflow run refresh.yml --ref main \
+            -f tag="${{ steps.vintage.outputs.tag }}" \
+            -f force=true \
+            -f attempt="$NEXT"
 
       - name: Promote to production
-        if: steps.vintage.outputs.changed == 'true'
+        if: steps.vintage.outputs.changed == 'true' && steps.refresh.outputs.partial != 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}

@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import io
 import os
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -57,6 +58,33 @@ UA = "augment-carrier-audit-research/0.1 (+research@goaugment.com; polite scrape
 # table rather than protecting us from the WAF.
 CONCURRENCY = int(os.environ.get("SCRAPE_CONCURRENCY", "8"))
 CHECKPOINT_EVERY = 300
+
+# Wall-clock budget; 0/unset = unlimited. See scrape_pu_history for the why: a
+# hosted CI job is capped at 6h and the full refresh no longer fits, so the
+# scrape spans runs. Past the budget we cancel outstanding work, checkpoint, and
+# exit EXIT_PARTIAL — every finished DOT is durable and the resume logic above
+# (status file: ok / no_data are done) picks up the rest next run.
+#
+# NOTE the asymmetry with scrape_pu_history: that scraper has a global RPS
+# limiter, so its CONCURRENCY only governs whether it reaches a fixed ceiling.
+# This one has NO rate cap — here CONCURRENCY *is* the request rate, so raising
+# SCRAPE_CONCURRENCY makes us genuinely more aggressive. Left at 8 deliberately.
+#
+# SCRAPE_DEADLINE_EPOCH is absolute (unix seconds) and is what CI sets, so the
+# budget is SHARED with the other scrape step rather than granted twice.
+SCRAPE_BUDGET_MIN = float(os.environ.get("SCRAPE_BUDGET_MIN", "0") or 0)
+SCRAPE_DEADLINE_EPOCH = float(os.environ.get("SCRAPE_DEADLINE_EPOCH", "0") or 0)
+EXIT_PARTIAL = 75
+
+
+def _deadline_epoch() -> float | None:
+    """Earliest of the absolute deadline and the relative budget, or None."""
+    candidates = []
+    if SCRAPE_DEADLINE_EPOCH > 0:
+        candidates.append(SCRAPE_DEADLINE_EPOCH)
+    if SCRAPE_BUDGET_MIN > 0:
+        candidates.append(time.time() + SCRAPE_BUDGET_MIN * 60)
+    return min(candidates) if candidates else None
 
 
 def candidate_dots() -> list[int]:
@@ -217,6 +245,8 @@ async def main():
 
     f = Fetcher()
     t0 = time.monotonic(); ok = nod = err = 0
+    deadline = _deadline_epoch()  # epoch seconds, or None for unlimited
+    deferred = 0
     try:
         tasks = [asyncio.create_task(f.fetch(d)) for d in todo]
         for i, coro in enumerate(asyncio.as_completed(tasks), 1):
@@ -231,6 +261,19 @@ async def main():
                 rps = i / (time.monotonic() - t0)
                 print(f"  {i}/{len(todo)}  ok={ok} nodata={nod} err={err}  {rps:.1f}/s  "
                       f"ETA {(len(todo)-i)/rps/60:.0f}m", flush=True)
+            if deadline is not None and time.time() >= deadline:
+                # Cancel rather than drain: unlike the PU scrape these are all
+                # real in-flight requests, and we want the budget to mean the
+                # wall clock, not "however long the tail takes to finish".
+                pending = [t for t in tasks if not t.done()]
+                deferred = len(pending)
+                for t in pending:
+                    t.cancel()
+                # Reap them so the loop's exit doesn't surface CancelledError.
+                await asyncio.gather(*tasks, return_exceptions=True)
+                print(f"\nPARTIAL: time budget elapsed with "
+                      f"{deferred:,} DOTs unscraped.", flush=True)
+                break
     finally:
         await f.close()
         write_checkpoint(all_rows, status)
@@ -241,6 +284,11 @@ async def main():
         print("\nSerious Violations by BASIC:")
         print(sv.group_by("basic").len().sort("len", descending=True))
 
+    if deferred:
+        print(f"  Re-run to resume — {deferred:,} DOTs remain.", flush=True)
+        return EXIT_PARTIAL
+    return 0
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    sys.exit(asyncio.run(main()))
