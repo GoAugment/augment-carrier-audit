@@ -10,6 +10,12 @@ out
 .DS_Store
 *.tsbuildinfo
 
+# Python bytecode. Matters more than usual here: the refresh workflow commits
+# its results with `git add -A`, so without this every automated run drops a
+# pile of .pyc files into the data commit.
+__pycache__/
+*.pyc
+
 # pipeline build artifacts (the committed copy lives at data/)
 pipeline/fmcsa-aggregate/*.parquet
 pipeline/fmcsa-aggregate/national_thresholds.json
