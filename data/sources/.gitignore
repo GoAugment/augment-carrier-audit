@@ -3,3 +3,12 @@
 *
 !.gitignore
 !README.md
+
+# EXCEPTION: the closed-enforcement export (~23 KB) is the one input with no
+# download step — it's a manual export from FMCSA's portal, so a fresh checkout
+# (a CI runner) has no way to obtain it and add_enforcement.py is not optional.
+# Committing it is what makes an unattended refresh possible at all. It is
+# public FMCSA data. Refresh it per data/sources/README.md; the filename carries
+# its export date, so a newer export needs FMCSA_ENFORCEMENT_XLSX in build_all
+# repointed at it.
+!closed_enforcement_cases_*.xlsx

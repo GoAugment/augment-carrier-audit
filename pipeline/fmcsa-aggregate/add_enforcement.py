@@ -21,6 +21,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import sys
 from pathlib import Path
 
 import polars as pl
@@ -39,6 +40,18 @@ T1_OUT_MD = T1_DIR / "enforcement_t1.md"
 
 
 def load_enforcement() -> pl.DataFrame:
+    if not ENF_XLSX.exists():
+        # This step is NOT optional — the columns it adds are in the parquet
+        # schema check and several rule fixtures — so a missing file has to be
+        # loud and self-explanatory rather than a polars traceback. Unlike every
+        # other input here, this one has no download step: it is a manual export
+        # from FMCSA's portal, which is why it is committed (see
+        # data/sources/.gitignore).
+        sys.exit(
+            f"[add_enforcement] enforcement export not found: {ENF_XLSX}\n"
+            "  It has no automated download — export closed enforcement cases\n"
+            "  per data/sources/README.md, or point FMCSA_ENFORCEMENT_XLSX at a copy."
+        )
     # File has its real header on row 2 (row 1 has descriptive labels).
     # Read with header_row=1 (0-indexed) so the second row becomes headers.
     raw = pl.read_excel(ENF_XLSX, read_options={"header_row": 1})
