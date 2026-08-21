@@ -361,9 +361,28 @@ def fetch_dataset(did: str, fname: str, out_dir: Path, auth, expected: int | Non
             else f"on disk {have:,}, expected count unknown — re-download")
     log(fname, f"({did}) expected {expected:,} rows …" if expected is not None
         else f"({did}) starting (row count unknown) …")
-    fetch = download_paginated if did in PAGINATED else download_one
     with _client(auth) as c:
-        return fetch(c, did, dest, expected)
+        if did in PAGINATED:
+            return download_paginated(c, did, dest, expected)
+        if download_one(c, did, dest, expected):
+            return True
+        # Streaming exhausted all MAX_ATTEMPTS. Rather than fail the whole
+        # refresh, drop to the paged reader — which is demonstrably sturdier on
+        # exactly this failure: Socrata closes big chunked exports mid-body
+        # ("incomplete chunked read"), and a stream restarts from zero each
+        # time while paging only loses the current 250k-row window.
+        #
+        # This is not hypothetical. In CI, SMS_Input_-_Inspection.csv (1.0 GB)
+        # burned all 6 attempts and sank the run, while Company_Census (1.5 GB)
+        # and Crash_File (1.85 GB) both completed via paging in the same run.
+        # The size cutoff that put those three in PAGINATED and left Inspection
+        # and Violation (1.07 GB) streaming is arbitrarily close to the line.
+        #
+        # Kept as a FALLBACK, not the default: paging cost Crash_File 47m
+        # against ~4m for a clean stream, so it should be what we do when the
+        # fast path fails, not instead of it.
+        log(fname, "streaming gave up — retrying with the paged reader")
+        return download_paginated(c, did, dest, expected)
 
 
 def main() -> None:
