@@ -275,6 +275,65 @@ function daysAgo(isoDate: string | null): number | null {
   return (Date.now() - d) / (1000 * 60 * 60 * 24);
 }
 
+/**
+ * Damerau-Levenshtein distance — edits including a transposition of two
+ * adjacent characters. Transpositions matter here specifically: the commonest
+ * DOT-number typo in FMCSA's data is two digits swapped (102413 -> 102143), and
+ * plain Levenshtein scores that as 2, indistinguishable from a real difference.
+ */
+function editDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const d: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) d[i][0] = i;
+  for (let j = 0; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+      }
+    }
+  }
+  return d[m][n];
+}
+
+/**
+ * Does FMCSA's prior-revoke flag name a predecessor that is genuinely ANOTHER
+ * carrier?
+ *
+ * The flag alone is not enough, and neither is "predecessor != this DOT". A
+ * predecessor one edit away from the carrier's own number is a data-entry error,
+ * not a chameleon: FMCSA typed the same DOT and fat-fingered a digit. Measured
+ * against the shipped 20260812 parquet, 87 of the 121 carriers this rule fired
+ * on — 72% — were exactly that, e.g.
+ *
+ *   102413 -> 102143   (transposition)
+ *   524520 -> 524250   (transposition)
+ *   763359 -> 763559   (substitution)
+ *   760961 -> 76091    (dropped digit)
+ *
+ * Every one of those was being reported as a Critical chameleon verdict on a
+ * carrier whose only offence was FMCSA's typing. The guard is correct in every
+ * vintage and is independent of the Aug-2026 blanking described at the call
+ * sites: 28 carriers remain at edit-distance >= 3, which is the real signal.
+ *
+ * Deliberately conservative at <= 1. Distance 2 (6 carriers) is ambiguous — a
+ * sloppier typo or a genuinely different DOT — and we would rather keep a
+ * questionable flag than silently drop a real successor link.
+ */
+function priorRevokeSuccessor(c: FmcsaCarrier): boolean {
+  if (!c.priorRevokeFlag) return false;
+  if (c.priorRevokeDotNumber == null) return false;
+  if (c.priorRevokeDotNumber === c.dotNumber) return false;
+  // 0 = "predecessor not recorded". Still a real flag; there is just no number
+  // to compare, so there is no typo to screen for.
+  if (c.priorRevokeDotNumber === 0) return true;
+  if (c.dotNumber == null) return true;
+  return editDistance(String(c.priorRevokeDotNumber), String(c.dotNumber)) > 1;
+}
+
 function statTier(value: number, cuts: TierCutoffs): AxisStatus {
   // Tightened from the original P85/P90/P95 ladder to flag only P95+, the
   // P85/P90 tiers produced too many marginal small-fleet false positives
@@ -629,16 +688,12 @@ function computeRiskScore(
         : "Recent revocation, since reinstated",
       `Authority was involuntarily revoked ${c.mostRecentInvoluntaryDate} but has since been reinstated — FMCSA shows it currently active (status_code=A). ${c.involuntaryRevocations}× involuntary revocation${c.involuntaryRevocations === 1 ? "" : "s"} on record; a pattern of authority/insurance lapses. Confirm a current COI and watch for re-lapse.`
     );
-  } else if (
-    c.priorRevokeFlag &&
-    c.priorRevokeDotNumber != null &&
-    c.priorRevokeDotNumber !== c.dotNumber
-  ) {
+  } else if (priorRevokeSuccessor(c)) {
     add(
       24,
       "Identity / chameleon",
       getRule("chameleon-prior-revoke").label,
-      c.priorRevokeDotNumber > 0
+      (c.priorRevokeDotNumber ?? 0) > 0
         ? `FMCSA links this carrier to previously revoked DOT ${c.priorRevokeDotNumber}.`
         : "FMCSA links this carrier to a previously revoked predecessor."
     );
@@ -1928,20 +1983,42 @@ function scoreCarrier(
   // aged-out event (could be 10+ years old). Carriers with current revocation
   // activity are handled by the existing classifyRevocation logic.
   //
-  // True chameleon (prior_revoke_dot_number !== this DOT) stays Critical,
-  // successor relationships are identity-based and don't expire. Even an
-  // old successor relationship is a signal that this DOT was re-incorporated
-  // to escape a prior carrier's safety history.
-  if (
-    c.priorRevokeFlag &&
-    c.priorRevokeDotNumber != null &&
-    c.priorRevokeDotNumber !== c.dotNumber
-  ) {
+  // A true successor relationship is identity-based and doesn't expire, so even
+  // an old one signals this DOT was re-incorporated to escape a prior carrier's
+  // safety history. But it NO LONGER SETS CRITICAL ON ITS OWN.
+  //
+  // FMCSA blanked PRIOR_REVOKE_FLAG / PRIOR_REVOKE_DOT_NUMBER for ~97% of
+  // carriers in the 2026-08-13 Company Census (verified server-side against
+  // Socrata az4n-8mr2: 'Y' fell 28,971 -> 501, total row count unchanged, so
+  // this is upstream and not a download or parsing fault).
+  //
+  // What that does to this rule, counted rather than guessed:
+  //
+  //             fires on   pred=0   distinct predecessor
+  //   20260812     1,003      969    34  (+87 typos, now guarded out)
+  //   20260813        40       39     1
+  //
+  // A 96% collapse in the population a signal draws from is not something to
+  // keep pointing at the tool's most severe verdict. 39 of the 40 survivors are
+  // "predecessor not recorded", which asserts a successor link without naming
+  // one, and the 40th is edit-distance 2 from its own DOT — plausibly just a
+  // sloppier typo than the guard catches.
+  //
+  // So it no longer sets Critical alone. It still scores, still appears in the
+  // report, and still feeds the chameleon cluster below, which is what escalates
+  // when something CORROBORATES it. Framing the gate as "needs corroboration"
+  // rather than hardcoding an opt-out means it recovers by itself if FMCSA
+  // restores the field.
+  if (priorRevokeSuccessor(c)) {
     // priorRevokeFlag is the signal; the predecessor DOT is just for the detail.
     // It's often recorded as 0 (unknown), flag the chameleon either way, but
     // don't print "prior DOT: 0".
-    revocation.cell.status = "critical";
-    const detail = c.priorRevokeDotNumber > 0
+    // Cap at "high" rather than "critical", and never DOWNGRADE something another
+    // rule already escalated — statusRank keeps whichever is worse.
+    if (statusRank("high") > statusRank(revocation.cell.status)) {
+      revocation.cell.status = "high";
+    }
+    const detail = (c.priorRevokeDotNumber ?? 0) > 0
       ? `FMCSA flags this DOT as a re-incarnation of a previously-revoked predecessor (prior DOT: ${c.priorRevokeDotNumber}).`
       : `FMCSA flags this DOT as a re-incarnation of a previously-revoked carrier (predecessor DOT not recorded).`;
     revocation.cell.detail = revocation.cell.detail
@@ -2315,13 +2392,9 @@ function scoreCarrier(
   // Only count prior-revoke as a chameleon signal when it points to a
   // DIFFERENT DOT (true successor relationship). Self-revoke is a separate
   // pattern (carrier had its own authority pulled then reinstated).
-  if (
-    c.priorRevokeFlag &&
-    c.priorRevokeDotNumber != null &&
-    c.priorRevokeDotNumber !== c.dotNumber
-  ) {
+  if (priorRevokeSuccessor(c)) {
     chameleonSignals.push(
-      c.priorRevokeDotNumber > 0
+      (c.priorRevokeDotNumber ?? 0) > 0
         ? `FMCSA prior-revoke flag (prior DOT ${c.priorRevokeDotNumber})`
         : `FMCSA prior-revoke flag (predecessor not recorded)`
     );

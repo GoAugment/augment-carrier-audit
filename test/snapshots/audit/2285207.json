@@ -2,7 +2,7 @@
   "dot": 2285207,
   "reasonNote": "CRITICAL: prior-revoke chameleon",
   "carrierName": "OLE SOUTHERN TRUCKING INC",
-  "riskLevel": "Critical",
+  "riskLevel": "High",
   "riskScore": 37,
   "riskTier": "Medium",
   "riskContributions": [
@@ -22,7 +22,7 @@
     "controlledSubstances": "na",
     "vehicleOos": "elevated",
     "hazmatOos": "na",
-    "revocations": "critical",
+    "revocations": "high",
     "authority": "clean",
     "insurance": "clean"
   }

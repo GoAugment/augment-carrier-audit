@@ -228,13 +228,23 @@ export const RULES: Rule[] = [
     category: "chameleon",
     label: "FMCSA prior-revoke flag (chameleon)",
     definition:
-      "FMCSA's own PRIOR_REVOKE_FLAG marks this DOT as a re-incarnation of a previously-revoked predecessor DOT. This is the strongest single chameleon signal available, no inference required, FMCSA explicitly linked the active DOT to its revoked predecessor. The new authority exists specifically to escape the predecessor's enforcement history.",
+      "FMCSA's own PRIOR_REVOKE_FLAG marks this DOT as a re-incarnation of a previously-revoked predecessor DOT — FMCSA's own link, no inference required. NOTE: FMCSA blanked this field for ~97% of carriers in the 2026-08-13 census, taking the rule from ~1,000 carriers to 40 nationally, so it no longer carries a Critical verdict on its own; it needs corroboration from another chameleon signal.",
     thresholds: {
-      critical: "FMCSA PRIOR_REVOKE_FLAG = Y AND PRIOR_REVOKE_DOT_NUMBER points to a different DOT.",
+      high: "FMCSA PRIOR_REVOKE_FLAG = Y AND PRIOR_REVOKE_DOT_NUMBER is either unrecorded (0) or a DOT more than one edit away from this carrier's own. Capped at High since the 2026-08 blanking; reaches Critical only via the chameleon cluster.",
     },
     fixtures: {
-      critical: { dot: 12311, reason: "CLOVERLEAF GARAGE INC: prior_revoke_flag=Y with a distinct predecessor DOT." },
-      none: { dot: 53467, reason: "Werner: no prior-revoke flag." },
+      // Pinned to a carrier flagged in BOTH the 20260812 and 20260813 vintages,
+      // so a refresh doesn't rot it. The previous fixture (DOT 12311) lost its
+      // flag entirely in the 2026-08-13 blanking.
+      high: { dot: 321804, reason: "FMH MATERIAL HANDLING SOLUTIONS: prior_revoke_flag=Y, predecessor unrecorded (0)." },
+      none: [
+        { dot: 53467, reason: "Werner: no prior-revoke flag." },
+        // Guards the typo screen: FMCSA recorded 102143 as the predecessor of
+        // 102413 — a digit transposition of the carrier's own DOT, not a
+        // successor. 87 carriers in the 20260812 parquet were being called
+        // Critical chameleons on exactly this kind of data-entry error.
+        { dot: 102413, reason: "Predecessor 102143 is a transposition of this DOT — a typo, not a chameleon link." },
+      ],
     },
   },
   // chameleon-cluster REMOVED: the "2+ independent signals → Critical" escalator
