@@ -138,11 +138,46 @@ jobs:
           exit $rc
 
       - name: Commit refreshed artifacts
-        if: steps.vintage.outputs.changed == 'true'
+        # always(): a CRASH must still bank the scrape. Without this the step is
+        # skipped on any non-zero exit — which is what happened to run
+        # 32495277181 — and hours of scraping die with the runner. The scrape
+        # parquet's own CHECKPOINT_EVERY only helps WITHIN a job; the runner disk
+        # is ephemeral, so durability means a commit or nothing.
+        if: always() && steps.vintage.outputs.changed == 'true'
         run: |
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          CRASHED=""
+          if [[ "${{ steps.refresh.outcome }}" != "success" ]]; then
+            CRASHED="true"
+          fi
+
+          if [[ -n "$CRASHED" ]]; then
+            # Same scoping rule as the partial path, and for the same reason: the
+            # app parquet may be half-rewritten. Bank the scrape, nothing else.
+            # No continuation is dispatched — a crash wants a human, not a retry
+            # loop. The next run (manual or the weekly cron) resumes from here.
+            git add data/fmcsa_scrape
+            git checkout -- . 2>/dev/null || true
+            if git diff --cached --quiet; then
+              echo "::notice::Run failed with no new scrape progress to bank."
+              exit 0
+            fi
+            git commit -m "data: bank partial scrape after a failed refresh ${{ steps.vintage.outputs.tag }}
+
+          The refresh step exited non-zero. This commit preserves the DOTs already
+          scraped so the next run resumes instead of restarting. Nothing here is
+          validated or promoted."
+            for attempt in 1 2 3; do
+              git push && break
+              git fetch --deepen=50 origin main || git fetch origin main
+              git rebase origin/main || { git rebase --abort || true; break; }
+            done
+            echo "::notice::Banked partial scrape progress from a failed run."
+            exit 0
+          fi
 
           if [[ "${{ steps.refresh.outputs.partial }}" == "true" ]]; then
             # ONLY the scrape cache. By the time the scrape runs, steps 2-9 have
