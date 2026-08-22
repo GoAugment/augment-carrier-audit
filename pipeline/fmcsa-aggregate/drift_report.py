@@ -84,15 +84,16 @@ SPEC: dict[str, dict] = {
     "shutdown_sibling_any":       {"tol": 0.30},
     "shutdown_sibling_high":      {"tol": 0.40},
     # --- safety volume (should drift gently as the 24mo window rolls) ---
-    "sum_crashes":                {"tol": 0.20, "must_move": True},
-    "sum_fatal_crashes":          {"tol": 0.25, "must_move": True},
-    "sum_driver_inspections":     {"tol": 0.20, "must_move": True},
-    "sum_vehicle_inspections":    {"tol": 0.20, "must_move": True},
+    # `family` makes must_move cohort-aware — see the check for why.
+    "sum_crashes":                {"tol": 0.20, "must_move": True, "family": "sms_volume"},
+    "sum_fatal_crashes":          {"tol": 0.25, "must_move": True, "family": "sms_volume"},
+    "sum_driver_inspections":     {"tol": 0.20, "must_move": True, "family": "sms_volume"},
+    "sum_vehicle_inspections":    {"tol": 0.20, "must_move": True, "family": "sms_volume"},
     "crash_indicator_alert":      {"tol": 0.35},
     # --- derived lookup tables (the class that silently froze) ---
-    "insurer_base_rate":          {"tol": 0.40, "must_move": True},
+    "insurer_base_rate":          {"tol": 0.40, "must_move": True, "family": "derived_tables"},
     "insurer_count":              {"tol": 0.35},
-    "zip_base_rate":              {"tol": 0.40, "must_move": True},
+    "zip_base_rate":              {"tol": 0.40, "must_move": True, "family": "derived_tables"},
     "zip_count":                  {"tol": 0.35},
     "lane_national_injury_pct":   {"tol": 0.15},
     "lane_state_count":           {"tol": 0.50},
@@ -103,12 +104,47 @@ SPEC: dict[str, dict] = {
     # above passed. Error COUNTS get a tight tolerance and a hard zero-tolerance
     # ceiling, because a scrape that silently stops working is indistinguishable
     # from one that found nothing.
+    #
+    # `floor`: below this many errors the RELATIVE check is noise and nothing
+    # else — 15 -> 38 reads as "+153%" and 70 -> 4 as "-94%", and both are a
+    # rounding error against a 26,000-DOT scrape. The 20260813 refresh raised
+    # exactly those two as errors while the scrape was in fact healthy. The
+    # ceiling above is the real guard here; the ratio only earns its keep once
+    # the counts are big enough to mean something. Deliberately NOT a global
+    # rule: insurer_count (34), zip_count (90) and lane_state_count (13) are
+    # small AND meaningful, and a percentage move in those matters.
     "scrape_sv_ok":               {"tol": 0.25},
-    "scrape_sv_error":            {"tol": 0.50, "ceiling": 150},
+    "scrape_sv_error":            {"tol": 0.50, "ceiling": 150, "floor": 100},
     "scrape_ci_ok":               {"tol": 0.20},
-    "scrape_ci_error":            {"tol": 0.50, "ceiling": 400},
+    "scrape_ci_error":            {"tol": 0.50, "ceiling": 400, "floor": 100},
     # --- vintage: not a measurement, a tripwire ---
     "snapshot_date":              {"exact_must_move": True},
+}
+
+# ONE-TIME ACKNOWLEDGED SHIFTS.
+#
+# For a real, understood, verified upstream change that no tolerance should be
+# widened to accommodate. Widening `tol` would blind the check permanently;
+# `--init` accepts every metric at once and needs a human at a terminal, which an
+# unattended refresh does not have. So an entry here permits EXACTLY ONE
+# transition — pinned to the previous value and a narrow landing window — and
+# anything else still errors.
+#
+# Delete the entry once the new baseline is committed; it is dead weight after
+# that, and leaving it is how a tripwire quietly stops being one.
+ACKNOWLEDGED: dict[str, dict] = {
+    "prior_revoke_flag": {
+        "from": 11105,
+        "to_range": (250, 600),
+        "because": (
+            "FMCSA blanked PRIOR_REVOKE_FLAG/_DOT_NUMBER for ~97% of carriers in "
+            "the 2026-08-13 Company Census. Verified server-side against Socrata "
+            "az4n-8mr2 ($group=prior_revoke_flag): 'Y' 28,971 -> 501 with the total "
+            "row count unchanged, so it is upstream and not our download. The "
+            "chameleon rule was capped off Critical in response (see "
+            "priorRevokeSuccessor in lib/analyzer.ts)."
+        ),
+    },
 }
 
 
@@ -282,11 +318,51 @@ def compare(new: dict, old: dict) -> list[tuple[str, str, str]]:
             continue
 
         if spec.get("must_move") and a == b:
+            # Cohort check. This tripwire exists for "the whole read was stale"
+            # — a frozen window or a source directory that never got updated —
+            # and that failure freezes EVERY metric in the family at once. A
+            # single member sitting still while its siblings move is a different
+            # thing: proof the read was fresh, and one upstream file that
+            # genuinely didn't change.
+            #
+            # The 20260813 refresh is the case in point. Crashes moved +0.9% and
+            # fatal crashes +1.0% — so the sources were definitely re-read — but
+            # both inspection sums came back identical to the digit, and were
+            # reported as a stale read. The real cause was on OUR side: the
+            # 20260812 baseline was built while downloads staged to
+            # refresh_<stamp>/ and the build read data/sources/ (fixed in
+            # 5574cb8), making it a mixed-vintage reference.
+            family = spec.get("family")
+            siblings_moved = family is not None and any(
+                k != key
+                and s.get("family") == family
+                and k in old and k in new
+                and old[k] != new[k]
+                for k, s in SPEC.items()
+            )
             issues.append((
-                "ERROR", key,
-                f"IDENTICAL to last refresh ({b}) — expected to move; suspect a frozen "
-                f"window or a stale source read",
+                "WARN" if siblings_moved else "ERROR", key,
+                f"IDENTICAL to last refresh ({b})"
+                + (
+                    f" — but other {family} metrics moved, so the read was fresh and "
+                    f"this source simply didn't change upstream"
+                    if siblings_moved else
+                    " — expected to move; suspect a frozen window or a stale source read"
+                ),
             ))
+            continue
+
+        ack = ACKNOWLEDGED.get(key)
+        if ack is not None and a == ack["from"] and ack["to_range"][0] <= b <= ack["to_range"][1]:
+            issues.append((
+                "WARN", key,
+                f"{a:,} -> {b:,} — acknowledged one-time shift, not a regression. {ack['because']}",
+            ))
+            continue
+
+        # Below `floor` a percentage is noise; the ceiling above is the real guard.
+        floor = spec.get("floor")
+        if floor is not None and abs(a) < floor and abs(b) < floor:
             continue
 
         tol = spec.get("tol")
