@@ -2,7 +2,7 @@
   "dot": 12311,
   "reasonNote": "CRITICAL: prior-revoke chameleon",
   "carrierName": "CLOVERLEAF GARAGE INC",
-  "riskLevel": "Critical",
+  "riskLevel": "High",
   "riskScore": 32,
   "riskTier": "Low",
   "riskContributions": [
@@ -21,7 +21,7 @@
     "controlledSubstances": "na",
     "vehicleOos": "na",
     "hazmatOos": "na",
-    "revocations": "critical",
+    "revocations": "high",
     "authority": "clean",
     "insurance": "na"
   }
