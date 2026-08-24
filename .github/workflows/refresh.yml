@@ -154,11 +154,23 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: failed-build-${{ steps.vintage.outputs.tag }}
+          # A build is only diagnosable as a SET. The parquet alone is not
+          # enough: the run also regenerates national thresholds and the
+          # zip/insurer lookup tables, and pairing a new parquet with the
+          # previously-committed thresholds produces verdicts that match neither
+          # vintage. That mismatch cost a wrong conclusion once already —
+          # replaying 20260813's parquet against old thresholds showed a fixture
+          # failure that says nothing about either build on its own.
           path: |
             data/carrier_aggregates.parquet
             data/carrier_risk_signals.parquet
             data/refresh_metrics.json
+            data/national_thresholds.json
+            data/national_thresholds_v2.json
             data/refresh_reports/
+            lib/data/zip-risk.json
+            lib/data/insurer-risk.json
+            lib/data/lane-liability.json
           retention-days: 14
           if-no-files-found: warn
 
