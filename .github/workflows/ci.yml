@@ -51,6 +51,8 @@ jobs:
           node -e "try{require('duckdb');console.log('duckdb native binding: OK')}catch(e){console.log('duckdb load FAILED:',e.message)}"
           node -e "console.log('tsx', require('tsx/package.json').version)"
           pnpm ls --depth 0 2>/dev/null | head -25
+          echo "--- analyzer path probe ---"
+          pnpm tsx --env-file-if-exists=.env.local scripts/debug_analyze_probe.ts
 
       - name: App contract + rules + snapshots
         env:
