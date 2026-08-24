@@ -27,7 +27,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
+          # cache: pnpm  <- TEMPORARILY DISABLED: testing whether a restored
+          # pnpm store explains 26 fixture failures that reproduce ONLY on a
+          # GitHub runner (clean in a node:20 container with a fresh install).
 
       - uses: astral-sh/setup-uv@v5
 
@@ -42,7 +44,13 @@ jobs:
         run: uv run pipeline/fmcsa-aggregate/check_committed_data.py
 
       - name: TEMPORARY env-parity diagnostic
-        run: node scripts/debug_env_parity.mjs
+        run: |
+          node scripts/debug_env_parity.mjs
+          echo "--- dependency provenance ---"
+          node -e "console.log('duckdb', require('duckdb/package.json').version)"
+          node -e "try{require('duckdb');console.log('duckdb native binding: OK')}catch(e){console.log('duckdb load FAILED:',e.message)}"
+          node -e "console.log('tsx', require('tsx/package.json').version)"
+          pnpm ls --depth 0 2>/dev/null | head -25
 
       - name: App contract + rules + snapshots
         env:
