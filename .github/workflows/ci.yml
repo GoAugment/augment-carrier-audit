@@ -1,0 +1,50 @@
+name: CI
+
+# The repo had NO pull-request CI at all. That is how an unvalidated parquet
+# reached main in #80 and was auto-deployed to production for ~2 minutes: nothing
+# looked at the diff before it merged.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  # A force-push or a quick follow-up commit should cancel the older check.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: astral-sh/setup-uv@v5
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Committed parquet matches committed metrics
+        # The specific guard for the #80 incident. Cheap, and it runs before the
+        # merge that would deploy rather than after it.
+        run: uv run pipeline/fmcsa-aggregate/check_committed_data.py
+
+      - name: App contract + rules + snapshots
+        env:
+          # Identity signals degrade gracefully without this, but the fixtures
+          # that depend on them would then pass for the wrong reason.
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+          FMCSA_WEBKEY: ${{ secrets.FMCSA_WEBKEY }}
+        run: pnpm test
