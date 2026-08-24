@@ -137,6 +137,31 @@ jobs:
           fi
           exit $rc
 
+      - name: Preserve the built artifacts when the run fails
+        # MUST run before "Commit refreshed artifacts". That step does
+        # `git checkout -- .` to stop a half-built parquet reaching main, which
+        # reverts data/carrier_aggregates.parquet to the committed vintage. When
+        # this step sat after it (as originally written in #77) the upload
+        # succeeded and shipped the WRONG FILE: run 32754995868 produced an
+        # artifact whose refresh_metrics.json read snapshot_date=20260812, the
+        # vintage we already had. A green check on an upload step says a file
+        # was uploaded, not that it was the file you meant.
+        #
+        # A failed run is the only time these are interesting, and it used to be
+        # the only time we discarded them. Uploaded, not committed: unlike the
+        # scrape cache this is a REJECTED build with no business on main.
+        if: always() && steps.vintage.outputs.changed == 'true' && steps.refresh.outcome != 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-build-${{ steps.vintage.outputs.tag }}
+          path: |
+            data/carrier_aggregates.parquet
+            data/carrier_risk_signals.parquet
+            data/refresh_metrics.json
+            data/refresh_reports/
+          retention-days: 14
+          if-no-files-found: warn
+
       - name: Commit refreshed artifacts
         # always(): a CRASH must still bank the scrape. Without this the step is
         # skipped on any non-zero exit — which is what happened to run
@@ -274,29 +299,6 @@ jobs:
           # first. It also resolves the Blob token BEFORE deploying, so a missing
           # token cannot leave production split across two vintages.
           pnpm promote
-
-      - name: Preserve the built artifacts when the run fails
-        # A failed run is the ONLY time these are interesting, and it was also
-        # the only time we threw them away. Run 32710566244 reached validation
-        # with 26 fixture failures and left nothing behind to diagnose them
-        # with: the parquet it built died with the runner, so the question
-        # "did a rule break, or did the fixture's carrier just change?" was
-        # unanswerable without burning another two-hour run.
-        #
-        # Same lesson as banking the scrape — durability means an upload or
-        # nothing. Not committed to git: unlike the scrape cache this is a
-        # rejected build, and it has no business on main.
-        if: always() && steps.vintage.outputs.changed == 'true' && steps.refresh.outcome != 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: failed-build-${{ steps.vintage.outputs.tag }}
-          path: |
-            data/carrier_aggregates.parquet
-            data/carrier_risk_signals.parquet
-            data/refresh_metrics.json
-            data/refresh_reports/
-          retention-days: 14
-          if-no-files-found: warn
 
       - name: Publish the run report
         if: steps.vintage.outputs.changed == 'true' && always()
