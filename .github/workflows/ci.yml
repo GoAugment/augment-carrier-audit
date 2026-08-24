@@ -41,6 +41,9 @@ jobs:
         # merge that would deploy rather than after it.
         run: uv run pipeline/fmcsa-aggregate/check_committed_data.py
 
+      - name: TEMPORARY env-parity diagnostic
+        run: node scripts/debug_env_parity.mjs
+
       - name: App contract + rules + snapshots
         env:
           # Identity signals degrade gracefully without this, but the fixtures
