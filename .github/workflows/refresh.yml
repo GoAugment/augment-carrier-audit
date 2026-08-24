@@ -275,6 +275,29 @@ jobs:
           # token cannot leave production split across two vintages.
           pnpm promote
 
+      - name: Preserve the built artifacts when the run fails
+        # A failed run is the ONLY time these are interesting, and it was also
+        # the only time we threw them away. Run 32710566244 reached validation
+        # with 26 fixture failures and left nothing behind to diagnose them
+        # with: the parquet it built died with the runner, so the question
+        # "did a rule break, or did the fixture's carrier just change?" was
+        # unanswerable without burning another two-hour run.
+        #
+        # Same lesson as banking the scrape — durability means an upload or
+        # nothing. Not committed to git: unlike the scrape cache this is a
+        # rejected build, and it has no business on main.
+        if: always() && steps.vintage.outputs.changed == 'true' && steps.refresh.outcome != 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-build-${{ steps.vintage.outputs.tag }}
+          path: |
+            data/carrier_aggregates.parquet
+            data/carrier_risk_signals.parquet
+            data/refresh_metrics.json
+            data/refresh_reports/
+          retention-days: 14
+          if-no-files-found: warn
+
       - name: Publish the run report
         if: steps.vintage.outputs.changed == 'true' && always()
         run: |
