@@ -114,9 +114,9 @@ SPEC: dict[str, dict] = {
     # rule: insurer_count (34), zip_count (90) and lane_state_count (13) are
     # small AND meaningful, and a percentage move in those matters.
     "scrape_sv_ok":               {"tol": 0.25},
-    "scrape_sv_error":            {"tol": 0.50, "ceiling": 150, "floor": 100},
+    "scrape_sv_error":            {"tol": 0.50, "ceiling": 150, "floor": 100, "zero_ok": True},
     "scrape_ci_ok":               {"tol": 0.20},
-    "scrape_ci_error":            {"tol": 0.50, "ceiling": 400, "floor": 100},
+    "scrape_ci_error":            {"tol": 0.50, "ceiling": 400, "floor": 100, "zero_ok": True},
     # --- vintage: not a measurement, a tripwire ---
     "snapshot_date":              {"exact_must_move": True},
 }
@@ -305,7 +305,14 @@ def compare(new: dict, old: dict) -> list[tuple[str, str, str]]:
                 issues.append(("ERROR", key, f"{a!r} -> {b!r} (became/stopped being null)"))
             continue
 
-        if b == 0 and a != 0:
+        # "Collapsed to zero" means we lost the data — for a COUNT OF THINGS WE
+        # WANT. For an error count, zero is the best possible outcome, and
+        # calling it a collapse fails the run for succeeding: the 20260813
+        # refresh cleared drift on every other metric and then errored on
+        # `scrape_ci_error: 70 -> 0` while scrape_ci_ok showed all 25,994 DOTs
+        # present. `zero_ok` marks the metrics where low is good; their real
+        # guard is the `ceiling` above, which fires when errors climb.
+        if b == 0 and a != 0 and not spec.get("zero_ok"):
             issues.append(("ERROR", key, f"{a:,} -> 0 — collapsed to zero"))
             continue
 
