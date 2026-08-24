@@ -20,8 +20,29 @@ const DOTS = [3621624, 4514820, 2763893, 784547, 53467];
 async function main() {
   console.log(`platform=${process.platform} node=${process.version} TZ=${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
 
+  // BATCH, as this probe originally did.
   const carriers = await fetchCarriers(DOTS);
-  console.log(`fetchCarriers -> ${carriers.size}/${DOTS.length} resolved\n`);
+  console.log(`fetchCarriers(batch) -> ${carriers.size}/${DOTS.length} resolved`);
+
+  // SINGLE, which is what test_rules.ts actually does: fetchCarriers([dot]) per
+  // fixture. If the two disagree, that is the whole bug — a one-DOT lookup can
+  // take the "single-check bucket" path, and parquet-source.ts records that
+  // those blobs went stale/corrupt. It cannot differ locally if the bucket
+  // blobs are unreachable, which would explain a runner-only failure.
+  console.log("comparing batch vs single-DOT fetch (the harness path):");
+  for (const dot of DOTS) {
+    const one = await fetchCarriers([dot]);
+    const a = carriers.get(dot);
+    const b = one.get(dot);
+    const fmt = (c: any) => c ? `diffuse=${c.diffuseVinSharePct} shutSibs=${c.shutdownSiblingCount} sibDot=${c.largestSiblingDot} PU=${c.totalPowerUnits}` : "NOT RESOLVED";
+    const same = fmt(a) === fmt(b);
+    console.log(`   DOT ${dot}: ${same ? "SAME" : "*** DIFFERS ***"}`);
+    if (!same) {
+      console.log(`      batch : ${fmt(a)}`);
+      console.log(`      single: ${fmt(b)}`);
+    }
+  }
+  console.log("");
 
   for (const dot of DOTS) {
     const c = carriers.get(dot);
