@@ -96,9 +96,26 @@ async function testCarrierSideFixture(
   // expectMatch is where to assert tier-specific content like "≥10" vs
   // "5 to 9" if the threshold language differs by tier.
   if (!reason) {
+    // "did not fire" alone is not diagnosable. The match is exact string
+    // equality against rule.label, so a miss means EITHER the rule genuinely
+    // did not fire, OR it fired under a label that differs in some way the eye
+    // cannot see. Twenty-six fixtures failed on CI while the same commit and
+    // the same parquet passed locally, and analyze() was verified to emit the
+    // right reasons on that runner — so the labels are the remaining suspect,
+    // and this prints them JSON-escaped to expose whitespace and Unicode.
+    const got = row.reasons.map((r) => r.label);
+    const near = got.filter(
+      (l) => l.replace(/\s+/g, " ").trim() === rule.label.replace(/\s+/g, " ").trim()
+    );
+    const detail =
+      near.length > 0
+        ? ` LABEL MISMATCH — normalises equal but differs raw:\n` +
+          `        expected ${JSON.stringify(rule.label)}\n` +
+          `        actual   ${JSON.stringify(near[0])}`
+        : ` reasons present: ${got.length ? got.map((l) => JSON.stringify(l)).join(", ") : "(none)"}`;
     return {
       ruleId: rule.id, tier: expectedTier, dot, passed: false,
-      message: `rule did not fire (carrier riskLevel=${row.riskLevel})`,
+      message: `rule did not fire (carrier riskLevel=${row.riskLevel});${detail}`,
     };
   }
   if (expectMatch && !expectMatch.test(reason.detail)) {
