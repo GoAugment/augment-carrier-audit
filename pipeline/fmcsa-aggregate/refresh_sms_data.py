@@ -141,6 +141,20 @@ DATASETS = {**MONTHLY, **DAILY}
 
 MAX_ATTEMPTS = 6
 
+# Chunk retries get their OWN, far more patient budget than whole-file retries.
+#
+# The asymmetry is deliberate and comes from what each retry costs. Restarting a
+# stream costs one file. Abandoning a paged download costs every chunk already
+# fetched, because the .part is discarded — run 32763467434 lost 55 minutes of
+# Company_Census paging to a chunk that timed out six times inside two minutes,
+# while Crash_File hit the same ConnectTimeouts at the same moment and recovered.
+# A transient Socrata wobble should not cost an hour.
+#
+# 10 attempts backing off to 120s is ~10 minutes of patience per chunk, which
+# comfortably outlasts the blips we have actually observed.
+CHUNK_MAX_ATTEMPTS = 10
+CHUNK_BACKOFF_CAP = 120
+
 # Socrata throttles each connection to roughly 1.5 MB/s regardless of file size,
 # so the 2026-08 sequential run spent 81 min of its 85 min total just streaming
 # (Company Census 19.5m, Crash 15.6m, Inspection 11.9m, Violation 11.6m, MC
@@ -247,7 +261,7 @@ def download_paginated(c: httpx.Client, did: str, dest: Path, expected: int | No
         f.write(header + "\n")
         while True:
             chunk_ok = False
-            for attempt in range(1, MAX_ATTEMPTS + 1):
+            for attempt in range(1, CHUNK_MAX_ATTEMPTS + 1):
                 try:
                     resp = c.get(
                         RESOURCE.format(id=did),
@@ -267,8 +281,9 @@ def download_paginated(c: httpx.Client, did: str, dest: Path, expected: int | No
                     log(tag, f"… offset {offset:,} (+{n:,} rows, {total:,} total)")
                     break
                 except (httpx.HTTPError, httpx.StreamError) as e:
-                    wait = min(60, 2 ** attempt)
-                    log(tag, f"… chunk @ {offset:,} attempt {attempt} failed ({type(e).__name__}); retry in {wait}s")
+                    wait = min(CHUNK_BACKOFF_CAP, 2 ** attempt)
+                    log(tag, f"… chunk @ {offset:,} attempt {attempt}/{CHUNK_MAX_ATTEMPTS} "
+                             f"failed ({type(e).__name__}); retry in {wait}s")
                     time.sleep(wait)
             if not chunk_ok:
                 log(tag, f"✗ GAVE UP on chunk @ {offset:,}")
