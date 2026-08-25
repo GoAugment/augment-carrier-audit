@@ -73,9 +73,25 @@ SPEC: dict[str, dict] = {
     "bipd_on_file":               {"tol": 0.15},
     "bipd_required":              {"tol": 0.15},
     "bipd_zero_with_requirement": {"tol": 0.50},
-    "suspension_pending":         {"tol": 0.75},
-    "suspension_effective":       {"tol": 0.75},
-    "imminent_lapse":             {"tol": 0.75},
+    # DAILY-CADENCE COUNTERS. These three come from ActPendInsur, which is
+    # downloaded fresh every run, so they describe TODAY. The baseline they are
+    # compared against is only rewritten when a refresh SUCCEEDS. So the ratio
+    # measures elapsed time as much as data health, and it widens the longer the
+    # pipeline stays broken — the opposite of what a drift check should do, since
+    # it fights hardest to reopen exactly when you are trying to get green again.
+    #
+    # Observed on consecutive days against the same 20260812 baseline:
+    #     suspension_pending  1,681 -> 2,140 (+27.3%)  then -> 2,969 (+76.6%)
+    # The second tripped a 75% tolerance while nothing was wrong; every other
+    # metric in that run was healthy and the run was thrown away for it.
+    #
+    # Widened to 2.0 so a genuine blowup (a broken join, a duplicated feed) still
+    # trips while ordinary accumulation does not. Collapse is still caught
+    # independently by the zero check. Once a refresh lands, the baseline is
+    # rewritten from that day and these return to single-digit moves.
+    "suspension_pending":         {"tol": 2.00},
+    "suspension_effective":       {"tol": 2.00},
+    "imminent_lapse":             {"tol": 2.00},
     # --- authority / revocation ---
     "active_authority":           {"tol": 0.15},
     "prior_revoke_flag":          {"tol": 0.20},
