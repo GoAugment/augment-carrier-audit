@@ -3,14 +3,12 @@
   "reasonNote": "CLEAN: no address sharing",
   "carrierName": "TODAYS CATCH SEAFOOD INC",
   "riskLevel": "Low",
-  "riskScore": 18,
-  "riskTier": "Low",
+  "riskScore": 8,
+  "riskTier": "None",
   "riskContributions": [
-    "+18 [Safety / compliance] Hard safety signal"
+    "+8 [Safety / compliance] Elevated safety context"
   ],
-  "reasonLabels": [
-    "ISS, Inspect (top inspection priority)"
-  ],
+  "reasonLabels": [],
   "axes": {
     "crash": "na",
     "unsafeDriving": "na",

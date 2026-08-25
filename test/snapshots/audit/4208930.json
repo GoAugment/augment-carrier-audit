@@ -3,17 +3,19 @@
   "reasonNote": "FATAL: ≥1 fatal crash in 24mo",
   "carrierName": "KP MARTIN ENTERPRISE LLC",
   "riskLevel": "Critical",
-  "riskScore": 50,
-  "riskTier": "Medium",
+  "riskScore": 100,
+  "riskTier": "Critical",
   "riskContributions": [
-    "+10 [Authority / insurance] Recent revocation, since reinstated",
+    "+35 [Authority / insurance] Authority not active",
+    "+30 [Authority / insurance] Recent revocation",
     "+16 [Authority / insurance] Insurance churn",
     "+18 [Safety / compliance] Hard safety signal",
     "+6 [Identity / chameleon] Phone area code outside domicile"
   ],
   "reasonLabels": [
+    "Authority not active",
     "Crashes",
-    "Recent revocation, since reinstated"
+    "Recent revocation"
   ],
   "axes": {
     "crash": "severe",
@@ -23,8 +25,8 @@
     "controlledSubstances": "na",
     "vehicleOos": "clean",
     "hazmatOos": "na",
-    "revocations": "elevated",
-    "authority": "clean",
+    "revocations": "high",
+    "authority": "critical",
     "insurance": "info"
   }
 }
