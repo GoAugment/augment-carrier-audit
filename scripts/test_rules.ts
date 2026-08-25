@@ -37,18 +37,6 @@ import type { Rule, RuleCategory, RuleTier } from "../lib/rules";
 import { fetchCarriers } from "../lib/fmcsa";
 import { analyze } from "../lib/analyzer";
 
-// These are PARQUET regression tests. fetchCarriers() silently switches to the
-// live FMCSA API when FMCSA_WEBKEY is set (lib/fmcsa.ts), and that API does not
-// carry our derived columns — iss_score, has_active_authority and
-// bipd_imminent_lapse all come back null — so fixtures get judged against a
-// carrier record that was never the one under test.
-//
-// That is not hypothetical: it failed 26 of 62 fixtures on CI while the same
-// commit and the same parquet passed locally, in a shallow clone, in a node:20
-// Linux container, under both pnpm majors and under TZ=UTC. CI was simply the
-// only place the key was set. Deleting it here makes the suite independent of
-// however the environment happens to be wired.
-delete process.env.FMCSA_WEBKEY;
 
 
 const CARRIER_SIDE_CATEGORIES: ReadonlySet<RuleCategory> = new Set<RuleCategory>([
