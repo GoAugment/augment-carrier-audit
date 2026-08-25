@@ -1,18 +1,26 @@
 /**
- * FMCSA carrier lookup — dispatches between the bundled parquet snapshot
- * (default) and the live QCMobile API (opt-in fallback when FMCSA_WEBKEY is
- * configured).
+ * FMCSA carrier lookup — a single in-process query against the bundled parquet
+ * snapshot. ~1ms, no rate limit, no key.
  *
- * Parquet path (default): single in-process query against the May 2026 bulk
- * snapshot. Includes revocations + enforcement cases that the API doesn't
- * expose. ~1ms per query, no rate limit, no key.
+ * There used to be a second path here: a live QCMobile API client in
+ * fmcsa-api.ts, selected implicitly whenever FMCSA_WEBKEY happened to be set.
+ * It is gone, and the env var no longer changes anything in the app.
  *
- * API path (opt-in): legacy live API. Use when freshness on insurance / OOS
- * status matters more than the extra parquet-only signals. Slower (network
- * RTT per DOT), key-gated.
+ * It was removed rather than fixed because it could not produce a correct
+ * verdict. Our scoring leans on signals FMCSA's API does not expose —
+ * revocations, enforcement, ISS, VIN-sharing, imminent insurance lapse — and
+ * the client filled them with zero/null/false rather than reporting them
+ * absent. A carrier came back looking clean instead of unknown.
  *
- * Shape is identical either way — `FmcsaCarrier` includes the parquet-only
- * fields (revocations, enforcement); the API path leaves them as zero/null.
+ * Production never used it (FMCSA_WEBKEY is not set there), but CI was, which
+ * failed 26 of 62 rule fixtures against carrier records that were never the
+ * ones under test, and took seven wrong hypotheses to track down. An env var
+ * that silently swaps your data source for a degraded one is a trap; deleting
+ * it is the only way to disarm it.
+ *
+ * FMCSA_WEBKEY is still used, correctly, by
+ * pipeline/fmcsa-aggregate/ground_truth_check.py — an OFFLINE check that
+ * compares this parquet against the live API to answer "are we right at all?".
  */
 
 export interface FmcsaCarrier {
@@ -276,18 +284,11 @@ export interface FmcsaCarrier {
 export async function fetchCarriers(
   dots: number[]
 ): Promise<Map<number, FmcsaCarrier>> {
-  const webKey = process.env.FMCSA_WEBKEY;
-  if (webKey) {
-    const { fetchCarriersFromApi } = await import("./fmcsa-api");
-    return fetchCarriersFromApi(dots, webKey);
-  }
   const { fetchCarriersFromParquet } = await import("./fmcsa-parquet");
   return fetchCarriersFromParquet(dots);
 }
 
-/** Resolve MC → DOT. Parquet-only — the live FMCSA API doesn't expose a
- *  fast MC lookup, so this falls back to the snapshot regardless of
- *  FMCSA_WEBKEY. Returns null when no carrier matches. */
+/** Resolve MC → DOT against the parquet. Returns null when no carrier matches. */
 export async function fetchDotByMc(mc: string): Promise<number | null> {
   const { fetchDotByMc: impl } = await import("./fmcsa-parquet");
   return impl(mc);
