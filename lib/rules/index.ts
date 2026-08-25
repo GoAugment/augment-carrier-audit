@@ -36,7 +36,11 @@ export const RULES: Rule[] = [
       critical: "FMCSA status_code is anything other than 'A' (Active).",
     },
     fixtures: {
-      critical: { dot: 2439172, reason: "HR SERVICES LLC: status_code=I (Aug 2026 snapshot)." },
+      // Pinned to a carrier inactive in BOTH the 20260812 and 20260813 vintages.
+      // The previous fixture (HR SERVICES LLC, 2439172) reactivated between the
+      // two — status_code I -> A — so the rule correctly stopped firing and the
+      // fixture correctly failed. That is fixture rot doing its job, not a bug.
+      critical: { dot: 4041655, reason: "MAGNIFICENT MILE TRUCKING LLC: status_code=I, 131 power units." },
       none: { dot: 53467, reason: "Werner Enterprises: status_code=A." },
     },
   },

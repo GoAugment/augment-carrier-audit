@@ -98,9 +98,27 @@ async function testCarrierSideFixture(
   // expectMatch is where to assert tier-specific content like "≥10" vs
   // "5 to 9" if the threshold language differs by tier.
   if (!reason) {
+    // "did not fire" alone is not diagnosable: it cannot distinguish a real
+    // regression from a fixture whose carrier moved, nor from the carrier
+    // record being the wrong one entirely. So print the evidence — every reason
+    // label JSON-escaped (the match is exact string equality, so whitespace and
+    // Unicode matter) plus the inputs the rules actually gate on.
+    //
+    // Printing the inputs is what ended a seven-hypothesis hunt: `iss=null
+    // activeAuth=null` on every carrier said at a glance that the record came
+    // from a source without our derived columns, rather than that the rules had
+    // regressed. Cheap, and it turns the next mystery into a look.
+    const got = row.reasons.map((r) => r.label);
+    const c = carriers.get(dot) as any;
+    const inputs =
+      `\n        input: status=${c?.statusCode} iss=${c?.issScore} ` +
+      `activeAuth=${c?.hasActiveAuthority} bipdLapse=${c?.bipdImminentLapse} ` +
+      `bipdOnFile=${c?.bipdInsuranceOnFile} PU=${c?.totalPowerUnits}`;
     return {
       ruleId: rule.id, tier: expectedTier, dot, passed: false,
-      message: `rule did not fire (carrier riskLevel=${row.riskLevel})`,
+      message:
+        `rule did not fire (carrier riskLevel=${row.riskLevel}); reasons present: ` +
+        `${got.length ? got.map((l) => JSON.stringify(l)).join(", ") : "(none)"}${inputs}`,
     };
   }
   if (expectMatch && !expectMatch.test(reason.detail)) {
