@@ -2,17 +2,13 @@
   "dot": 12311,
   "reasonNote": "CRITICAL: prior-revoke chameleon",
   "carrierName": "CLOVERLEAF GARAGE INC",
-  "riskLevel": "High",
-  "riskScore": 32,
-  "riskTier": "Low",
+  "riskLevel": "Low",
+  "riskScore": 8,
+  "riskTier": "None",
   "riskContributions": [
-    "+24 [Identity / chameleon] FMCSA prior-revoke flag (chameleon)",
     "+8 [Safety / compliance] Elevated safety context"
   ],
-  "reasonLabels": [
-    "FMCSA prior-revoke flag (chameleon)",
-    "Why the FMCSA SMS scores look clean"
-  ],
+  "reasonLabels": [],
   "axes": {
     "crash": "na",
     "unsafeDriving": "na",
@@ -21,7 +17,7 @@
     "controlledSubstances": "na",
     "vehicleOos": "na",
     "hazmatOos": "na",
-    "revocations": "high",
+    "revocations": "clean",
     "authority": "clean",
     "insurance": "na"
   }
