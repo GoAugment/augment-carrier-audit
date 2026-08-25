@@ -41,13 +41,13 @@ jobs:
         # merge that would deploy rather than after it.
         run: uv run pipeline/fmcsa-aggregate/check_committed_data.py
 
-      - name: TEMPORARY env-parity diagnostic
-        run: node scripts/debug_env_parity.mjs
-
       - name: App contract + rules + snapshots
         env:
           # Identity signals degrade gracefully without this, but the fixtures
           # that depend on them would then pass for the wrong reason.
           BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
-          FMCSA_WEBKEY: ${{ secrets.FMCSA_WEBKEY }}
+          # FMCSA_WEBKEY deliberately NOT set: fetchCarriers() switches to the
+          # live FMCSA API when present, and that API lacks our derived columns,
+          # so every fixture would be judged against the wrong record. The suites
+          # delete it themselves now; this just avoids handing it to them.
         run: pnpm test
