@@ -107,12 +107,25 @@ async function testCarrierSideFixture(
     const near = got.filter(
       (l) => l.replace(/\s+/g, " ").trim() === rule.label.replace(/\s+/g, " ").trim()
     );
+    const c = carriers.get(dot) as any;
+    // Print the harness's OWN view of the carrier. A probe in the same CI job
+    // scored DOT 784547 Critical with 5 reasons while this harness scored it
+    // High with 1 — identical parquet, identical analyze(), and a full
+    // field-by-field diff of single-vs-batch fetch showed zero differences. So
+    // either this carrier object is not what the probe saw, or analyze() is
+    // sensitive to something other than its inputs. This settles which.
+    const inputs =
+      `\n        input: iss=${c?.issScore} bipdLapse=${c?.bipdImminentLapse} ` +
+      `activeAuth=${c?.hasActiveAuthority} bipdOnFile=${c?.bipdInsuranceOnFile} ` +
+      `crashes=${c?.crashes24mo} PU=${c?.totalPowerUnits} ` +
+      `mapSize=${carriers.size}`;
     const detail =
       near.length > 0
         ? ` LABEL MISMATCH — normalises equal but differs raw:\n` +
           `        expected ${JSON.stringify(rule.label)}\n` +
           `        actual   ${JSON.stringify(near[0])}`
-        : ` reasons present: ${got.length ? got.map((l) => JSON.stringify(l)).join(", ") : "(none)"}`;
+        : ` reasons present: ${got.length ? got.map((l) => JSON.stringify(l)).join(", ") : "(none)"}` +
+          inputs;
     return {
       ruleId: rule.id, tier: expectedTier, dot, passed: false,
       message: `rule did not fire (carrier riskLevel=${row.riskLevel});${detail}`,
