@@ -140,28 +140,19 @@ SPEC: dict[str, dict] = {
 # ONE-TIME ACKNOWLEDGED SHIFTS.
 #
 # For a real, understood, verified upstream change that no tolerance should be
-# widened to accommodate. Widening `tol` would blind the check permanently;
-# `--init` accepts every metric at once and needs a human at a terminal, which an
-# unattended refresh does not have. So an entry here permits EXACTLY ONE
-# transition — pinned to the previous value and a narrow landing window — and
-# anything else still errors.
+# widened to accommodate. Widening `tol` blinds the check permanently; `--init`
+# accepts every metric at once and needs a human at a terminal, which an
+# unattended refresh does not have. An entry here permits EXACTLY ONE
+# transition, pinned to the previous value and a narrow landing window.
 #
-# Delete the entry once the new baseline is committed; it is dead weight after
-# that, and leaving it is how a tripwire quietly stops being one.
-ACKNOWLEDGED: dict[str, dict] = {
-    "prior_revoke_flag": {
-        "from": 11105,
-        "to_range": (250, 600),
-        "because": (
-            "FMCSA blanked PRIOR_REVOKE_FLAG/_DOT_NUMBER for ~97% of carriers in "
-            "the 2026-08-13 Company Census. Verified server-side against Socrata "
-            "az4n-8mr2 ($group=prior_revoke_flag): 'Y' 28,971 -> 501 with the total "
-            "row count unchanged, so it is upstream and not our download. The "
-            "chameleon rule was capped off Critical in response (see "
-            "priorRevokeSuccessor in lib/analyzer.ts)."
-        ),
-    },
-}
+# DELETE THE ENTRY once the new baseline is committed. Leaving one is how a
+# tripwire quietly stops being one.
+#
+# Currently empty. The prior_revoke_flag entry (11,105 -> 382, FMCSA blanking
+# ~97% of PRIOR_REVOKE in the 2026-08-13 census) did its job: the 20260813
+# refresh landed, the baseline now records 382, and the entry was removed in the
+# same breath rather than left to rot.
+ACKNOWLEDGED: dict[str, dict] = {}
 
 
 def _count(df: pl.DataFrame, expr: pl.Expr) -> int:
