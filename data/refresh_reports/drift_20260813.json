@@ -1,0 +1,80 @@
+{
+  "current": {
+    "active_authority": 355589,
+    "bipd_on_file": 358659,
+    "bipd_required": 578498,
+    "bipd_zero_with_requirement": 211274,
+    "crash_indicator_alert": 8715,
+    "imminent_lapse": 3131,
+    "insurer_base_rate": 0.0279,
+    "insurer_count": 34,
+    "lane_national_injury_pct": 36.1,
+    "lane_state_count": 13,
+    "prior_revoke_flag": 382,
+    "risk_signal_rows": 1220791,
+    "rows": 2113851,
+    "scrape_ci_error": 0,
+    "scrape_ci_ok": 25994,
+    "scrape_sv_error": 17,
+    "scrape_sv_ok": 858,
+    "shutdown_sibling_any": 26668,
+    "shutdown_sibling_high": 4691,
+    "snapshot_date": "20260813",
+    "sum_crashes": 261530,
+    "sum_driver_inspections": 4956496,
+    "sum_fatal_crashes": 7009,
+    "sum_vehicle_inspections": 3184955,
+    "suspension_effective": 1093,
+    "suspension_pending": 2969,
+    "zip_base_rate": 0.1004,
+    "zip_count": 93
+  },
+  "issues": [
+    {
+      "message": "11,105 -> 382 \u2014 acknowledged one-time shift, not a regression. FMCSA blanked PRIOR_REVOKE_FLAG/_DOT_NUMBER for ~97% of carriers in the 2026-08-13 Company Census. Verified server-side against Socrata az4n-8mr2 ($group=prior_revoke_flag): 'Y' 28,971 -> 501 with the total row count unchanged, so it is upstream and not our download. The chameleon rule was capped off Critical in response (see priorRevokeSuccessor in lib/analyzer.ts).",
+      "metric": "prior_revoke_flag",
+      "severity": "WARN"
+    },
+    {
+      "message": "IDENTICAL to last refresh (4956496) \u2014 but other sms_volume metrics moved, so the read was fresh and this source simply didn't change upstream",
+      "metric": "sum_driver_inspections",
+      "severity": "WARN"
+    },
+    {
+      "message": "IDENTICAL to last refresh (3184955) \u2014 but other sms_volume metrics moved, so the read was fresh and this source simply didn't change upstream",
+      "metric": "sum_vehicle_inspections",
+      "severity": "WARN"
+    }
+  ],
+  "previous": {
+    "active_authority": 353486,
+    "bipd_on_file": 357536,
+    "bipd_required": 576604,
+    "bipd_zero_with_requirement": 211302,
+    "crash_indicator_alert": 8169,
+    "imminent_lapse": 2425,
+    "insurer_base_rate": 0.0272,
+    "insurer_count": 34,
+    "lane_national_injury_pct": 36.1,
+    "lane_state_count": 13,
+    "prior_revoke_flag": 11105,
+    "risk_signal_rows": 1220327,
+    "rows": 2113851,
+    "scrape_ci_error": 70,
+    "scrape_ci_ok": 28853,
+    "scrape_sv_error": 15,
+    "scrape_sv_ok": 910,
+    "shutdown_sibling_any": 27442,
+    "shutdown_sibling_high": 4940,
+    "snapshot_date": "20260812",
+    "sum_crashes": 257932,
+    "sum_driver_inspections": 4956496,
+    "sum_fatal_crashes": 6911,
+    "sum_vehicle_inspections": 3184955,
+    "suspension_effective": 1143,
+    "suspension_pending": 1681,
+    "zip_base_rate": 0.0998,
+    "zip_count": 90
+  },
+  "snapshot": "20260813"
+}

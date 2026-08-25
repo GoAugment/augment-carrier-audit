@@ -1,0 +1,83 @@
+{
+  "advisory": 40,
+  "advisory_ok": 40,
+  "api_errors": 0,
+  "carriers": 40,
+  "floor": 0.95,
+  "gated": 360,
+  "gated_ok": 350,
+  "mismatches": [
+    {
+      "dot": 4294079,
+      "field": "bipd_insurance_on_file",
+      "fmcsa": "None",
+      "ours": "750.0",
+      "rule": "exact"
+    },
+    {
+      "dot": 4294079,
+      "field": "bipd_required_amount",
+      "fmcsa": "None",
+      "ours": "750.0",
+      "rule": "exact"
+    },
+    {
+      "dot": 3003009,
+      "field": "driver_inspections_24mo",
+      "fmcsa": "2",
+      "ours": "None",
+      "rule": "tol:3,0.25"
+    },
+    {
+      "dot": 3003009,
+      "field": "vehicle_inspections_24mo",
+      "fmcsa": "2",
+      "ours": "None",
+      "rule": "tol:3,0.25"
+    },
+    {
+      "dot": 3003009,
+      "field": "driver_oos_24mo",
+      "fmcsa": "1",
+      "ours": "None",
+      "rule": "tol:2,0.25"
+    },
+    {
+      "dot": 3003009,
+      "field": "vehicle_oos_24mo",
+      "fmcsa": "1",
+      "ours": "None",
+      "rule": "tol:2,0.25"
+    },
+    {
+      "dot": 4372671,
+      "field": "bipd_insurance_on_file",
+      "fmcsa": "750",
+      "ours": "1750.0",
+      "rule": "exact"
+    },
+    {
+      "dot": 721991,
+      "field": "driver_inspections_24mo",
+      "fmcsa": "1",
+      "ours": "None",
+      "rule": "tol:3,0.25"
+    },
+    {
+      "dot": 721991,
+      "field": "vehicle_inspections_24mo",
+      "fmcsa": "1",
+      "ours": "None",
+      "rule": "tol:3,0.25"
+    },
+    {
+      "dot": 2953216,
+      "field": "bipd_insurance_on_file",
+      "fmcsa": "750",
+      "ours": "1000.0",
+      "rule": "exact"
+    }
+  ],
+  "rate": 0.9722222222222222,
+  "snapshot": "20260813"
+}

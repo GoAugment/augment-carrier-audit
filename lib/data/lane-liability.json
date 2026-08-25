@@ -55,7 +55,7 @@
     "source": "SMS_Input_-_Crash.csv",
     "national_injury_pct": 36.1,
     "note": "Injury share of truck crashes by crash-location state. tier: high>=45%, elevated>=38%. Only states with >=1000 crashes + above-elevated kept.",
-    "generated": "20260812",
+    "generated": "20260813",
     "total_crashes": 258353
   }
 }
