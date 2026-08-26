@@ -312,6 +312,67 @@ jobs:
           # token cannot leave production split across two vintages.
           pnpm promote
 
+      - name: Email on failure
+        # GitHub's own notification for a scheduled run goes to whoever last
+        # edited the cron syntax, which is a git-blame line rather than a
+        # decision, and it says nothing when a continuation chain stalls. This
+        # does not depend on account settings, notification preferences, or who
+        # touched the file last.
+        #
+        # always() + a failure test rather than failure(): the promote step can
+        # be skipped rather than failed, and a run that ends without promoting a
+        # detected new vintage is exactly the silent case worth hearing about.
+        if: always() && steps.vintage.outputs.changed == 'true' && (failure() || cancelled())
+        env:
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          ALERT_TO: ${{ secrets.REFRESH_ALERT_TO }}
+          ALERT_FROM: ${{ secrets.SAFE_EMAIL_FROM }}
+          TAG: ${{ steps.vintage.outputs.tag }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REFRESH_OUTCOME: ${{ steps.refresh.outcome }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -uo pipefail
+          if [[ -z "${SENDGRID_API_KEY:-}" || -z "${ALERT_TO:-}" ]]; then
+            echo "::warning::No SendGrid config — skipping failure email."
+            exit 0
+          fi
+          REPORT="data/refresh_reports/refresh_${TAG}.md"
+          export BODY="FMCSA refresh ${TAG} did not complete.
+
+          trigger:        ${EVENT}
+          refresh step:   ${REFRESH_OUTCOME}
+          run:            ${RUN_URL}
+
+          Production is unchanged — nothing is committed or promoted unless every
+          gate passes, so this is a stalled refresh and not bad data being served.
+          "
+          if [[ -f "$REPORT" ]]; then
+            export BODY="${BODY}
+          --- run report ---
+          $(head -c 3000 "$REPORT")"
+          fi
+          python3 - <<'EOF'
+          import json, os, urllib.request
+          payload = {
+              "personalizations": [{"to": [{"email": os.environ["ALERT_TO"]}]}],
+              "from": {"email": os.environ.get("ALERT_FROM") or "safe@augie.ai"},
+              "subject": f"FMCSA refresh {os.environ['TAG']} FAILED",
+              "content": [{"type": "text/plain", "value": os.environ["BODY"]}],
+          }
+          req = urllib.request.Request(
+              "https://api.sendgrid.com/v3/mail/send",
+              data=json.dumps(payload).encode(),
+              headers={"Authorization": f"Bearer {os.environ['SENDGRID_API_KEY']}",
+                       "Content-Type": "application/json"},
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  print(f"[notify] sent, status {r.status}")
+          except Exception as e:
+              print(f"::warning::failure email did not send: {e}")
+          EOF
+
       - name: Publish the run report
         if: steps.vintage.outputs.changed == 'true' && always()
         run: |
