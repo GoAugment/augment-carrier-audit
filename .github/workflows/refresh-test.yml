@@ -43,7 +43,7 @@ jobs:
       - name: Configure AWS credentials (staging)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.CARRIER_AUDIT_INGRESS_ROLE_ARN_STAGING }}
+          role-to-assume: ${{ secrets.KNOWLEDGE_INGRESS_ROLE_ARN_STAGING }}
           aws-region: us-east-1
           role-session-name: fmcsaDropTest
 
