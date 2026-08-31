@@ -396,7 +396,7 @@ jobs:
         if: steps.vintage.outputs.changed == 'true' && steps.refresh.outputs.partial != 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.CARRIER_AUDIT_INGRESS_ROLE_ARN_STAGING }}
+          role-to-assume: ${{ secrets.KNOWLEDGE_INGRESS_ROLE_ARN_STAGING }}
           aws-region: us-east-1
           role-session-name: fmcsaRefreshDrop
 
@@ -410,7 +410,7 @@ jobs:
         if: steps.vintage.outputs.changed == 'true' && steps.refresh.outputs.partial != 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.CARRIER_AUDIT_INGRESS_ROLE_ARN_PROD }}
+          role-to-assume: ${{ secrets.KNOWLEDGE_INGRESS_ROLE_ARN_PROD }}
           aws-region: us-east-1
           role-session-name: fmcsaRefreshDrop
 
