@@ -415,7 +415,6 @@ jobs:
           role-session-name: fmcsaRefreshDrop
 
       - name: Drop files to the prod knowledge ingress bucket
-        id: drop_prod
         if: steps.vintage.outputs.changed == 'true' && steps.refresh.outputs.partial != 'true'
         env:
           TAG: ${{ steps.vintage.outputs.tag }}
