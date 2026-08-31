@@ -1,0 +1,53 @@
+name: FMCSA drop test (TEMPORARY)
+
+# TEMPORARY. Delete this file before #92 merges.
+#
+# Proves the two things a local run cannot: that GitHub can assume the OIDC
+# role, and that the new role is allowed to write.
+
+# Nothing can reach the real ingestion folders. The script writes to
+# a test location: landing/augment-carrier-audit-test/
+#
+# Needs ONLY s3:PutObject and s3:GetObject on landing/augment-carrier-audit-test/*.
+# Verification uses head-object (authorized as GetObject) rather than
+# list-objects-v2, which would need s3:ListBucket on the bucket ARN. The role
+# has no delete permission either; the test objects are removed by hand afterwards
+on:
+  push:
+    branches:
+      - sana/know-508-auto-ingest-fmcsa-weekly
+    paths:
+      - scripts/drop_files_to_knowledge_ingress_test.sh
+      - .github/workflows/refresh-test.yml
+
+permissions:
+  id-token: write # mint the OIDC token
+  contents: read # this workflow commits nothing
+
+concurrency:
+  # Deliberately NOT fmcsa-refresh: that group is cancel-in-progress: false, so
+  # a test would queue behind a 5-hour refresh.
+  group: carrier-audit-drop-files-s3-test
+  cancel-in-progress: true
+
+jobs:
+  drop-s3-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Configure AWS credentials (staging)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.CARRIER_AUDIT_INGRESS_ROLE_ARN_STAGING }}
+          aws-region: us-east-1
+          role-session-name: fmcsaDropTest
+
+      - name: Drop files to the staging knowledge ingress bucket
+        env:
+          TAG: 20260813
+        run: bash scripts/drop_files_to_knowledge_ingress_test.sh goaugment-knowledge-ingress-bucket-staging
