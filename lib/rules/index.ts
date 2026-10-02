@@ -36,11 +36,13 @@ export const RULES: Rule[] = [
       critical: "FMCSA status_code is anything other than 'A' (Active).",
     },
     fixtures: {
-      // Pinned to a carrier inactive in BOTH the 20260812 and 20260813 vintages.
-      // The previous fixture (HR SERVICES LLC, 2439172) reactivated between the
-      // two — status_code I -> A — so the rule correctly stopped firing and the
-      // fixture correctly failed. That is fixture rot doing its job, not a bug.
-      critical: { dot: 4041655, reason: "MAGNIFICENT MILE TRUCKING LLC: status_code=I, 131 power units." },
+      // Pinned to a carrier inactive in BOTH the 20260813 and 20260913 vintages.
+      // Prior fixtures aged out as fixture rot doing its job, not a bug:
+      // HR SERVICES LLC (2439172) reactivated I -> A between 20260812 and
+      // 20260813; MAGNIFICENT MILE TRUCKING LLC (4041655) dropped out of the
+      // parquet entirely in 20260913. Only a handful of carriers stay inactive
+      // across two vintages, so prefer stability over fleet size here.
+      critical: { dot: 4719316, reason: "STRAIT GATE TRANSPORT LLC: status_code=I in both 20260813 and 20260913, no insurance suspension." },
       none: { dot: 53467, reason: "Werner Enterprises: status_code=A." },
     },
   },
@@ -58,7 +60,10 @@ export const RULES: Rule[] = [
       // crosses the 90-day threshold ~3 months after registration and
       // stops triggering. Refresh by re-running the find_rule_fixtures.py
       // query against the latest parquet snapshot.
-      critical: { dot: 4586265, reason: "MOVERS 4 U LLC: dot_add_date 2026-06-23, < 90 days at snapshot." },
+      // Age is measured against the wall clock (Date.now()), not the snapshot,
+      // so pick the youngest DOT in the latest parquet to maximise runway.
+      // MOVERS 4 U LLC (4586265, added 2026-06-23) crossed 90 days in Sep 2026.
+      critical: { dot: 4946798, reason: "DL BEST TRUCKING INC: dot_add_date 2026-08-28, < 90 days until ~2026-11-26." },
       none: { dot: 53467, reason: "Werner: established carrier, > 30 years old." },
     },
   },
@@ -90,7 +95,9 @@ export const RULES: Rule[] = [
       critical: "Safety rating = Conditional.",
     },
     fixtures: {
-      critical: { dot: 305573, reason: "R & R TRANSPORTATION INC: Conditional rated 2026-04-21." },
+      // R & R TRANSPORTATION INC (305573) now carries safety_rating=S in the
+      // 20260913 vintage (same 2026-04-21 rating date), so it stopped firing.
+      critical: { dot: 2938438, reason: "VANTAGE CARRIER LLC: Conditional rated 2026-08-25, 134 power units." },
       none: { dot: 53467, reason: "Werner: Satisfactory." },
     },
   },
