@@ -84,7 +84,10 @@ const SNAPSHOT_DOTS: SnapshotDot[] = [
 
   // Fatal crash
   { dot: 1429009,  reason: "FATAL: ≥1 fatal crash in 24mo" },
-  { dot: 4208930,  reason: "FATAL: ≥1 fatal crash in 24mo" },
+  // KP MARTIN ENTERPRISE (4208930) went inactive and dropped out of the
+  // 20260913 parquet. BULLET ENERGY carries 3 fatal crashes in both the
+  // 20260813 and 20260913 vintages, so it should survive a few rotations.
+  { dot: 1727694,  reason: "FATAL: ≥1 fatal crash in 24mo" },
 
   // New authority
   { dot: 4572009,  reason: "CRITICAL: new authority under 90 days" },

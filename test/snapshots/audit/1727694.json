@@ -1,0 +1,24 @@
+{
+  "dot": 1727694,
+  "reasonNote": "FATAL: ≥1 fatal crash in 24mo",
+  "carrierName": "BULLET ENERGY SERVICES LLC",
+  "riskLevel": "Low",
+  "riskScore": 18,
+  "riskTier": "Low",
+  "riskContributions": [
+    "+18 [Safety / compliance] Hard safety signal"
+  ],
+  "reasonLabels": [],
+  "axes": {
+    "crash": "clean",
+    "unsafeDriving": "clean",
+    "hos": "clean",
+    "driverOos": "clean",
+    "controlledSubstances": "na",
+    "vehicleOos": "clean",
+    "hazmatOos": "na",
+    "revocations": "clean",
+    "authority": "clean",
+    "insurance": "clean"
+  }
+}
