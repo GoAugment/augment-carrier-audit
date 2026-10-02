@@ -17,7 +17,7 @@
     "hos": "clean",
     "driverOos": "clean",
     "controlledSubstances": "na",
-    "vehicleOos": "clean",
+    "vehicleOos": "na",
     "hazmatOos": "na",
     "revocations": "clean",
     "authority": "critical",

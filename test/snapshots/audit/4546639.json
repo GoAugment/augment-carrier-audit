@@ -3,11 +3,11 @@
   "reasonNote": "CRITICAL: $0 BIPD",
   "carrierName": "HOSELTON IMPORTS INC",
   "riskLevel": "Critical",
-  "riskScore": 44,
+  "riskScore": 41,
   "riskTier": "Medium",
   "riskContributions": [
     "+30 [Authority / insurance] Insurance lapsed",
-    "+6 [Operations] New authority",
+    "+3 [Operations] Authority under 1 year",
     "+8 [Safety / compliance] Elevated safety context"
   ],
   "reasonLabels": [

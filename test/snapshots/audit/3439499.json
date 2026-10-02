@@ -17,7 +17,6 @@
     "Acute/critical violations from FMCSA investigation",
     "HOS Compliance",
     "Driver OOS",
-    "Vehicle OOS",
     "Recent enforcement"
   ],
   "axes": {
@@ -26,7 +25,7 @@
     "hos": "high",
     "driverOos": "high",
     "controlledSubstances": "na",
-    "vehicleOos": "elevated",
+    "vehicleOos": "clean",
     "hazmatOos": "na",
     "revocations": "clean",
     "authority": "clean",

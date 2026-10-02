@@ -3,27 +3,32 @@
   "reasonNote": "CRITICAL: authority suspended for no insurance",
   "carrierName": "JESTEVA TRANSPORT INC",
   "riskLevel": "Critical",
-  "riskScore": 76,
-  "riskTier": "High",
+  "riskScore": 82,
+  "riskTier": "Critical",
   "riskContributions": [
-    "+30 [Authority / insurance] Recent revocation",
+    "+10 [Authority / insurance] Recent revocation, since reinstated",
     "+16 [Authority / insurance] Insurance churn",
-    "+30 [Authority / insurance] Authority suspended for no insurance"
+    "+18 [Safety / compliance] Hard safety signal",
+    "+18 [Authority / insurance] FMCSA suspension notice served",
+    "+20 [Identity / chameleon] Identity tied to shut-down revoked DOT"
   ],
   "reasonLabels": [
+    "ISS, Inspect (top inspection priority)",
     "FMCSA suspended authority for lack of insurance",
-    "Recent revocation"
+    "HOS Compliance",
+    "Vehicle OOS",
+    "Recent revocation, since reinstated"
   ],
   "axes": {
     "crash": "clean",
     "unsafeDriving": "clean",
-    "hos": "clean",
+    "hos": "elevated",
     "driverOos": "clean",
     "controlledSubstances": "na",
-    "vehicleOos": "clean",
+    "vehicleOos": "elevated",
     "hazmatOos": "na",
-    "revocations": "high",
-    "authority": "critical",
-    "insurance": "critical"
+    "revocations": "elevated",
+    "authority": "clean",
+    "insurance": "elevated"
   }
 }

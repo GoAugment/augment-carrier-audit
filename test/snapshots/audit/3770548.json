@@ -2,32 +2,32 @@
   "dot": 3770548,
   "reasonNote": "IDENTITY: email+phone shared with shut-down revoked DOTs",
   "carrierName": "SGA SERVICES LLC",
-  "riskLevel": "High",
-  "riskScore": 77,
+  "riskLevel": "Critical",
+  "riskScore": 78,
   "riskTier": "High",
   "riskContributions": [
-    "+8 [Safety / compliance] Elevated safety context",
+    "+35 [Authority / insurance] Authority not active",
+    "+18 [Safety / compliance] Hard safety signal",
     "+20 [Identity / chameleon] Identity tied to shut-down revoked DOT",
-    "+20 [Identity / chameleon] Running trucks from carriers FMCSA shut down",
-    "+24 [Identity / chameleon] Equipment spread across multiple active DOTs",
     "+5 [Context] Personal contact/address corroborator"
   ],
   "reasonLabels": [
+    "ISS, Inspect (top inspection priority)",
+    "Authority not active",
     "Unsafe Driving",
-    "Vehicle OOS",
-    "Equipment spread across multiple active DOTs",
-    "Running trucks from carriers FMCSA shut down"
+    "Driver OOS",
+    "Vehicle OOS"
   ],
   "axes": {
     "crash": "na",
     "unsafeDriving": "high",
     "hos": "clean",
-    "driverOos": "clean",
+    "driverOos": "elevated",
     "controlledSubstances": "na",
     "vehicleOos": "elevated",
     "hazmatOos": "na",
     "revocations": "clean",
-    "authority": "clean",
+    "authority": "critical",
     "insurance": "info"
   }
 }
