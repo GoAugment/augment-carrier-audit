@@ -1,0 +1,29 @@
+{
+  "dot": 750770,
+  "reasonNote": "CRITICAL: authority suspended for no insurance",
+  "carrierName": "CORY PATTEN'S AUTO & TRUCK WORKS LTD",
+  "riskLevel": "Critical",
+  "riskScore": 60,
+  "riskTier": "High",
+  "riskContributions": [
+    "+30 [Authority / insurance] Recent revocation",
+    "+30 [Authority / insurance] Authority suspended for no insurance"
+  ],
+  "reasonLabels": [
+    "FMCSA suspended authority for lack of insurance",
+    "Recent revocation",
+    "Why the FMCSA SMS scores look clean"
+  ],
+  "axes": {
+    "crash": "clean",
+    "unsafeDriving": "clean",
+    "hos": "clean",
+    "driverOos": "clean",
+    "controlledSubstances": "na",
+    "vehicleOos": "na",
+    "hazmatOos": "na",
+    "revocations": "high",
+    "authority": "critical",
+    "insurance": "critical"
+  }
+}

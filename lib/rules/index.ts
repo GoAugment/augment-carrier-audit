@@ -716,7 +716,14 @@ export const RULES: Rule[] = [
       high: "Suspension effective 11-30 days out.",
     },
     fixtures: {
-      critical: { dot: 3008423, reason: "JESTEVA TRANSPORT INC: authority suspended 2026-08-07 for no insurance meeting minimum, no reinstatement filed." },
+      // JESTEVA TRANSPORT (3008423) cured its suspension on 2026-10-01 and
+      // stopped firing the same week the fixture landed. Prefer a suspension
+      // that has already been in effect for months over a fresh notice, and
+      // confirm in Motus AuthHist that the suspension is on the MOTOR CARRIER
+      // docket: the pipeline collapses suspensions to the DOT, so a dormant
+      // broker docket can flag a carrier whose property authority is fine
+      // (DAILY STAR EXPRESS, 3296774, is exactly that false positive).
+      critical: { dot: 750770, reason: "CORY PATTEN'S AUTO & TRUCK WORKS LTD: MC-621212 suspended 2026-07-04 for no insurance, $0 BIPD on file, still inactive in Motus 2026-10-02." },
       none: { dot: 53467, reason: "Werner: no suspension." },
     },
   },
