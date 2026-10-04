@@ -115,7 +115,10 @@ const SNAPSHOT_DOTS: SnapshotDot[] = [
   // imminent-lapse rule. This carrier rendered Medium with "$750k meets
   // required" before the signal existed, because the coverage on file predates
   // the suspension.
-  { dot: 3008423,  reason: "CRITICAL: authority suspended for no insurance" },
+  // JESTEVA TRANSPORT (3008423) cured its suspension 2026-10-01. CORY PATTEN'S
+  // has had its motor-carrier docket MC-621212 suspended since 2026-07-04 and
+  // is present in both the 20260813 and 20260913 vintages.
+  { dot: 750770,   reason: "CRITICAL: authority suspended for no insurance" },
 ];
 
 interface AuditSnapshot {
