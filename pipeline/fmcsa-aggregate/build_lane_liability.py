@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["polars>=1.0"]
+# dependencies = ["polars>=1.25,<2"]
 # ///
 """Build the lane-liability lookup: each state's INJURY SHARE of truck crashes
 occurring in that state, vs the national base. Output -> lib/data/lane-liability.json

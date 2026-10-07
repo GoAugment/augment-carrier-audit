@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
-#   "polars>=1.0",
+#   "polars>=1.25,<2",
 #   "httpx>=0.27",
 #   "lxml>=5.0",
 #   "tenacity>=8.0",

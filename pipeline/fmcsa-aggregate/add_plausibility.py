@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["polars>=1.0"]
+# dependencies = ["polars>=1.25,<2"]
 # ///
 """
 Add fleet-plausibility columns to carrier_aggregates.parquet.

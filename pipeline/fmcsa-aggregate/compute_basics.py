@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["polars>=1.0"]
+# dependencies = ["polars>=1.25,<2"]
 # ///
 """Compute all 7 FMCSA BASIC measures, percentiles, and alerts in one pass.
 

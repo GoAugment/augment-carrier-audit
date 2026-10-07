@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["polars>=1.0", "httpx>=0.27", "openpyxl>=3.1", "tenacity>=8.0"]
+# dependencies = ["polars>=1.25,<2", "httpx>=0.27", "openpyxl>=3.1", "tenacity>=8.0"]
 # ///
 """Scrape FMCSA acute/critical (Serious) Violations from investigations.
 

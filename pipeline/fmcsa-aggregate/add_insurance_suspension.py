@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["polars>=1.0"]
+# dependencies = ["polars>=1.25,<2"]
 # ///
 """FMCSA involuntary suspensions for lack of insurance — the live replacement
 for the dead imminent-lapse signal.

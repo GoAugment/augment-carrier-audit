@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["polars>=1.0"]
+# dependencies = ["polars>=1.25,<2"]
 # ///
 """Add FMCSA FAST Act §5305 "High-Risk" carrier flag.
 

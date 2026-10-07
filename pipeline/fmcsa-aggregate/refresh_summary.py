@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["polars>=1.0"]
+# dependencies = ["polars>=1.25,<2"]
 # ///
 """Write one human-readable digest of a refresh, so reviewing it means reading a
 page instead of poking at parquets.

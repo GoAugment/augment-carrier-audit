@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["polars>=1.0"]
+# dependencies = ["polars>=1.25,<2"]
 # ///
 """
 Build offline per-carrier aggregates from FMCSA SMS bulk files.
@@ -860,7 +860,7 @@ def build_aggregate() -> pl.DataFrame:
     )
 
     log("Collecting joined dataframe (this is the expensive step)...")
-    df = joined.collect(streaming=True)
+    df = joined.collect(engine="streaming")
     log(f"Collected {df.height:,} carriers x {df.width} columns")
     return df
 
