@@ -1,18 +1,18 @@
 {
   "CA": {
-    "injury_pct": 38.3,
+    "injury_pct": 38.6,
     "tier": "elevated"
   },
   "FL": {
-    "injury_pct": 38.7,
+    "injury_pct": 38.8,
     "tier": "elevated"
   },
   "ID": {
-    "injury_pct": 43.1,
+    "injury_pct": 43.5,
     "tier": "elevated"
   },
   "MA": {
-    "injury_pct": 38.5,
+    "injury_pct": 38.1,
     "tier": "elevated"
   },
   "ME": {
@@ -20,31 +20,31 @@
     "tier": "elevated"
   },
   "MS": {
-    "injury_pct": 41.8,
+    "injury_pct": 41.2,
     "tier": "elevated"
   },
   "NC": {
-    "injury_pct": 44.6,
+    "injury_pct": 44.5,
     "tier": "elevated"
   },
   "NJ": {
-    "injury_pct": 44.9,
+    "injury_pct": 44.0,
     "tier": "elevated"
   },
   "NM": {
-    "injury_pct": 39.6,
+    "injury_pct": 39.9,
     "tier": "elevated"
   },
   "NV": {
-    "injury_pct": 44.8,
-    "tier": "elevated"
+    "injury_pct": 45.8,
+    "tier": "high"
   },
   "NY": {
-    "injury_pct": 69.6,
+    "injury_pct": 69.0,
     "tier": "high"
   },
   "SC": {
-    "injury_pct": 40.3,
+    "injury_pct": 40.1,
     "tier": "elevated"
   },
   "TX": {
@@ -53,9 +53,9 @@
   },
   "_meta": {
     "source": "SMS_Input_-_Crash.csv",
-    "national_injury_pct": 36.1,
+    "national_injury_pct": 36.0,
     "note": "Injury share of truck crashes by crash-location state. tier: high>=45%, elevated>=38%. Only states with >=1000 crashes + above-elevated kept.",
-    "generated": "20260813",
-    "total_crashes": 258353
+    "generated": "20260913",
+    "total_crashes": 255582
   }
 }
