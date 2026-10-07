@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["polars>=1.0", "fastexcel"]
+# dependencies = ["polars>=1.25,<2", "fastexcel"]
 # ///
 """
 Add FMCSA closed enforcement case aggregates to the parquet, and produce a T1

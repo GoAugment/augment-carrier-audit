@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["polars>=1.0", "httpx"]
+# dependencies = ["polars>=1.25,<2", "httpx"]
 # ///
 """Sample real carriers and compare our parquet against LIVE FMCSA.
 

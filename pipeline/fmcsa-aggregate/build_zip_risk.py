@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["polars>=1.0"]
+# dependencies = ["polars>=1.25,<2"]
 # ///
 """Build an empirical ZIP-reputation lookup: each physical-address ZIP's
 carrier "shutdown" rate (involuntary revocation on record / not-allowed-to-

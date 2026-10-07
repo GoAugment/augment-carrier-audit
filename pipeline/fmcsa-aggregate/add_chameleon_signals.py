@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["polars>=1.0"]
+# dependencies = ["polars>=1.25,<2"]
 # ///
 """Add chameleon-detection signal columns that span fleet-sharing AND
 insurance history. Touches two source files (inspection CSV + InsHist text)

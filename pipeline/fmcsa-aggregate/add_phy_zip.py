@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["polars>=1.0"]
+# dependencies = ["polars>=1.25,<2"]
 # ///
 """Add phy_zip (5-digit physical-address ZIP) to carrier_aggregates, joined from
 carrier_identity. A small, highly-repeating string column — feeds the analyzer's

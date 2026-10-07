@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["polars>=1.0"]
+# dependencies = ["polars>=1.25,<2"]
 # ///
 """Compute FMCSA Inspection Selection System (ISS-CSA) score per the official
 Algorithm Description doc (December 2012, current methodology v3.20 inputs).

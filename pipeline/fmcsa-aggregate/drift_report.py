@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["polars>=1.0"]
+# dependencies = ["polars>=1.25,<2"]
 # ///
 """Post-build drift report: compare this refresh's artifacts against the previous
 vintage and fail loudly on implausible moves.

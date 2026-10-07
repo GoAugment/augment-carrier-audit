@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["polars>=1.0"]
+# dependencies = ["polars>=1.25,<2"]
 # ///
 """Add home-state inspection share to carrier_aggregates — the fraction of a
 carrier's roadside inspections that occur in its registered (physical) state.
