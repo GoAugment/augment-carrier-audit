@@ -119,6 +119,14 @@ const SNAPSHOT_DOTS: SnapshotDot[] = [
   // has had its motor-carrier docket MC-621212 suspended since 2026-07-04 and
   // is present in both the 20260813 and 20260913 vintages.
   { dot: 750770,   reason: "CRITICAL: authority suspended for no insurance" },
+
+  // In FMCSA's Company Census but not its SMS census, so no SMS inspections,
+  // percentiles, or ISS. These DOTs had no row at all before 20260913 and the
+  // API returned them as unresolved. 3980392 is one of the DOTs a customer
+  // reported on 2026-10-09; 604355 adds 10 power units and 800k miles, enough
+  // for the crash-rate and fleet-plausibility paths to run.
+  { dot: 3980392,  reason: "CENSUS-ONLY: active for-hire carrier, no SMS record" },
+  { dot: 604355,   reason: "CENSUS-ONLY: 10 power units, no SMS record" },
 ];
 
 interface AuditSnapshot {

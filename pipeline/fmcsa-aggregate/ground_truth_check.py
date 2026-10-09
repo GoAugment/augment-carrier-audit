@@ -136,10 +136,11 @@ def sample_dots(n: int) -> list[int]:
     """
     df = pl.read_parquet(AGG, columns=[
         "DOT_NUMBER", "power_units", "driver_inspections_24mo",
-        "vehicle_inspections_24mo", "crashes_24mo",
+        "vehicle_inspections_24mo", "crashes_24mo", "in_sms_census",
     ])
     pool = df.filter(
-        (pl.col("power_units") >= 1)
+        pl.col("in_sms_census")
+        & (pl.col("power_units") >= 1)
         & ((pl.col("driver_inspections_24mo").fill_null(0)
             + pl.col("vehicle_inspections_24mo").fill_null(0)
             + pl.col("crashes_24mo").fill_null(0)) > 0)

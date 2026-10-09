@@ -265,9 +265,15 @@ def main() -> None:
     )
     df = df.with_columns(is_oos=is_oos)
 
+    # ISS is FMCSA's roadside-selection score for carriers in SMS. Census-only
+    # carriers have no SMS record, so they get no ISS (null after the join
+    # below). Leaving them in would also change which carriers the random 1%
+    # draw picks, since the draw is positional over the sorted DOT list.
+    sms = df.filter(pl.col("in_sms_census"))
+
     # Compute group + base ISS for safety path
     print("Running Safety Algorithm for carriers with BASIC data…")
-    safety_carriers = df.filter(pl.col("has_basic_data") & ~pl.col("is_oos"))
+    safety_carriers = sms.filter(pl.col("has_basic_data") & ~pl.col("is_oos"))
     print(f"  safety-path carriers: {safety_carriers.height:,}")
 
     iss_rows = []
@@ -329,7 +335,7 @@ def main() -> None:
 
     # Insufficient Data path
     print("\nRunning Insufficient Data Algorithm for remaining carriers…")
-    insuff_carriers = df.filter(~pl.col("has_basic_data") & ~pl.col("is_oos"))
+    insuff_carriers = sms.filter(~pl.col("has_basic_data") & ~pl.col("is_oos"))
     print(f"  insufficient-data carriers: {insuff_carriers.height:,}")
 
     insuff_rows = []
@@ -358,7 +364,7 @@ def main() -> None:
     )
 
     # OOSO carriers → ISS = 100 regardless of algorithm path
-    oos_iss = df.filter(pl.col("is_oos")).select(
+    oos_iss = sms.filter(pl.col("is_oos")).select(
         "DOT_NUMBER",
         pl.lit("OOSO").alias("iss_group"),
         pl.lit(100).cast(pl.Int64).alias("iss_score"),
