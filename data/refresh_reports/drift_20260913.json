@@ -1,5 +1,63 @@
 {
   "current": {
+    "active_authority": 354763,
+    "bipd_on_file": 353796,
+    "bipd_required": 579410,
+    "bipd_zero_with_requirement": 211173,
+    "census_only_rows": 135718,
+    "crash_indicator_alert": 8434,
+    "imminent_lapse": 3720,
+    "insurer_base_rate": 0.0331,
+    "insurer_count": 28,
+    "lane_national_injury_pct": 36.0,
+    "lane_state_count": 13,
+    "prior_revoke_flag": 348,
+    "risk_signal_rows": 1306044,
+    "rows": 2122441,
+    "scrape_ci_error": 0,
+    "scrape_ci_ok": 25590,
+    "scrape_sv_error": 22,
+    "scrape_sv_ok": 926,
+    "shutdown_sibling_any": 25455,
+    "shutdown_sibling_high": 4254,
+    "snapshot_date": "20260913",
+    "sum_crashes": 265548,
+    "sum_driver_inspections": 4931955,
+    "sum_fatal_crashes": 7131,
+    "sum_vehicle_inspections": 3173372,
+    "suspension_effective": 1297,
+    "suspension_pending": 9023,
+    "zip_base_rate": 0.1006,
+    "zip_count": 86
+  },
+  "issues": [
+    {
+      "message": "tag is unchanged (20260913) but the DATA moved (sum_crashes) \u2014 this is new data under a stale tag. Pass the real vintage (FMCSA_DATA_TAG=YYYYMMDD) instead of re-using the last one.",
+      "metric": "snapshot_date",
+      "severity": "ERROR"
+    },
+    {
+      "message": "new metric (135718) \u2014 no baseline to compare",
+      "metric": "census_only_rows",
+      "severity": "WARN"
+    },
+    {
+      "message": "IDENTICAL to last refresh (4931955) \u2014 but other sms_volume metrics moved, so the read was fresh and this source simply didn't change upstream",
+      "metric": "sum_driver_inspections",
+      "severity": "WARN"
+    },
+    {
+      "message": "IDENTICAL to last refresh (3173372) \u2014 but other sms_volume metrics moved, so the read was fresh and this source simply didn't change upstream",
+      "metric": "sum_vehicle_inspections",
+      "severity": "WARN"
+    },
+    {
+      "message": "unchanged at '20260913' \u2014 a refresh must advance this",
+      "metric": "snapshot_date",
+      "severity": "ERROR"
+    }
+  ],
+  "previous": {
     "active_authority": 354137,
     "bipd_on_file": 353802,
     "bipd_required": 579101,
@@ -28,43 +86,6 @@
     "suspension_pending": 8707,
     "zip_base_rate": 0.1004,
     "zip_count": 86
-  },
-  "issues": [
-    {
-      "message": "IDENTICAL to last refresh (0.1004) \u2014 but other derived_tables metrics moved, so the read was fresh and this source simply didn't change upstream",
-      "metric": "zip_base_rate",
-      "severity": "WARN"
-    }
-  ],
-  "previous": {
-    "active_authority": 355589,
-    "bipd_on_file": 358659,
-    "bipd_required": 578498,
-    "bipd_zero_with_requirement": 211274,
-    "crash_indicator_alert": 8715,
-    "imminent_lapse": 3131,
-    "insurer_base_rate": 0.0279,
-    "insurer_count": 34,
-    "lane_national_injury_pct": 36.1,
-    "lane_state_count": 13,
-    "prior_revoke_flag": 382,
-    "risk_signal_rows": 1220791,
-    "rows": 2113851,
-    "scrape_ci_error": 0,
-    "scrape_ci_ok": 25994,
-    "scrape_sv_error": 17,
-    "scrape_sv_ok": 858,
-    "shutdown_sibling_any": 26668,
-    "shutdown_sibling_high": 4691,
-    "snapshot_date": "20260813",
-    "sum_crashes": 261530,
-    "sum_driver_inspections": 4956496,
-    "sum_fatal_crashes": 7009,
-    "sum_vehicle_inspections": 3184955,
-    "suspension_effective": 1093,
-    "suspension_pending": 2969,
-    "zip_base_rate": 0.1004,
-    "zip_count": 93
   },
   "snapshot": "20260913"
 }

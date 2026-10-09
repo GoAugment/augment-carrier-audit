@@ -1,0 +1,31 @@
+{
+  "dot": 3980392,
+  "reasonNote": "CENSUS-ONLY: active for-hire carrier, no SMS record",
+  "carrierName": "G6 HAULERS LLC",
+  "riskLevel": "Medium",
+  "riskScore": 41,
+  "riskTier": "Medium",
+  "riskContributions": [
+    "+10 [Authority / insurance] Recent revocation, since reinstated",
+    "+8 [Context] Insurer / ZIP risk context",
+    "+18 [Authority / insurance] FMCSA suspension notice served",
+    "+5 [Context] Personal contact/address corroborator"
+  ],
+  "reasonLabels": [
+    "FMCSA suspended authority for lack of insurance",
+    "High-risk insurer",
+    "Recent revocation, since reinstated"
+  ],
+  "axes": {
+    "crash": "clean",
+    "unsafeDriving": "na",
+    "hos": "na",
+    "driverOos": "na",
+    "controlledSubstances": "na",
+    "vehicleOos": "na",
+    "hazmatOos": "na",
+    "revocations": "elevated",
+    "authority": "clean",
+    "insurance": "elevated"
+  }
+}
