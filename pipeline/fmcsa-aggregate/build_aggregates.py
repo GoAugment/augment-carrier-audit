@@ -151,7 +151,73 @@ def load_census() -> pl.LazyFrame:
             pl.col("MCS150_MILEAGE").alias("annual_mileage"),
             "dot_add_date",
         )
+        .with_columns(in_sms_census=pl.lit(True))
     )
+
+
+def load_census_only_carriers() -> pl.LazyFrame:
+    """Active and pending carriers that FMCSA's SMS census leaves out.
+
+    The SMS census is FMCSA's list of carriers in its safety scoring system,
+    and on its own it was the row universe: a DOT missing from it had no row,
+    and the API answered `unresolved`. In the 20260913 vintage that was
+    134,464 status-A carriers, 100,427 of them with an active MC docket.
+    None had an SMS inspection; 83% report 0 power units.
+
+    Company Census is FMCSA's registry of every DOT, so it fills the same
+    census columns for these carriers. Status I is left out: Company Census
+    lists 2.27M inactive DOTs, which would push both parquets past GitHub's
+    100 MiB blob limit.
+
+    `in_sms_census = False` marks the rows. Every population statistic
+    (thresholds, ZIP rates, ISS sampling, VIN siblings, drift) filters on it,
+    so adding these rows leaves every other carrier's numbers unchanged.
+    """
+    log(f"Scanning census-only carriers: {COMPANY_CENSUS_PATH.name}")
+    return (
+        pl.scan_csv(
+            COMPANY_CENSUS_PATH,
+            schema_overrides={
+                "DOT_NUMBER": pl.Int64,
+                "POWER_UNITS": pl.Int64,
+                "TOTAL_DRIVERS": pl.Int64,
+                "MCS150_MILEAGE": pl.Int64,
+                # YYYYMMDD here, unlike the SMS census's DD-MMM-YY.
+                "ADD_DATE": pl.Utf8,
+                "STATUS_CODE": pl.Utf8,
+                "PHY_STATE": pl.Utf8,
+                "HM_Ind": pl.Utf8,
+            },
+            ignore_errors=True,
+        )
+        .filter(pl.col("DOT_NUMBER").is_not_null())
+        .filter(pl.col("STATUS_CODE").is_in(["A", "P"]))
+        .unique(subset=["DOT_NUMBER"], keep="first")
+        .select(
+            pl.col("DOT_NUMBER"),
+            pl.col("LEGAL_NAME"),
+            pl.col("DBA_NAME"),
+            pl.col("HM_Ind").alias("HM_FLAG"),
+            pl.col("PHY_STATE").alias("physical_state"),
+            pl.col("CARRIER_OPERATION"),
+            pl.col("POWER_UNITS").alias("power_units"),
+            pl.col("TOTAL_DRIVERS").alias("drivers"),
+            pl.col("MCS150_MILEAGE").alias("annual_mileage"),
+            pl.col("ADD_DATE").str.head(8).str.strptime(
+                pl.Date, format="%Y%m%d", strict=False
+            ).dt.strftime("%Y-%m-%d").alias("dot_add_date"),
+        )
+        .with_columns(in_sms_census=pl.lit(False))
+    )
+
+
+def load_carrier_universe() -> pl.LazyFrame:
+    """SMS census rows, plus Company Census carriers the SMS census leaves out."""
+    sms = load_census()
+    census_only = load_census_only_carriers().join(
+        sms.select("DOT_NUMBER"), on="DOT_NUMBER", how="anti"
+    )
+    return pl.concat([sms, census_only], how="vertical_relaxed")
 
 
 # --- step 2: SMS AB PassProperty (24-mo inspection rollups + BASIC alerts) --
@@ -779,7 +845,7 @@ def load_actpend_insurance() -> pl.LazyFrame:
 # --- step 5: join everything ------------------------------------------------
 
 def build_aggregate() -> pl.DataFrame:
-    census = load_census()
+    census = load_carrier_universe()
     passprop = load_passproperty()
     crashes = aggregate_crashes()
     hazmat = aggregate_hazmat_oos()
@@ -869,6 +935,9 @@ def build_aggregate() -> pl.DataFrame:
 
 def compute_thresholds(df: pl.DataFrame) -> dict:
     log("Computing national P50/P75/P85/P90/P95 thresholds...")
+    # Census-only carriers have no SMS record. Their zero crashes and null
+    # inspections would move the crash cutoffs every other carrier is banded on.
+    df = df.filter(pl.col("in_sms_census"))
     out: dict = {
         "snapshot_date": SNAPSHOT_DATE,
         "window_start": WINDOW_START,
@@ -1182,7 +1251,12 @@ def main() -> None:
     log(f"Writing {OUT_IDENTITY}")
     # Canonical row order — see prune_app_parquet. Without it an unchanged
     # rebuild rewrites all 96MB with identical values in a different order.
-    identity.sort("DOT_NUMBER").write_parquet(OUT_IDENTITY, compression="zstd")
+    # Level 19, not polars' default 3: identity sat at 99.2MB against GitHub's
+    # 100 MiB blob limit, and the census-only carriers add ~6MB. Level 19 cut
+    # the same rows to 83.5MB. Decompression speed does not depend on the level.
+    identity.sort("DOT_NUMBER").write_parquet(
+        OUT_IDENTITY, compression="zstd", compression_level=19
+    )
 
     thresholds = compute_thresholds(df)
     log(f"Writing {OUT_THRESHOLDS}")

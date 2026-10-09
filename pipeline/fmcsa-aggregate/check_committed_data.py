@@ -43,6 +43,7 @@ from drift_report import BASELINE, collect  # noqa: E402
 # different vintage cannot match all of them by accident.
 KEYS = (
     "rows",
+    "census_only_rows",
     "active_authority",
     "bipd_on_file",
     "prior_revoke_flag",

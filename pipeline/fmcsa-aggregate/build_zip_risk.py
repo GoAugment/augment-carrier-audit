@@ -33,7 +33,9 @@ MIN_CARRIERS = 500
 
 
 def main() -> None:
-    agg = pl.read_parquet(AGG).select(
+    # SMS carriers only, so the census-only rows (all status A or P) do not
+    # dilute the shutdown rates every ZIP is compared against.
+    agg = pl.read_parquet(AGG).filter(pl.col("in_sms_census")).select(
         "DOT_NUMBER", "allowed_to_operate", "most_recent_involuntary_date", "prior_revoke_flag"
     )
     idn = pl.read_parquet(IDN).select("DOT_NUMBER", "phy_zip")
