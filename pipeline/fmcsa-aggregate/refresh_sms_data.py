@@ -4,9 +4,10 @@
 # ///
 """Download fresh FMCSA SMS bulk files from the Socrata API (data.transportation.gov).
 
-Uses the bulk CSV export endpoint (…/api/views/{id}/rows.csv?accessType=DOWNLOAD),
-which streams the FULL dataset with the original Title_Case headers — schema-
-compatible with the manual SMS_Input_* downloads the pipeline already reads.
+Streams each dataset from the SODA2 resource endpoint (…/resource/{id}.csv)
+and grafts on the header line from the SODA3 export, so the files keep the
+original Title_Case headers — schema-compatible with the manual SMS_Input_*
+downloads the pipeline already reads.
 
 Writes to data/sources/refresh_<YYYYMMDD>/ with fixed filenames. Does NOT touch
 the current parquet or the existing Downloads files — this only fetches raw data
@@ -44,9 +45,25 @@ import httpx
 REPO = Path(__file__).resolve().parents[2]
 ENV = Path(os.environ.get("FMCSA_ENV_FILE", REPO / ".env.local"))
 OUT_ROOT = Path(os.environ.get("FMCSA_SOURCES_DIR", REPO / "data" / "sources"))
-EXPORT = "https://data.transportation.gov/api/views/{id}/rows.csv"
+# Socrata retired the SODA1 bulk export (/api/views/{id}/rows.csv) on
+# 2026-10-07 — every dataset answers HTTP 410 "feature_deprecated", permanent
+# removal 2026-12-16 (support.socrata.com/hc/en-us/articles/43491231777047).
+# Run 37712614793 lost all sixteen files to it in one go.
+#
+# The SODA3 replacement (/api/v3/views/{id}/export.csv) keeps the Title_Case
+# header the pipeline relies on, but it is a *human-readable* export: amounts
+# come back as "750,000", which merge_motus's Float64 cast (strict=False) would
+# turn into nulls, i.e. every carrier silently uninsured. So it is used for
+# the HEADER LINE ONLY. All data comes from the SODA2 resource endpoint, which
+# Socrata still supports with no end date, serves raw values byte-identical
+# to the old export, and streams a whole dataset in one request given a large
+# $limit (716,962 rows in 47s when this was written).
+EXPORT = "https://data.transportation.gov/api/v3/views/{id}/export.csv"
 COUNT = "https://data.transportation.gov/resource/{id}.json"
 RESOURCE = "https://data.transportation.gov/resource/{id}.csv"
+# $limit for the single-request stream. SODA2.1 has no server-side cap; this
+# just needs to exceed the largest dataset (Company Census, ~4.5M rows).
+STREAM_LIMIT = 100_000_000
 
 # Datasets whose single-shot bulk export is too large to stream reliably (the
 # connection drops mid-stream). These are fetched via paginated SODA chunks
@@ -246,7 +263,7 @@ def export_header(c: httpx.Client, did: str, tag: str = "?") -> str:
     even when the full stream drops. Falls back to an existing file's header."""
     for attempt in range(1, HEADER_MAX_ATTEMPTS + 1):
         try:
-            with c.stream("GET", EXPORT.format(id=did), params={"accessType": "DOWNLOAD"}) as r:
+            with c.stream("GET", EXPORT.format(id=did)) as r:
                 r.raise_for_status()
                 buf = b""
                 for chunk in r.iter_bytes(chunk_size=1 << 14):
@@ -332,18 +349,41 @@ def download_paginated(c: httpx.Client, did: str, dest: Path, expected: int | No
 
 
 def download_one(c: httpx.Client, did: str, dest: Path, expected: int | None) -> bool:
+    """Stream the whole dataset from the SODA2 resource endpoint in one request.
+    The stream's own header is lowercase/quoted, so it is dropped and the export
+    header (original Title_Case) written in its place — same as the paged path."""
     tag = dest.name
     part = dest.with_suffix(dest.suffix + ".part")
+    try:
+        header = export_header(c, did, tag)
+    except RuntimeError:
+        if dest.exists():
+            header = dest.read_text().split("\n", 1)[0]
+            log(tag, "(reusing existing header)")
+        else:
+            return False
+    header_bytes = header.encode("utf-8") + b"\n"
     for attempt in range(1, MAX_ATTEMPTS + 1):
         t0 = time.monotonic()
         n = 0
         try:
-            with c.stream("GET", EXPORT.format(id=did), params={"accessType": "DOWNLOAD"}) as r:
+            with c.stream(
+                "GET", RESOURCE.format(id=did),
+                params={"$order": ":id", "$limit": STREAM_LIMIT},
+            ) as r:
                 if r.status_code != 200:
                     log(tag, f"✗ HTTP {r.status_code} (attempt {attempt})")
                     raise httpx.HTTPError(f"status {r.status_code}")
                 with open(part, "wb") as f:
+                    f.write(header_bytes)
+                    skipping = True  # until the stream's own header line is consumed
                     for chunk in r.iter_bytes(chunk_size=1 << 20):
+                        if skipping:
+                            nl = chunk.find(b"\n")
+                            if nl < 0:
+                                continue
+                            chunk = chunk[nl + 1:]
+                            skipping = False
                         f.write(chunk)
                         n += len(chunk)
             # Verify completeness by row count before promoting the .part file.
