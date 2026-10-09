@@ -140,6 +140,15 @@ DATASETS = {**MONTHLY, **DAILY}
 # inshist only feeds the slower-moving chameleon cancel/replace-history signals.
 
 MAX_ATTEMPTS = 6
+# The header fetch is one tiny request, so it is cheap to keep trying. It is
+# also the request most likely to be throttled: every worker fires it at the
+# same host at the same moment, and run 37668995376 (2026-10-07) lost the
+# Company Census entirely when six 429s arrived inside a minute and the
+# fallback found no previous file on a fresh runner.
+HEADER_MAX_ATTEMPTS = 12
+# Socrata answers a throttle with 429 and usually a Retry-After. Backing off
+# for 2-30s against that is just more requests into the same wall.
+THROTTLE_MIN_WAIT = 60
 
 # Chunk retries get their OWN, far more patient budget than whole-file retries.
 #
@@ -221,11 +230,21 @@ def data_lines(path: Path) -> int:
     return max(0, n - 1)
 
 
+def _retry_wait(e: Exception, attempt: int, cap: int) -> int:
+    """Seconds to sleep before retrying `attempt`. Exponential, capped, except a
+    429 waits at least THROTTLE_MIN_WAIT and honours Retry-After when present."""
+    wait = min(cap, 2 ** attempt)
+    if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
+        ra = e.response.headers.get("Retry-After", "")
+        wait = max(wait, THROTTLE_MIN_WAIT, int(ra) if ra.isdigit() else 0)
+    return wait
+
+
 def export_header(c: httpx.Client, did: str, tag: str = "?") -> str:
     """Grab just the first line of the bulk export — its original Title_Case
     (incl. quirks like `HM_Ind`). Only needs the first few KB, so it's reliable
     even when the full stream drops. Falls back to an existing file's header."""
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    for attempt in range(1, HEADER_MAX_ATTEMPTS + 1):
         try:
             with c.stream("GET", EXPORT.format(id=did), params={"accessType": "DOWNLOAD"}) as r:
                 r.raise_for_status()
@@ -236,8 +255,9 @@ def export_header(c: httpx.Client, did: str, tag: str = "?") -> str:
                         return buf.split(b"\n", 1)[0].decode("utf-8-sig").rstrip("\r")
                 return buf.decode("utf-8-sig").rstrip("\r")
         except (httpx.HTTPError, httpx.StreamError) as e:
-            log(tag, f"… header attempt {attempt} failed ({type(e).__name__}); retry")
-            time.sleep(min(30, 2 ** attempt))
+            wait = _retry_wait(e, attempt, 30)
+            log(tag, f"… header attempt {attempt}/{HEADER_MAX_ATTEMPTS} failed ({type(e).__name__}); retry in {wait}s")
+            time.sleep(wait)
     raise RuntimeError(f"could not fetch export header for {did}")
 
 
@@ -281,7 +301,7 @@ def download_paginated(c: httpx.Client, did: str, dest: Path, expected: int | No
                     log(tag, f"… offset {offset:,} (+{n:,} rows, {total:,} total)")
                     break
                 except (httpx.HTTPError, httpx.StreamError) as e:
-                    wait = min(CHUNK_BACKOFF_CAP, 2 ** attempt)
+                    wait = _retry_wait(e, attempt, CHUNK_BACKOFF_CAP)
                     log(tag, f"… chunk @ {offset:,} attempt {attempt}/{CHUNK_MAX_ATTEMPTS} "
                              f"failed ({type(e).__name__}); retry in {wait}s")
                     time.sleep(wait)
@@ -348,7 +368,7 @@ def download_one(c: httpx.Client, did: str, dest: Path, expected: int | None) ->
             log(tag, f"✓ {mb:,.0f} MB in {(time.monotonic()-t0)/60:.1f}m{rows_tag}")
             return True
         except (httpx.HTTPError, httpx.StreamError, OSError) as e:
-            wait = min(60, 2 ** attempt)
+            wait = _retry_wait(e, attempt, 60)
             log(tag, f"… attempt {attempt}/{MAX_ATTEMPTS} failed after {n/1e6:,.0f} MB ({type(e).__name__}: {e}); retrying in {wait}s")
             time.sleep(wait)
     log(tag, f"✗ GAVE UP after {MAX_ATTEMPTS} attempts")
