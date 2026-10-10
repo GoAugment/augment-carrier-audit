@@ -4,9 +4,10 @@
 # ///
 """Download fresh FMCSA SMS bulk files from the Socrata API (data.transportation.gov).
 
-Uses the bulk CSV export endpoint (…/api/views/{id}/rows.csv?accessType=DOWNLOAD),
-which streams the FULL dataset with the original Title_Case headers — schema-
-compatible with the manual SMS_Input_* downloads the pipeline already reads.
+Streams each dataset from the SODA2 resource endpoint (…/resource/{id}.csv)
+and grafts on the header line from the SODA3 export, so the files keep the
+original Title_Case headers — schema-compatible with the manual SMS_Input_*
+downloads the pipeline already reads.
 
 Writes to data/sources/refresh_<YYYYMMDD>/ with fixed filenames. Does NOT touch
 the current parquet or the existing Downloads files — this only fetches raw data
@@ -44,9 +45,25 @@ import httpx
 REPO = Path(__file__).resolve().parents[2]
 ENV = Path(os.environ.get("FMCSA_ENV_FILE", REPO / ".env.local"))
 OUT_ROOT = Path(os.environ.get("FMCSA_SOURCES_DIR", REPO / "data" / "sources"))
-EXPORT = "https://data.transportation.gov/api/views/{id}/rows.csv"
+# Socrata retired the SODA1 bulk export (/api/views/{id}/rows.csv) on
+# 2026-10-07 — every dataset answers HTTP 410 "feature_deprecated", permanent
+# removal 2026-12-16 (support.socrata.com/hc/en-us/articles/43491231777047).
+# Run 37712614793 lost all sixteen files to it in one go.
+#
+# The SODA3 replacement (/api/v3/views/{id}/export.csv) keeps the Title_Case
+# header the pipeline relies on, but it is a *human-readable* export: amounts
+# come back as "750,000", which merge_motus's Float64 cast (strict=False) would
+# turn into nulls, i.e. every carrier silently uninsured. So it is used for
+# the HEADER LINE ONLY. All data comes from the SODA2 resource endpoint, which
+# Socrata still supports with no end date, serves raw values byte-identical
+# to the old export, and streams a whole dataset in one request given a large
+# $limit (716,962 rows in 47s when this was written).
+EXPORT = "https://data.transportation.gov/api/v3/views/{id}/export.csv"
 COUNT = "https://data.transportation.gov/resource/{id}.json"
 RESOURCE = "https://data.transportation.gov/resource/{id}.csv"
+# $limit for the single-request stream. SODA2.1 has no server-side cap; this
+# just needs to exceed the largest dataset (Company Census, ~4.5M rows).
+STREAM_LIMIT = 100_000_000
 
 # Datasets whose single-shot bulk export is too large to stream reliably (the
 # connection drops mid-stream). These are fetched via paginated SODA chunks
@@ -140,6 +157,15 @@ DATASETS = {**MONTHLY, **DAILY}
 # inshist only feeds the slower-moving chameleon cancel/replace-history signals.
 
 MAX_ATTEMPTS = 6
+# The header fetch is one tiny request, so it is cheap to keep trying. It is
+# also the request most likely to be throttled: every worker fires it at the
+# same host at the same moment, and run 37668995376 (2026-10-07) lost the
+# Company Census entirely when six 429s arrived inside a minute and the
+# fallback found no previous file on a fresh runner.
+HEADER_MAX_ATTEMPTS = 12
+# Socrata answers a throttle with 429 and usually a Retry-After. Backing off
+# for 2-30s against that is just more requests into the same wall.
+THROTTLE_MIN_WAIT = 60
 
 # Chunk retries get their OWN, far more patient budget than whole-file retries.
 #
@@ -221,13 +247,23 @@ def data_lines(path: Path) -> int:
     return max(0, n - 1)
 
 
+def _retry_wait(e: Exception, attempt: int, cap: int) -> int:
+    """Seconds to sleep before retrying `attempt`. Exponential, capped, except a
+    429 waits at least THROTTLE_MIN_WAIT and honours Retry-After when present."""
+    wait = min(cap, 2 ** attempt)
+    if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
+        ra = e.response.headers.get("Retry-After", "")
+        wait = max(wait, THROTTLE_MIN_WAIT, int(ra) if ra.isdigit() else 0)
+    return wait
+
+
 def export_header(c: httpx.Client, did: str, tag: str = "?") -> str:
     """Grab just the first line of the bulk export — its original Title_Case
     (incl. quirks like `HM_Ind`). Only needs the first few KB, so it's reliable
     even when the full stream drops. Falls back to an existing file's header."""
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    for attempt in range(1, HEADER_MAX_ATTEMPTS + 1):
         try:
-            with c.stream("GET", EXPORT.format(id=did), params={"accessType": "DOWNLOAD"}) as r:
+            with c.stream("GET", EXPORT.format(id=did)) as r:
                 r.raise_for_status()
                 buf = b""
                 for chunk in r.iter_bytes(chunk_size=1 << 14):
@@ -236,8 +272,9 @@ def export_header(c: httpx.Client, did: str, tag: str = "?") -> str:
                         return buf.split(b"\n", 1)[0].decode("utf-8-sig").rstrip("\r")
                 return buf.decode("utf-8-sig").rstrip("\r")
         except (httpx.HTTPError, httpx.StreamError) as e:
-            log(tag, f"… header attempt {attempt} failed ({type(e).__name__}); retry")
-            time.sleep(min(30, 2 ** attempt))
+            wait = _retry_wait(e, attempt, 30)
+            log(tag, f"… header attempt {attempt}/{HEADER_MAX_ATTEMPTS} failed ({type(e).__name__}); retry in {wait}s")
+            time.sleep(wait)
     raise RuntimeError(f"could not fetch export header for {did}")
 
 
@@ -281,7 +318,7 @@ def download_paginated(c: httpx.Client, did: str, dest: Path, expected: int | No
                     log(tag, f"… offset {offset:,} (+{n:,} rows, {total:,} total)")
                     break
                 except (httpx.HTTPError, httpx.StreamError) as e:
-                    wait = min(CHUNK_BACKOFF_CAP, 2 ** attempt)
+                    wait = _retry_wait(e, attempt, CHUNK_BACKOFF_CAP)
                     log(tag, f"… chunk @ {offset:,} attempt {attempt}/{CHUNK_MAX_ATTEMPTS} "
                              f"failed ({type(e).__name__}); retry in {wait}s")
                     time.sleep(wait)
@@ -312,18 +349,41 @@ def download_paginated(c: httpx.Client, did: str, dest: Path, expected: int | No
 
 
 def download_one(c: httpx.Client, did: str, dest: Path, expected: int | None) -> bool:
+    """Stream the whole dataset from the SODA2 resource endpoint in one request.
+    The stream's own header is lowercase/quoted, so it is dropped and the export
+    header (original Title_Case) written in its place — same as the paged path."""
     tag = dest.name
     part = dest.with_suffix(dest.suffix + ".part")
+    try:
+        header = export_header(c, did, tag)
+    except RuntimeError:
+        if dest.exists():
+            header = dest.read_text().split("\n", 1)[0]
+            log(tag, "(reusing existing header)")
+        else:
+            return False
+    header_bytes = header.encode("utf-8") + b"\n"
     for attempt in range(1, MAX_ATTEMPTS + 1):
         t0 = time.monotonic()
         n = 0
         try:
-            with c.stream("GET", EXPORT.format(id=did), params={"accessType": "DOWNLOAD"}) as r:
+            with c.stream(
+                "GET", RESOURCE.format(id=did),
+                params={"$order": ":id", "$limit": STREAM_LIMIT},
+            ) as r:
                 if r.status_code != 200:
                     log(tag, f"✗ HTTP {r.status_code} (attempt {attempt})")
                     raise httpx.HTTPError(f"status {r.status_code}")
                 with open(part, "wb") as f:
+                    f.write(header_bytes)
+                    skipping = True  # until the stream's own header line is consumed
                     for chunk in r.iter_bytes(chunk_size=1 << 20):
+                        if skipping:
+                            nl = chunk.find(b"\n")
+                            if nl < 0:
+                                continue
+                            chunk = chunk[nl + 1:]
+                            skipping = False
                         f.write(chunk)
                         n += len(chunk)
             # Verify completeness by row count before promoting the .part file.
@@ -348,7 +408,7 @@ def download_one(c: httpx.Client, did: str, dest: Path, expected: int | None) ->
             log(tag, f"✓ {mb:,.0f} MB in {(time.monotonic()-t0)/60:.1f}m{rows_tag}")
             return True
         except (httpx.HTTPError, httpx.StreamError, OSError) as e:
-            wait = min(60, 2 ** attempt)
+            wait = _retry_wait(e, attempt, 60)
             log(tag, f"… attempt {attempt}/{MAX_ATTEMPTS} failed after {n/1e6:,.0f} MB ({type(e).__name__}: {e}); retrying in {wait}s")
             time.sleep(wait)
     log(tag, f"✗ GAVE UP after {MAX_ATTEMPTS} attempts")
