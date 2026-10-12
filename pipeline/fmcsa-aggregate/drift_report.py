@@ -68,6 +68,9 @@ SNAPSHOT = os.environ.get("FMCSA_SNAPSHOT_DATE")
 SPEC: dict[str, dict] = {
     # --- universe ---
     "rows":                       {"tol": 0.10},
+    # Company Census carriers missing from the SMS census (134,464 status-A in
+    # 20260913). A join change that drops or duplicates them moves this sharply.
+    "census_only_rows":           {"tol": 0.30},
     "risk_signal_rows":           {"tol": 0.25},
     # --- insurance (the Motus rebuild — most fragile surface) ---
     "bipd_on_file":               {"tol": 0.15},
@@ -172,8 +175,15 @@ def collect() -> dict:
         "crashes_24mo", "fatal_crashes_24mo",
         "driver_inspections_24mo", "vehicle_inspections_24mo", "crash_indicator_alert",
     ) if has(c)]
-    df = pl.read_parquet(AGG, columns=want)
-    m: dict = {"rows": pl.scan_parquet(AGG).select(pl.len()).collect().item()}
+    df = pl.read_parquet(AGG, columns=want + (["in_sms_census"] if has("in_sms_census") else []))
+    m: dict = {}
+    # Every metric below describes the SMS carriers, so it stays comparable with
+    # baselines from before the census-only rows existed. Those rows get their
+    # own count, guarded in SPEC like the rest of the universe.
+    if has("in_sms_census"):
+        m["census_only_rows"] = _count(df, (~pl.col("in_sms_census")).cast(pl.Int64))
+        df = df.filter(pl.col("in_sms_census"))
+    m["rows"] = df.height
 
     if has("bipd_insurance_on_file"):
         m["bipd_on_file"] = _count(df, (pl.col("bipd_insurance_on_file") > 0).cast(pl.Int64))

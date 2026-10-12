@@ -153,6 +153,11 @@ export interface FmcsaCarrier {
   annualMileage: number;
   /** Fleet-size bucket string ("micro" | "small" | ... | "unknown"). */
   peerGroup: string;
+  /** False when FMCSA's SMS census leaves this carrier out and the row comes
+   *  from Company Census alone. Such a carrier has no SMS inspections, so its
+   *  BASIC percentiles and ISS are null; registration, authority, insurance,
+   *  revocation, and crash fields are still real. */
+  inSmsCensus: boolean;
   /** Fleet plausibility heuristic from add_plausibility.py — "plausible" |
    *  "low-activity" | "tiny" | "unknown". "low-activity" means inflated PU. */
   fleetSizeFlag: string | null;

@@ -1,71 +1,11 @@
 {
-"base_rate": 0.0328,
+"base_rate": 0.0331,
 "insurers": {
-"STAR MUTUAL RRG": {
-"tier": "elevated",
-"lift": 2.0,
-"rate": 0.0654,
-"n": 1697
-},
-"EVERSPAN INSURANCE COMPANY": {
+"SOUTHLAKE SPECIALTY INSURANCE COMPANY": {
 "tier": "high",
-"lift": 3.1,
-"rate": 0.1013,
-"n": 967
-},
-"BERKSHIRE HATHAWAY DIRECT INSURANCE COMPANY": {
-"tier": "high",
-"lift": 5.1,
-"rate": 0.1661,
-"n": 1222
-},
-"AGENCY INSURANCE COMPANY OF MARYLAND, INC": {
-"tier": "elevated",
-"lift": 2.0,
-"rate": 0.0667,
-"n": 2937
-},
-"MOTOR TRANSPORT MUTUAL RRG INC": {
-"tier": "high",
-"lift": 2.7,
-"rate": 0.0883,
-"n": 1483
-},
-"CONCERT SPECIALTY INSURANCE COMPANY": {
-"tier": "elevated",
-"lift": 2.2,
-"rate": 0.073,
-"n": 1821
-},
-"TEXAS INSURANCE COMPANY": {
-"tier": "high",
-"lift": 4.0,
-"rate": 0.1306,
-"n": 643
-},
-"INTEGON INDEMNITY CORPORATION": {
-"tier": "high",
-"lift": 4.1,
-"rate": 0.1345,
-"n": 1160
-},
-"PROFESSIONAL TRANSPORTATION RRG INC": {
-"tier": "high",
-"lift": 2.9,
-"rate": 0.0952,
-"n": 882
-},
-"NATIONAL LIABILITY & FIRE INS CO.": {
-"tier": "elevated",
-"lift": 1.6,
-"rate": 0.0537,
-"n": 707
-},
-"CIMARRON INSURANCE COMPANY": {
-"tier": "elevated",
-"lift": 1.6,
-"rate": 0.0538,
-"n": 874
+"lift": 3.2,
+"rate": 0.1055,
+"n": 3383
 },
 "A-ONE COMMERCIAL INSURANCE RRG, INC": {
 "tier": "high",
@@ -73,35 +13,29 @@
 "rate": 0.1028,
 "n": 866
 },
-"UNIVERSAL CASUALTY RISK RETENTION GROUP, INC": {
-"tier": "high",
-"lift": 3.7,
-"rate": 0.1227,
-"n": 3049
-},
-"NEW HORIZON INSURANCE COMPANY": {
-"tier": "high",
-"lift": 2.9,
-"rate": 0.0952,
-"n": 903
-},
 "COUNTY HALL INSURANCE COMPANY, INC A RR GROUP": {
 "tier": "elevated",
-"lift": 2.2,
+"lift": 2.1,
 "rate": 0.0711,
 "n": 788
 },
-"ASCOT SPECIALTY INSURANCE COMPANY": {
+"BERKSHIRE HATHAWAY HOMESTATE INSURANCE COMPAN": {
 "tier": "elevated",
-"lift": 2.3,
-"rate": 0.0745,
-"n": 872
+"lift": 1.5,
+"rate": 0.0511,
+"n": 1525
 },
-"SOUTHLAKE SPECIALTY INSURANCE COMPANY": {
+"UNIVERSAL CASUALTY RISK RETENTION GROUP, INC": {
 "tier": "high",
-"lift": 3.2,
-"rate": 0.1043,
-"n": 3375
+"lift": 3.7,
+"rate": 0.1237,
+"n": 3063
+},
+"CIMARRON INSURANCE COMPANY": {
+"tier": "elevated",
+"lift": 1.6,
+"rate": 0.0538,
+"n": 874
 },
 "NATIONAL INDEMNITY COMPANY": {
 "tier": "high",
@@ -109,11 +43,23 @@
 "rate": 0.0927,
 "n": 1036
 },
-"BERKSHIRE HATHAWAY HOMESTATE INSURANCE COMPAN": {
+"NATIONAL TRANSPORTATION INSURANCE CO RRG, LLC": {
 "tier": "elevated",
-"lift": 1.6,
-"rate": 0.0511,
-"n": 1525
+"lift": 1.7,
+"rate": 0.0574,
+"n": 976
+},
+"KNIGHT SPECIALTY INSURANCE COMPANY": {
+"tier": "elevated",
+"lift": 1.8,
+"rate": 0.0586,
+"n": 905
+},
+"NEW HORIZON INSURANCE COMPANY": {
+"tier": "high",
+"lift": 2.8,
+"rate": 0.0923,
+"n": 899
 },
 "STATE NATIONALSPECIALTY INSCO/NATIONAL SPECIA": {
 "tier": "high",
@@ -127,41 +73,101 @@
 "rate": 0.1842,
 "n": 505
 },
-"KNIGHT SPECIALTY INSURANCE COMPANY": {
+"ASCOT SPECIALTY INSURANCE COMPANY": {
 "tier": "elevated",
-"lift": 1.8,
-"rate": 0.0596,
-"n": 906
-},
-"NATIONAL TRANSPORTATION INSURANCE CO RRG, LLC": {
-"tier": "elevated",
-"lift": 1.7,
-"rate": 0.0574,
-"n": 976
-},
-"TRISURA SPECIALTY INSURANCE COMPANY": {
-"tier": "elevated",
-"lift": 1.9,
-"rate": 0.0635,
-"n": 2361
-},
-"MS TRANSVERSE SPECIALTY INSURANCE COMPANY": {
-"tier": "elevated",
-"lift": 1.7,
-"rate": 0.0574,
-"n": 2907
+"lift": 2.3,
+"rate": 0.0745,
+"n": 872
 },
 "ACCREDITED SPECIALTY INSURANCE COMPANY": {
 "tier": "high",
 "lift": 3.5,
-"rate": 0.1154,
-"n": 4794
+"rate": 0.1162,
+"n": 4812
+},
+"TRISURA SPECIALTY INSURANCE COMPANY": {
+"tier": "elevated",
+"lift": 1.9,
+"rate": 0.0639,
+"n": 2364
+},
+"MS TRANSVERSE SPECIALTY INSURANCE COMPANY": {
+"tier": "elevated",
+"lift": 1.8,
+"rate": 0.058,
+"n": 2912
+},
+"CLEAR BLUE INSURANCE COMPANY": {
+"tier": "elevated",
+"lift": 1.5,
+"rate": 0.0496,
+"n": 1330
 },
 "EVOLUM RISK RETENTION GROUP, INC.": {
 "tier": "high",
 "lift": 2.7,
-"rate": 0.088,
-"n": 557
+"rate": 0.0891,
+"n": 561
+},
+"INTEGON INDEMNITY CORPORATION": {
+"tier": "high",
+"lift": 4.1,
+"rate": 0.1359,
+"n": 1163
+},
+"MOTOR TRANSPORT MUTUAL RRG INC": {
+"tier": "high",
+"lift": 2.7,
+"rate": 0.0883,
+"n": 1483
+},
+"TEXAS INSURANCE COMPANY": {
+"tier": "high",
+"lift": 3.9,
+"rate": 0.1306,
+"n": 643
+},
+"NATIONAL LIABILITY & FIRE INS CO.": {
+"tier": "elevated",
+"lift": 1.6,
+"rate": 0.0537,
+"n": 707
+},
+"AGENCY INSURANCE COMPANY OF MARYLAND, INC": {
+"tier": "elevated",
+"lift": 2.0,
+"rate": 0.0669,
+"n": 2945
+},
+"PROFESSIONAL TRANSPORTATION RRG INC": {
+"tier": "high",
+"lift": 2.9,
+"rate": 0.0952,
+"n": 882
+},
+"CONCERT SPECIALTY INSURANCE COMPANY": {
+"tier": "elevated",
+"lift": 2.2,
+"rate": 0.0735,
+"n": 1823
+},
+"BERKSHIRE HATHAWAY DIRECT INSURANCE COMPANY": {
+"tier": "high",
+"lift": 5.1,
+"rate": 0.1676,
+"n": 1235
+},
+"STAR MUTUAL RRG": {
+"tier": "elevated",
+"lift": 2.0,
+"rate": 0.0659,
+"n": 1700
+},
+"EVERSPAN INSURANCE COMPANY": {
+"tier": "high",
+"lift": 3.1,
+"rate": 0.1026,
+"n": 975
 }
 }
 }

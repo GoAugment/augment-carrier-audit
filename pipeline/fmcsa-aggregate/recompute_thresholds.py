@@ -71,8 +71,10 @@ def inspection_weighted_rate(df: pl.DataFrame, *, num_col: str, den_col: str) ->
 
 
 def main() -> None:
-    df = pl.read_parquet(PARQUET)
-    print(f"Loaded {df.height:,} carriers")
+    # SMS carriers only: census-only rows have no SMS record, and their zero
+    # crashes would move the crash cutoffs. Same filter as build_aggregates.
+    df = pl.read_parquet(PARQUET).filter(pl.col("in_sms_census"))
+    print(f"Loaded {df.height:,} SMS carriers")
 
     out: dict = {
         # Derived, not hardcoded. build_all exports FMCSA_SNAPSHOT_DATE from its

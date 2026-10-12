@@ -2951,11 +2951,14 @@ function scoreCarrier(
   if ((level === "Critical" || level === "High") && !smsSafetyVisible) {
     reasons.push({
       label: "Why the FMCSA SMS scores look clean",
-      detail:
-        "This carrier is flagged on regulatory, insurance, or identity signals above, not on-road safety. " +
-        "Its FMCSA SMS percentiles and ISS rank within normal range, which is common for recently-formed or " +
-        "low-inspection carriers (including chameleon shells). The SMS columns rank crash and violation history " +
-        "against peers; they don't capture authority, insurance, or fraud red flags.",
+      detail: c.inSmsCensus
+        ? "This carrier is flagged on regulatory, insurance, or identity signals above, not on-road safety. " +
+          "Its FMCSA SMS percentiles and ISS rank within normal range, which is common for recently-formed or " +
+          "low-inspection carriers (including chameleon shells). The SMS columns rank crash and violation history " +
+          "against peers; they don't capture authority, insurance, or fraud red flags."
+        : "This carrier is flagged on regulatory, insurance, or identity signals above, not on-road safety. " +
+          "FMCSA leaves it out of its SMS safety data, so it has no SMS percentiles or ISS score, and FMCSA has " +
+          "no roadside inspections on record for it in the last 24 months.",
     });
   }
 

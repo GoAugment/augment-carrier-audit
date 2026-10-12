@@ -78,6 +78,7 @@ interface ParquetRow {
   rapid_replace_flag: boolean | null;
   crash_measure: number | null;
   peer_group: string | null;
+  in_sms_census: boolean | null;
   crashes_per_million_miles: number | null;
   annual_mileage: number | bigint | null;
   unsafe_driving_violations_24mo: number | bigint | null;
@@ -235,6 +236,7 @@ function rowToCarrier(r: ParquetRow): FmcsaCarrier {
     crashesPerMillionMiles: r.crashes_per_million_miles,
     annualMileage: asInt(r.annual_mileage),
     peerGroup: r.peer_group ?? "unknown",
+    inSmsCensus: r.in_sms_census !== false,
     unsafeDrivingViolations: asInt(r.unsafe_driving_violations_24mo),
     hosViolations: asInt(r.hos_violations_24mo),
     cargoInsuranceOnFile: r.cargo_on_file_flag === true,
@@ -428,7 +430,7 @@ const CARRIER_SELECT_COLUMNS = `
   enforcement_cases_count, enforcement_total_settled, enforcement_recent_date,
   insurance_cancellations_24mo, most_recent_cancel_date, most_recent_cancel_reason,
   rapid_replace_flag,
-  crash_measure, peer_group, crashes_per_million_miles, annual_mileage,
+  crash_measure, peer_group, in_sms_census, crashes_per_million_miles, annual_mileage,
   unsafe_driving_violations_24mo, hos_violations_24mo,
   cargo_on_file_flag, cargo_required_flag,
   physical_state, phy_zip,

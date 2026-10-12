@@ -97,6 +97,16 @@ async function main() {
                ELSE NULL END AS area_code
         FROM read_parquet('data/carrier_identity.parquet')
       ),
+      -- Population statistics below (area-code map, contact cluster sizes) are
+      -- measured over SMS carriers only. Census-only carriers still get their own
+      -- signals, but counting them would move the area-code map and push some
+      -- clusters over MAX_CONTACT_CLUSTER. On the 20260913 data that changed
+      -- phone_area_state for 961 existing carriers and shutdown_links for 68.
+      idn_sms AS (
+        SELECT idn.* FROM idn
+        JOIN read_parquet('data/carrier_aggregates.parquet') a
+          ON a.DOT_NUMBER = idn.dot AND a.in_sms_census
+      ),
       -- Fleet size + home-region inspection share (gates the geo signals to the
       -- small carriers where they carry lift; megafleets operate nationally).
       sz AS (
@@ -140,7 +150,7 @@ async function main() {
       -- Require >=50 carriers on the code so the mapping is stable.
       ac_map AS (
         WITH c AS (
-          SELECT area_code AS ac, phy_state, COUNT(*) n FROM idn
+          SELECT area_code AS ac, phy_state, COUNT(*) n FROM idn_sms
           WHERE area_code ~ '^[2-9][0-9][0-9]$' AND phy_state <> '' GROUP BY 1,2
         ),
         r AS (
@@ -185,13 +195,13 @@ async function main() {
       email_clusters AS (
         SELECT v, COUNT(DISTINCT dot) AS nd FROM (
           SELECT email AS v, dot FROM shutdowns WHERE length(email) > 3
-          UNION ALL SELECT email AS v, dot FROM idn WHERE length(email) > 3
+          UNION ALL SELECT email AS v, dot FROM idn_sms WHERE length(email) > 3
         ) GROUP BY 1
       ),
       phone_clusters AS (
         SELECT v, COUNT(DISTINCT dot) AS nd FROM (
           SELECT phone_norm AS v, dot FROM shutdowns WHERE length(phone_norm) >= 10
-          UNION ALL SELECT phone_norm AS v, dot FROM idn WHERE length(phone_norm) >= 10
+          UNION ALL SELECT phone_norm AS v, dot FROM idn_sms WHERE length(phone_norm) >= 10
         ) GROUP BY 1
       ),
       -- Officer-name links are deliberately NOT emitted. On the full universe
